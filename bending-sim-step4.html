@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ステップ4: 曲げ線基準の展開図分割・断面抽出</title>
+<style>
+  body { font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+         background: #1c1f26; color: #d8dce4; padding: 30px; }
+  h1 { font-size: 18px; color: #e8b04b; }
+  h2 { font-size: 14px; color: #d8dce4; margin: 0 0 10px; }
+  .card { background: #262a33; border: 1px solid #3a4050; border-radius: 8px;
+          padding: 20px; max-width: 860px; margin-bottom: 16px; }
+  input[type="file"] { margin: 8px 0; color: #d8dce4; }
+  #status { margin-top: 8px; font-size: 13px; line-height: 1.7; white-space: pre-line; color: #9aa3b2; }
+  .ok { color: #6fcf7c; } .err { color: #f07070; } .warn { color: #e8b04b; }
+  .legend { font-size: 12px; margin-top: 10px; }
+  .legend span { display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; }
+  canvas { background: #fff; border: 1px solid #3a4050; border-radius: 4px; display: block; }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  th, td { border: 1px solid #3a4050; padding: 5px 9px; text-align: right; }
+  th { background: #2f3440; color: #9aa3b2; font-weight: normal; }
+  td:first-child, th:first-child { text-align: left; }
+  input[type="number"] { width: 68px; background: #1c1f26; border: 1px solid #4a5162;
+    color: #d8dce4; border-radius: 3px; padding: 2px 5px; text-align: right; }
+  select { background: #1c1f26; border: 1px solid #4a5162; color: #d8dce4; border-radius: 3px; padding: 2px 4px; }
+  textarea { width: 100%; height: 130px; background: #1c1f26; border: 1px solid #4a5162;
+    color: #9fd8a8; border-radius: 4px; padding: 8px; font-family: ui-monospace, monospace; font-size: 12px; }
+  button { background: #3c5a86; border: 0; color: #fff; border-radius: 4px; padding: 6px 14px;
+    cursor: pointer; font-size: 13px; margin-top: 8px; }
+  button:hover { background: #4a6ea3; }
+  .note { font-size: 12px; color: #7d8697; margin-top: 8px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<h1>曲げシミュレーション ステップ4 — 曲げ線基準の展開図分割・断面抽出</h1>
+
+<div class="card">
+  <input type="file" id="fileInput" accept=".dxf">
+  <div id="status">ライブラリ読み込み中…</div>
+  <div class="legend">
+    <span style="background:#1258c9"></span>外形線・穴
+    <span style="background:#e0334c"></span>曲げ線（確定）
+    <span style="background:#e8b04b"></span>曲げ線候補
+    <span style="background:#2b9f6b"></span>断面軸（フランジを測る方向）
+  </div>
+</div>
+
+<div class="card"><canvas id="cv" width="800" height="520"></canvas></div>
+
+<div class="card" id="resultCard" style="display:none">
+  <h2>断面（フランジ）と曲げ属性</h2>
+  <table id="segTable"></table>
+  <div class="note">
+    曲げ角度・山谷はDXFから読み取れないため手入力です（AP100が角度情報をどこに持つか確認でき次第、自動化します）。<br>
+    板厚 <input type="number" id="thick" value="2.3" step="0.1" min="0.1"> mm
+  </div>
+</div>
+
+<div class="card" id="jsonCard" style="display:none">
+  <h2>シミュレーターへ渡すデータ</h2>
+  <textarea id="jsonOut" readonly></textarea>
+  <button id="copyBtn">クリップボードにコピー</button>
+  <div class="note">bending-simulator.jsx の初期値（t / segs / bends）に貼り付けて使います。</div>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const fileInput = $('fileInput'), statusEl = $('status');
+const canvas = $('cv'), ctx = canvas.getContext('2d');
+
+let DxfParser = null;
+let lastResult = null;   // { section, buckets }
+
+async function loadLibrary() {
+  for (const url of ['https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/+esm',
+                     'https://esm.sh/dxf-parser@1.1.2']) {
+    try {
+      const mod = await import(url);
+      const cls = mod.DxfParser || mod.default;
+      if (typeof cls === 'function') { console.log('dxf-parser 読み込み成功:', url); return cls; }
+    } catch (e) { console.warn('CDN読み込み失敗:', url, e.message); }
+  }
+  return null;
+}
+loadLibrary().then((cls) => {
+  DxfParser = cls;
+  setStatus(cls ? 'ライブラリ読み込み完了。DXFファイルを選択してください。'
+                : '✗ dxf-parserをCDNから読み込めませんでした。', cls ? '' : 'err');
+});
+
+function setStatus(t, c) { statusEl.className = c || ''; statusEl.textContent = t; }
+
+// ===========================================================================
+// 円弧・bulge（ステップ3で検証済み。回転方向の符号バグ修正済み）
+// ===========================================================================
+function bulgeToPoints(p0, p1, bulge, segments = 24) {
+  const dx = p1.x - p0.x, dy = p1.y - p0.y, d = Math.hypot(dx, dy);
+  if (d < 1e-9 || Math.abs(bulge) < 1e-6) return [p0, p1];
+  const theta = 4 * Math.atan(bulge);
+  const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+  const perpX = -dy / d, perpY = dx / d;
+  const sagitta = bulge * d / 2;
+  const r = (sagitta * sagitta + (d / 2) * (d / 2)) / (2 * sagitta);
+  const cX = mx - perpX * (r - sagitta), cY = my - perpY * (r - sagitta);
+  const rAbs = Math.abs(r);
+  const a0 = Math.atan2(p0.y - cY, p0.x - cX);
+  const n = Math.max(4, Math.min(segments, Math.ceil(Math.abs(theta) / (Math.PI / 24))));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = a0 - theta * (i / n);   // 符号: 検証済み
+    pts.push({ x: cX + rAbs * Math.cos(a), y: cY + rAbs * Math.sin(a) });
+  }
+  return pts;
+}
+function arcToPoints(cx, cy, r, startDeg, endDeg) {
+  let s = startDeg * Math.PI / 180, e = endDeg * Math.PI / 180;
+  if (e <= s) e += Math.PI * 2;
+  const span = e - s, n = Math.max(6, Math.ceil(span / (Math.PI / 18))), pts = [];
+  for (let i = 0; i <= n; i++) { const a = s + span * (i / n); pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }); }
+  return pts;
+}
+function pointsToSegments(pts) {
+  const segs = [];
+  for (let i = 0; i < pts.length - 1; i++) segs.push({ x1: pts[i].x, y1: pts[i].y, x2: pts[i+1].x, y2: pts[i+1].y });
+  return segs;
+}
+
+// ===========================================================================
+// 曲げ線の分類（ステップ3から）
+// ===========================================================================
+function resolveColorIndex(ent, lt) {
+  let ci = ent.colorIndex;
+  if (ci === undefined || ci === 256 || ci === 0) ci = lt?.[ent.layer]?.colorIndex ?? ci;
+  return ci;
+}
+function resolveLineType(ent, lt) {
+  let t = ent.lineType;
+  if (!t || /^bylayer$/i.test(t)) t = lt?.[ent.layer]?.lineType ?? t;
+  return (t || '').toUpperCase();
+}
+const isDotted = (t) => /DOT|DASH|CENTER|PHANTOM|HIDDEN/.test(t);
+function classifyEntity(ent, lt) {
+  const white = resolveColorIndex(ent, lt) === 7;
+  const dotted = isDotted(resolveLineType(ent, lt));
+  if (white && dotted) return 'bend';
+  if (white || dotted) return 'bend-candidate';
+  return 'outline';
+}
+function extractSegments(entities, lt) {
+  const b = { outline: [], bend: [], 'bend-candidate': [] };
+  for (const ent of entities) {
+    const target = b[classifyEntity(ent, lt)];
+    if (ent.type === 'LINE' && ent.vertices?.length >= 2) {
+      const [p, q] = ent.vertices; target.push({ x1: p.x, y1: p.y, x2: q.x, y2: q.y });
+    } else if ((ent.type === 'POLYLINE' || ent.type === 'LWPOLYLINE') && ent.vertices?.length >= 2) {
+      const vs = ent.vertices, pc = ent.shape ? vs.length : vs.length - 1;
+      for (let k = 0; k < pc; k++) {
+        const p = vs[k], q = vs[(k + 1) % vs.length], bg = p.bulge || 0;
+        if (bg) target.push(...pointsToSegments(bulgeToPoints(p, q, bg)));
+        else target.push({ x1: p.x, y1: p.y, x2: q.x, y2: q.y });
+      }
+    } else if (ent.type === 'ARC') {
+      target.push(...pointsToSegments(arcToPoints(ent.center.x, ent.center.y, ent.radius, ent.startAngle, ent.endAngle)));
+    } else if (ent.type === 'CIRCLE') {
+      target.push(...pointsToSegments(arcToPoints(ent.center.x, ent.center.y, ent.radius, 0, 360)));
+    }
+  }
+  return b;
+}
+
+// ===========================================================================
+// ステップ4a: 断面抽出（Node.jsで数値検証済み）
+// ===========================================================================
+function lineAngleMod180(s) {
+  let a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1);
+  if (a < 0) a += Math.PI;
+  if (Math.abs(a - Math.PI) < 1e-9) a = 0;
+  return a;
+}
+function checkParallel(bendSegs, tolDeg = 0.5) {
+  if (bendSegs.length === 0) return { ok: false, reason: '曲げ線が見つかりません' };
+  const angles = bendSegs.map(lineAngleMod180), ref = angles[0], tol = tolDeg * Math.PI / 180;
+  for (const a of angles) {
+    let d = Math.abs(a - ref); d = Math.min(d, Math.PI - d);
+    if (d > tol) return { ok: false,
+      reason: `曲げ線が平行ではありません（${(ref*180/Math.PI).toFixed(2)}° と ${(a*180/Math.PI).toFixed(2)}°）。プレスブレーキで一度に扱えるのは平行な曲げ線のみです。` };
+  }
+  return { ok: true, angle: ref };
+}
+// 同一直線上に分断された曲げ線（切欠きをまたぐ等）は1本に統合する
+function groupBendLines(bendSegs, n, posTol = 0.05) {
+  const proj = (x, y) => x * n.x + y * n.y;
+  const items = bendSegs.map((s) => ({ seg: s, pos: (proj(s.x1,s.y1) + proj(s.x2,s.y2)) / 2 }));
+  items.sort((a, b) => a.pos - b.pos);
+  const groups = [];
+  for (const it of items) {
+    const last = groups[groups.length - 1];
+    if (last && Math.abs(it.pos - last.pos) <= posTol) {
+      last.segs.push(it.seg);
+      last.pos = (last.pos * (last.segs.length - 1) + it.pos) / last.segs.length;
+    } else groups.push({ pos: it.pos, segs: [it.seg] });
+  }
+  return groups;
+}
+function extractSection(outlineSegs, bendSegs) {
+  const par = checkParallel(bendSegs);
+  if (!par.ok) return { ok: false, reason: par.reason };
+  const u = { x: Math.cos(par.angle), y: Math.sin(par.angle) };
+  const n = { x: -u.y, y: u.x };
+  // n の符号は任意なのでフランジ順が図面と逆になりうる。右向き優先で正規化。
+  if (n.x < -1e-9 || (Math.abs(n.x) <= 1e-9 && n.y < 0)) { n.x = -n.x; n.y = -n.y; }
+  const proj = (x, y) => x * n.x + y * n.y;
+
+  let minN = Infinity, maxN = -Infinity;
+  for (const s of outlineSegs) {
+    minN = Math.min(minN, proj(s.x1,s.y1), proj(s.x2,s.y2));
+    maxN = Math.max(maxN, proj(s.x1,s.y1), proj(s.x2,s.y2));
+  }
+  if (!isFinite(minN)) return { ok: false, reason: '外形線が見つかりません' };
+
+  const groups = groupBendLines(bendSegs, n);
+  for (const g of groups)
+    if (g.pos < minN - 1e-6 || g.pos > maxN + 1e-6)
+      return { ok: false, reason: `曲げ線が外形の外側にあります（位置 ${g.pos.toFixed(2)}）` };
+
+  const cuts = [minN, ...groups.map((g) => g.pos), maxN];
+  const segs = [];
+  for (let i = 0; i < cuts.length - 1; i++) segs.push(cuts[i+1] - cuts[i]);
+  return { ok: true, axisAngleDeg: par.angle * 180 / Math.PI, sectionAxis: n,
+           flatLength: maxN - minN, segs, cuts, minN, maxN,
+           bendPositions: groups.map((g) => g.pos - minN), bendCount: groups.length };
+}
+
+// ===========================================================================
+// 描画
+// ===========================================================================
+function draw(buckets, section) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const all = [...buckets.outline, ...buckets.bend, ...buckets['bend-candidate']];
+  if (!all.length) return null;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for (const s of all) { minX=Math.min(minX,s.x1,s.x2); maxX=Math.max(maxX,s.x1,s.x2);
+                         minY=Math.min(minY,s.y1,s.y2); maxY=Math.max(maxY,s.y1,s.y2); }
+  const bw = maxX-minX || 1, bh = maxY-minY || 1;
+  const scale = Math.min(canvas.width/bw, canvas.height/bh) * 0.85;
+  const offX = (canvas.width - bw*scale)/2, offY = (canvas.height - bh*scale)/2;
+  const tx = (x) => offX + (x-minX)*scale, ty = (y) => canvas.height - offY - (y-minY)*scale;
+
+  const stroke = (segs, color, dash, w=1.5) => {
+    if (!segs.length) return;
+    ctx.strokeStyle=color; ctx.lineWidth=w; ctx.lineCap='round'; ctx.setLineDash(dash);
+    ctx.beginPath();
+    for (const s of segs) { ctx.moveTo(tx(s.x1),ty(s.y1)); ctx.lineTo(tx(s.x2),ty(s.y2)); }
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  stroke(buckets.outline, '#1258c9', []);
+  stroke(buckets['bend-candidate'], '#e8b04b', [6,4]);
+  stroke(buckets.bend, '#e0334c', [6,4]);
+
+  // 断面軸とフランジ長のラベル
+  if (section?.ok) {
+    const n = section.sectionAxis, u = { x: -n.y, y: n.x };
+    const cU = ((minX+maxX)/2)*u.x + ((minY+maxY)/2)*u.y;  // 部品中央を通す
+    const P = (t) => ({ x: n.x*t + u.x*cU, y: n.y*t + u.y*cU });
+    const a = P(section.minN), b = P(section.maxN);
+    ctx.strokeStyle='#2b9f6b'; ctx.lineWidth=1.8; ctx.setLineDash([9,5]);
+    ctx.beginPath(); ctx.moveTo(tx(a.x),ty(a.y)); ctx.lineTo(tx(b.x),ty(b.y)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#177a4f'; ctx.font='bold 12px ui-monospace, monospace';
+    for (let i=0;i<section.cuts.length-1;i++) {
+      const m = P((section.cuts[i]+section.cuts[i+1])/2);
+      const label = section.segs[i].toFixed(1);
+      ctx.save(); ctx.translate(tx(m.x), ty(m.y));
+      ctx.fillStyle='rgba(255,255,255,0.85)';
+      const w = ctx.measureText(label).width;
+      ctx.fillRect(-w/2-3,-8,w+6,15);
+      ctx.fillStyle='#177a4f'; ctx.textAlign='center'; ctx.fillText(label, 0, 4);
+      ctx.restore();
+    }
+    for (const t of section.cuts) {
+      const p = P(t);
+      ctx.fillStyle='#2b9f6b'; ctx.beginPath(); ctx.arc(tx(p.x),ty(p.y),3.5,0,Math.PI*2); ctx.fill();
+    }
+  }
+  return { minX, maxX, minY, maxY, scale };
+}
+
+// ===========================================================================
+// 結果テーブル & JSON 出力
+// ===========================================================================
+function renderResult() {
+  if (!lastResult?.section?.ok) { $('resultCard').style.display='none'; $('jsonCard').style.display='none'; return; }
+  const sec = lastResult.section;
+  const rows = ['<tr><th>面</th><th>フランジ長 (mm)</th><th>次の曲げ角度 (°)</th><th>山谷</th></tr>'];
+  sec.segs.forEach((L, i) => {
+    const isLast = i === sec.segs.length - 1;
+    rows.push(`<tr>
+      <td>面${i+1}</td>
+      <td>${L.toFixed(2)}</td>
+      <td>${isLast ? '—' : `<input type="number" class="bAngle" data-i="${i}" value="90" step="1" min="1" max="179">`}</td>
+      <td>${isLast ? '—' : `<select class="bDir" data-i="${i}"><option value="1">山（表曲げ）</option><option value="-1">谷（裏曲げ）</option></select>`}</td>
+    </tr>`);
+  });
+  rows.push(`<tr><th>合計</th><th>${sec.flatLength.toFixed(2)}</th><th colspan="2" style="text-align:left;font-weight:normal;color:#7d8697">
+    曲げ線 ${sec.bendCount} 本／向き ${sec.axisAngleDeg.toFixed(2)}°</th></tr>`);
+  $('segTable').innerHTML = rows.join('');
+  $('resultCard').style.display='';
+  $('jsonCard').style.display='';
+  updateJson();
+  document.querySelectorAll('.bAngle,.bDir').forEach(el => el.addEventListener('input', updateJson));
+  $('thick').addEventListener('input', updateJson);
+}
+function updateJson() {
+  const sec = lastResult.section;
+  const angles = [...document.querySelectorAll('.bAngle')].map(el => Number(el.value) || 90);
+  const dirs   = [...document.querySelectorAll('.bDir')].map(el => Number(el.value));
+  const data = {
+    t: Number($('thick').value) || 2.3,
+    segs: sec.segs.map(v => Number(v.toFixed(3))),
+    bends: angles.map((a, i) => ({ angle: a, dir: dirs[i] })),
+    _meta: { flatLength: Number(sec.flatLength.toFixed(3)),
+             bendPositions: sec.bendPositions.map(v => Number(v.toFixed(3))),
+             bendLineAngleDeg: Number(sec.axisAngleDeg.toFixed(3)) },
+  };
+  $('jsonOut').value = JSON.stringify(data, null, 2);
+}
+$('copyBtn').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('jsonOut').value);
+  $('copyBtn').textContent = 'コピーしました';
+  setTimeout(() => ($('copyBtn').textContent = 'クリップボードにコピー'), 1500);
+});
+
+// ===========================================================================
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!DxfParser) { setStatus('✗ ライブラリが未読み込みです。ページを更新してください。','err'); return; }
+  setStatus('読み込み中…');
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const dxf = new DxfParser().parseSync(reader.result);
+      const entities = dxf.entities || [];
+      const layerTable = dxf.tables?.layer?.layers || {};
+      console.log('レイヤーテーブル:', JSON.stringify(layerTable));
+
+      const buckets = extractSegments(entities, layerTable);
+      // 確定曲げ線が無ければ候補で代用（警告つき）
+      let bendUsed = buckets.bend, usedCandidate = false;
+      if (!bendUsed.length && buckets['bend-candidate'].length) {
+        bendUsed = buckets['bend-candidate']; usedCandidate = true;
+      }
+      const section = extractSection(buckets.outline, bendUsed);
+      lastResult = { buckets, section };
+      draw(buckets, section);
+
+      if (!section.ok) {
+        setStatus(`✓ ${file.name} を読み込みましたが断面を取り出せません\n✗ ${section.reason}`, 'err');
+        $('resultCard').style.display='none'; $('jsonCard').style.display='none';
+      } else {
+        let msg = `✓ ${file.name}\n外形 ${buckets.outline.length}区間／曲げ線 ${section.bendCount}本`
+                + `\n展開長 ${section.flatLength.toFixed(2)} mm → フランジ [${section.segs.map(v=>v.toFixed(2)).join(', ')}]`;
+        if (usedCandidate) msg += '\n⚠ 確定曲げ線が無いため「候補」を曲げ線として使用しました。分類条件の見直しが必要かもしれません。';
+        setStatus(msg, usedCandidate ? 'warn' : 'ok');
+        renderResult();
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus('✗ 解析エラー: ' + err.message, 'err');
+    } finally { fileInput.value = ''; }
+  };
+  reader.onerror = () => setStatus('✗ ファイルの読み込みに失敗しました','err');
+  reader.readAsText(file, 'shift_jis');
+});
+</script>
+</body>
+</html>

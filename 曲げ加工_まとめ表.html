@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>曲げ加工 まとめ表</title>
+  <style>
+    body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+    h1 { font-size: 1.25rem; color: #1565C0; margin-bottom: 8px; }
+    h2 { font-size: 1rem; color: #333; margin: 20px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+    table { border-collapse: collapse; background: #fff; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #2F5496; color: #fff; font-weight: 600; }
+    tr:nth-child(even) { background: #f8f9fa; }
+    .num { text-align: right; }
+    .note { font-size: 12px; color: #666; margin-top: 4px; }
+    .meta { font-size: 11px; color: #888; margin-top: 24px; }
+  </style>
+</head>
+<body>
+
+<h1>曲げ加工 見積り — まとめ表</h1>
+<p class="note">見積り計算書.html・見積り計算書_仕様まとめ.md に基づく。ブラウザで表示・印刷や Numbers などへコピーして利用可。</p>
+
+<h2>1. 見積構成（4項目）</h2>
+<table>
+  <thead><tr><th>項目</th><th>計算式（1個あたり）</th><th>デフォルト・備考</th></tr></thead>
+  <tbody>
+    <tr><td>材料費</td><td>材料単価（円/kg）× 重量（kg）</td><td>材料単価 185 円/kg（data/rates.json で変更可）</td></tr>
+    <tr><td>切断費</td><td>切断長（mm）÷ 1000 × 切断単価（円/m）</td><td>切断単価 150 円/m。切断長は 4×((縦+余長)+(横+余長)) で自動</td></tr>
+    <tr><td>曲げ工賃</td><td>曲げkg単価（円/kg）× 重量（kg）</td><td>板厚別デフォルトあり（下記）。10円単位で丸めて表示する合計あり</td></tr>
+    <tr><td>穴あけ</td><td>丸穴単価×丸穴数 ＋ 長穴単価×長穴数</td><td>丸穴 50 円/個、長穴 70 円/個</td></tr>
+  </tbody>
+</table>
+
+<h2>2. 曲げkg単価の板厚別デフォルト（円/kg）</h2>
+<table>
+  <thead><tr><th>板厚（mm）</th><th>曲げkg単価（初期値）</th><th>備考</th></tr></thead>
+  <tbody>
+    <tr><td>1.6, 2.3</td><td class="num">185</td><td>薄い</td></tr>
+    <tr><td>3.2, 4.5</td><td class="num">190</td><td>—</td></tr>
+    <tr><td>6.0, 9.0, 12.0, 16.0, 19.0</td><td class="num">185</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h2>3. 余長（SS400・自動時）</h2>
+<table>
+  <thead><tr><th>板厚（mm）</th><th>余長（mm）</th></tr></thead>
+  <tbody>
+    <tr><td>1.0, 1.2, 1.6, 2.3</td><td class="num">50</td></tr>
+    <tr><td>3.2</td><td class="num">30</td></tr>
+    <tr><td>4.5 〜 19.0</td><td class="num">20</td></tr>
+    <tr><td>ボンデ ON 時</td><td class="num">100</td></tr>
+  </tbody>
+</table>
+
+<h2>4. 形状別 曲げ回数</h2>
+<table>
+  <thead><tr><th>形状</th><th>曲げ回数</th></tr></thead>
+  <tbody>
+    <tr><td>L曲げ</td><td class="num">1</td></tr>
+    <tr><td>Z曲げ・コの字曲げ</td><td class="num">2</td></tr>
+    <tr><td>三方曲げ</td><td class="num">3</td></tr>
+    <tr><td>C型曲げ・四方曲げ・ハット曲げ</td><td class="num">4</td></tr>
+  </tbody>
+</table>
+
+<h2>5. 穴あけ単価</h2>
+<table>
+  <thead><tr><th>種類</th><th>単価（円/個）</th></tr></thead>
+  <tbody>
+    <tr><td>丸穴（30φ未満）</td><td class="num">50</td></tr>
+    <tr><td>長穴</td><td class="num">70</td></tr>
+  </tbody>
+</table>
+
+<h2>6. 板厚グループ（参考テーブル用）</h2>
+<table>
+  <thead><tr><th>グループ</th><th>板厚（mm）</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>1.0, 1.2, 1.6, 2.3</td></tr>
+    <tr><td>B</td><td>3.2, 4.5, 6.0</td></tr>
+    <tr><td>C</td><td>9.0, 12.0</td></tr>
+    <tr><td>D</td><td>16.0</td></tr>
+    <tr><td>E</td><td>19.0</td></tr>
+  </tbody>
+</table>
+
+<h2>7. 価格計算用_4相当の目安（例: 縦396×横70mm, 板厚6, 余長20, 丸穴4）</h2>
+<table>
+  <thead><tr><th>表示項目</th><th>計算内容</th><th>目安（円）</th></tr></thead>
+  <tbody>
+    <tr><td>材料費＋穴あけ（530円相当）</td><td>材料費＋穴あけ（10円単位）。曲げは含まない</td><td class="num">530</td></tr>
+    <tr><td>材料費 ＋ 切断</td><td>材料費＋切断費（1個あたり）</td><td class="num">630</td></tr>
+    <tr><td>材料費＋切断＋曲げ工賃（見積合計）</td><td>上記＋曲げ工賃（10円単位）</td><td class="num">960</td></tr>
+    <tr><td>見積合計（税抜）</td><td>材料＋切断＋曲げ＋穴あけ（10円単位）×数量</td><td class="num">1,180（数量1）</td></tr>
+  </tbody>
+</table>
+
+<h2>8. 重量・単価の計算式メモ</h2>
+<table>
+  <thead><tr><th>項目</th><th>式</th></tr></thead>
+  <tbody>
+    <tr><td>重量（kg）</td><td>板厚 × (縦+余長) × (横+余長) × 比重 ÷ 1,000,000</td></tr>
+    <tr><td>切断長（mm）</td><td>4 × ((縦+余長) + (横+余長))</td></tr>
+    <tr><td>見積合計</td><td>round((材料費+切断費+曲げ工賃+穴あけ)×数量 ÷ 10) × 10</td></tr>
+  </tbody>
+</table>
+
+<p class="meta">出典: 見積り計算書_仕様まとめ.md / 見積り計算書.html — 更新時は計算書と同期してください。</p>
+
+</body>
+</html>

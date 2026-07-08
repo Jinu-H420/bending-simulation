@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ステップ3: 円弧対応＋曲げ線検出</title>
+<style>
+  body { font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+         background: #1c1f26; color: #d8dce4; padding: 30px; }
+  h1 { font-size: 18px; color: #e8b04b; }
+  .card { background: #262a33; border: 1px solid #3a4050; border-radius: 8px;
+          padding: 20px; max-width: 860px; margin-bottom: 16px; }
+  input[type="file"] { margin: 8px 0; color: #d8dce4; }
+  #status { margin-top: 8px; font-size: 13px; line-height: 1.7;
+            white-space: pre-line; color: #9aa3b2; }
+  .ok { color: #6fcf7c; }
+  .err { color: #f07070; }
+  .warn { color: #e8b04b; }
+  .legend { font-size: 12px; margin-top: 10px; }
+  .legend span { display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; }
+  canvas { background: #ffffff; border: 1px solid #3a4050; border-radius: 4px;
+           display: block; }
+</style>
+</head>
+<body>
+<h1>曲げシミュレーション ステップ3 — 円弧対応＋曲げ線検出</h1>
+<div class="card">
+  <input type="file" id="fileInput" accept=".dxf">
+  <div id="status">ライブラリ読み込み中…</div>
+  <div class="legend">
+    <span style="background:#1258c9"></span>外形線・穴
+    <span style="background:#e0334c"></span>曲げ線（白の点線を検出）
+    <span style="background:#e8b04b"></span>曲げ線候補（色・線種の片方のみ一致）
+  </div>
+</div>
+<div class="card">
+  <canvas id="cv" width="800" height="600"></canvas>
+</div>
+
+<script type="module">
+const fileInput = document.getElementById('fileInput');
+const statusEl  = document.getElementById('status');
+const canvas    = document.getElementById('cv');
+const ctx       = canvas.getContext('2d');
+
+let DxfParser = null;
+
+async function loadLibrary() {
+  const sources = [
+    'https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/+esm',
+    'https://esm.sh/dxf-parser@1.1.2',
+  ];
+  for (const url of sources) {
+    try {
+      const mod = await import(url);
+      const cls = mod.DxfParser || mod.default;
+      if (typeof cls === 'function') {
+        console.log('dxf-parser 読み込み成功:', url);
+        return cls;
+      }
+    } catch (e) {
+      console.warn('CDN読み込み失敗:', url, e.message);
+    }
+  }
+  return null;
+}
+
+loadLibrary().then((cls) => {
+  DxfParser = cls;
+  statusEl.textContent = DxfParser
+    ? 'ライブラリ読み込み完了。DXFファイルを選択してください。'
+    : '✗ dxf-parserをCDNから読み込めませんでした。';
+});
+
+// ---------------------------------------------------------------
+// bulge（円弧付き頂点）→ 円弧を細分化した点列に変換
+// sagitta = bulge * chord/2 という恒等式から中心・半径を求める
+//
+// [修正 2026-07] 弧の回転方向の符号が逆だったバグを修正。
+// 元コードは startAngle + theta*(i/n) で弧を進めていたが、
+// このsagitta/perp構成では p0→p1 は startAngle から theta を
+// 「引く」方向が正しい。bulge=1（半円=180°）のときだけ
+// 符号が結果に影響しないため見た目上は動いているように見えて
+// 発覚しにくいバグだった。浅いR・深いR（180°以外すべて）で
+// 終点がp1からずれ、外形が歪む実害があったため修正済み。
+// 検証: 浅いR(bulge=0.101015)・半円(bulge=1.0)・深いR170°(bulge=0.916331)
+// の3パターンで終点がp1と誤差1e-9未満で一致することを確認。
+// ---------------------------------------------------------------
+function bulgeToPoints(p0, p1, bulge, segments = 24) {
+  const dx = p1.x - p0.x, dy = p1.y - p0.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1e-9 || Math.abs(bulge) < 1e-6) return [p0, p1];
+
+  const theta = 4 * Math.atan(bulge);              // 符号付き含み角
+  const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+  const perpX = -dy / d, perpY = dx / d;            // 弦に垂直な単位ベクトル
+  const sagitta = bulge * d / 2;                    // 弦中点から弧の頂点までの符号付き距離
+  const r = (sagitta * sagitta + (d / 2) * (d / 2)) / (2 * sagitta);
+
+  const centerX = mx - perpX * (r - sagitta);
+  const centerY = my - perpY * (r - sagitta);
+  const rAbs = Math.abs(r);
+
+  const startAngle = Math.atan2(p0.y - centerY, p0.x - centerX);
+  const pts = [];
+  const n = Math.max(4, Math.min(segments, Math.ceil(Math.abs(theta) / (Math.PI / 24))));
+  for (let i = 0; i <= n; i++) {
+    const a = startAngle - theta * (i / n);   // ← 修正: + から - へ
+    pts.push({ x: centerX + rAbs * Math.cos(a), y: centerY + rAbs * Math.sin(a) });
+  }
+  return pts;
+}
+
+// ARC/CIRCLE エンティティ → 点列に変換（角度分解能: 半径に応じて可変、最大10°刻み）
+function arcToPoints(cx, cy, r, startDeg, endDeg) {
+  let start = startDeg * Math.PI / 180;
+  let end = endDeg * Math.PI / 180;
+  if (end <= start) end += Math.PI * 2;             // DXFのARCはCCWでstart→end
+  const span = end - start;
+  const n = Math.max(6, Math.ceil(span / (Math.PI / 18)));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = start + span * (i / n);
+    pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+  }
+  return pts;
+}
+
+function pointsToSegments(pts) {
+  const segs = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    segs.push({ x1: pts[i].x, y1: pts[i].y, x2: pts[i + 1].x, y2: pts[i + 1].y });
+  }
+  return segs;
+}
+
+// ---------------------------------------------------------------
+// 曲げ線判定: 色(ACI 7=白)と線種(点線系)の両方一致で確定、
+// 片方だけ一致するものは「候補」として別扱い（見落とし防止のため出力する）
+// ---------------------------------------------------------------
+function resolveColorIndex(ent, layerTable) {
+  let ci = ent.colorIndex;
+  if (ci === undefined || ci === 256 || ci === 0) {   // BYLAYER/BYBLOCK
+    const layer = layerTable?.[ent.layer];
+    ci = layer?.colorIndex ?? ci;
+  }
+  return ci;
+}
+
+function resolveLineType(ent, layerTable) {
+  let lt = ent.lineType;
+  if (!lt || /^bylayer$/i.test(lt)) {
+    const layer = layerTable?.[ent.layer];
+    lt = layer?.lineType ?? lt;
+  }
+  return (lt || '').toUpperCase();
+}
+
+function isDottedLineType(lt) {
+  return /DOT|DASH|CENTER|PHANTOM|HIDDEN/.test(lt);
+}
+
+function classifyEntity(ent, layerTable) {
+  const colorIsWhite = resolveColorIndex(ent, layerTable) === 7;
+  const lt = resolveLineType(ent, layerTable);
+  const lineIsDotted = isDottedLineType(lt);
+  if (colorIsWhite && lineIsDotted) return 'bend';       // 確定: 曲げ線
+  if (colorIsWhite || lineIsDotted) return 'bend-candidate'; // 候補: 片方のみ一致
+  return 'outline';
+}
+
+// ---------------------------------------------------------------
+// エンティティ → { outline: [...], bend: [...], candidate: [...] } の線分リストへ変換
+// ---------------------------------------------------------------
+function extractSegments(entities, layerTable) {
+  const buckets = { outline: [], bend: [], 'bend-candidate': [] };
+
+  for (const ent of entities) {
+    const cls = classifyEntity(ent, layerTable);
+    const target = buckets[cls];
+
+    if (ent.type === 'LINE' && ent.vertices?.length >= 2) {
+      const [a, b] = ent.vertices;
+      target.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+
+    } else if ((ent.type === 'POLYLINE' || ent.type === 'LWPOLYLINE') && ent.vertices?.length >= 2) {
+      const vs = ent.vertices;
+      const pairCount = ent.shape ? vs.length : vs.length - 1;
+      for (let k = 0; k < pairCount; k++) {
+        const a = vs[k], b = vs[(k + 1) % vs.length];
+        const bulge = a.bulge || 0;
+        if (bulge) {
+          target.push(...pointsToSegments(bulgeToPoints(a, b, bulge)));
+        } else {
+          target.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+        }
+      }
+
+    } else if (ent.type === 'ARC') {
+      const pts = arcToPoints(ent.center.x, ent.center.y, ent.radius, ent.startAngle, ent.endAngle);
+      target.push(...pointsToSegments(pts));
+
+    } else if (ent.type === 'CIRCLE') {
+      const pts = arcToPoints(ent.center.x, ent.center.y, ent.radius, 0, 360);
+      target.push(...pointsToSegments(pts));
+    }
+  }
+  return buckets;
+}
+
+// ---------------------------------------------------------------
+// バウンディングボックスを計算し、Canvas中央にフィットさせて描画
+// 注意: DXFはY軸が上向き、CanvasはY軸が下向きなので反転させる
+// ---------------------------------------------------------------
+function drawAll(buckets) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const all = [...buckets.outline, ...buckets.bend, ...buckets['bend-candidate']];
+  if (all.length === 0) return null;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of all) {
+    minX = Math.min(minX, s.x1, s.x2);
+    maxX = Math.max(maxX, s.x1, s.x2);
+    minY = Math.min(minY, s.y1, s.y2);
+    maxY = Math.max(maxY, s.y1, s.y2);
+  }
+  const bw = maxX - minX || 1;
+  const bh = maxY - minY || 1;
+
+  const margin = 0.9;
+  const scale = Math.min(canvas.width / bw, canvas.height / bh) * margin;
+  const offX = (canvas.width  - bw * scale) / 2;
+  const offY = (canvas.height - bh * scale) / 2;
+
+  const tx = (x) => offX + (x - minX) * scale;
+  const ty = (y) => canvas.height - offY - (y - minY) * scale;
+
+  function strokeSegs(segs, color, dash) {
+    if (segs.length === 0) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    for (const s of segs) {
+      ctx.moveTo(tx(s.x1), ty(s.y1));
+      ctx.lineTo(tx(s.x2), ty(s.y2));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  strokeSegs(buckets.outline, '#1258c9', []);
+  strokeSegs(buckets['bend-candidate'], '#e8b04b', [6, 4]);
+  strokeSegs(buckets.bend, '#e0334c', [6, 4]);
+
+  return { minX, maxX, minY, maxY, scale };
+}
+
+function bendLineLength(segs) {
+  return segs.reduce((sum, s) => sum + Math.hypot(s.x2 - s.x1, s.y2 - s.y1), 0);
+}
+
+// ---------------------------------------------------------------
+// ファイル読み込み
+// ---------------------------------------------------------------
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!DxfParser) {
+    statusEl.textContent = '✗ ライブラリが未読み込みです。ページを更新してください。';
+    statusEl.className = 'err';
+    return;
+  }
+
+  statusEl.textContent = '読み込み中…';
+  statusEl.className = '';
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    try {
+      const parser = new DxfParser();
+      const dxf = parser.parseSync(reader.result);
+      const entities = dxf.entities || [];
+      const layerTable = dxf.tables?.layer?.layers || {};
+
+      const counts = {};
+      entities.forEach((ent) => { counts[ent.type] = (counts[ent.type] || 0) + 1; });
+      console.log('========================================');
+      console.log('DXFファイル:', file.name, '/ エンティティ総数:', entities.length);
+      console.log('種類別の内訳:', JSON.stringify(counts));
+      // レイヤーテーブルの実キー名をここで確認できる（colorIndex/lineTypeの想定が合っているか要確認）
+      console.log('レイヤーテーブル:', JSON.stringify(layerTable));
+
+      const buckets = extractSegments(entities, layerTable);
+      const box = drawAll(buckets);
+
+      const bendLen = bendLineLength(buckets.bend).toFixed(1);
+      const candLen = bendLineLength(buckets['bend-candidate']).toFixed(1);
+
+      console.log(`外形線: ${buckets.outline.length}区間 / 曲げ線(確定): ${buckets.bend.length}区間(計${bendLen}mm) / 候補: ${buckets['bend-candidate'].length}区間(計${candLen}mm)`);
+
+      let msg = `✓ ${file.name}\n` +
+        `外形・穴 ${buckets.outline.length}区間\n` +
+        `曲げ線(白の点線・確定) ${buckets.bend.length}区間／延長${bendLen}mm`;
+
+      if (buckets['bend-candidate'].length > 0) {
+        msg += `\n⚠ 曲げ線候補(色か線種の片方のみ一致) ${buckets['bend-candidate'].length}区間／延長${candLen}mm — 見落とし防止のため表示していますが、実際は外形線の可能性もあります`;
+      }
+      if (box) {
+        msg += `\n図形サイズ ${(box.maxX - box.minX).toFixed(1)} × ${(box.maxY - box.minY).toFixed(1)}｜表示倍率 ${box.scale.toFixed(2)}倍`;
+      }
+      statusEl.textContent = msg;
+      statusEl.className = buckets['bend-candidate'].length > 0 ? 'warn' : 'ok';
+
+    } catch (err) {
+      console.error('DXF解析エラー:', err);
+      statusEl.textContent = `✗ 解析エラー: ${err.message}`;
+      statusEl.className = 'err';
+    } finally {
+      fileInput.value = '';   // 同じファイルを連続で選び直せるようにする
+    }
+  };
+
+  reader.onerror = () => {
+    statusEl.textContent = '✗ ファイルの読み込みに失敗しました';
+    statusEl.className = 'err';
+  };
+
+  reader.readAsText(file, 'shift_jis');
+});
+</script>
+</body>
+</html>

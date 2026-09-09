@@ -39,9 +39,12 @@ const DIE_RIGHT_HALF = [
   [207.5, 356.9],  // ベース下端（DXF実測：ダイ全高356.9）
 ];
 
+// 修正済（経緯まとめ 第9.3章）：もとは index 0 の鏡像を飛ばしていたため、先頭点が
+// 中心線上にない輪郭（INSERT_STACK_RIGHT など）は天面が水平にならず斜め線で閉じていた。
+// 先頭点も鏡像に含める。先頭点が x=0 の場合は無害な重複頂点（ゼロ長辺）になるだけ。
 function mirrorClose(right) {
   const pts = [];
-  for (let i = right.length - 1; i >= 1; i--) pts.push([-right[i][0], right[i][1]]);
+  for (let i = right.length - 1; i >= 0; i--) pts.push([-right[i][0], right[i][1]]);
   for (const p of right) pts.push(p);
   return pts;
 }
@@ -224,17 +227,100 @@ function distPoly(p, poly) {
   return m;
 }
 
-function densify(pts, step = 0.8) {
+// 工具の外接枠の外にある板の点は当たりようがない。線分を枠でクリップしてから
+// 密サンプリングし、長い辺で計算量が爆発しないようにする（Liang–Barsky）。
+function bboxOf(poly, m) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of poly) {
+    if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
+    if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
+  }
+  return [x0 - m, x1 + m, y0 - m, y1 + m];
+}
+function clipSeg(a, b, B) {
+  let t0 = 0, t1 = 1;
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const P = [-dx, dx, -dy, dy], Q = [a[0] - B[0], B[1] - a[0], a[1] - B[2], B[3] - a[1]];
+  for (let i = 0; i < 4; i++) {
+    if (P[i] === 0) { if (Q[i] < 0) return null; }
+    else {
+      const r = Q[i] / P[i];
+      if (P[i] < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+      else { if (r < t0) return null; if (r < t1) t1 = r; }
+    }
+  }
+  return [[a[0] + t0 * dx, a[1] + t0 * dy], [a[0] + t1 * dx, a[1] + t1 * dy]];
+}
+function sampleInBox(pts, B, step = 0.8) {
   const out = [];
   for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1];
-    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const c = clipSeg(pts[i], pts[i + 1], B);
+    if (!c) continue;
+    const L = Math.hypot(c[1][0] - c[0][0], c[1][1] - c[0][1]);
     const n = Math.max(1, Math.ceil(L / step));
-    for (let k = i === 0 ? 0 : 1; k <= n; k++) {
-      out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+    for (let k = 0; k <= n; k++) {
+      out.push([c[0][0] + ((c[1][0] - c[0][0]) * k) / n, c[0][1] + ((c[1][1] - c[0][1]) * k) / n]);
     }
   }
   return out;
+}
+// 曲げている箇所そのものは刃先・V肩に「当たって当たり前」。そこを座標の近さで
+// 除外すると、離れた面がたまたまその位置に来たとき見逃す（コの字の1枚目フランジが
+// 刃先の上を横切る、など）。板に沿った長さ（弧長）で除外する（経緯まとめ 第12章）。
+function splitChain(pts, vIdx, exArc) {
+  const s = [0];
+  for (let i = 1; i < pts.length; i++)
+    s[i] = s[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  const total = s[s.length - 1], s0 = s[vIdx];
+  const ptAt = (u) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (u <= s[i + 1] || i === pts.length - 2) {
+        const seg = s[i + 1] - s[i] || 1, f = (u - s[i]) / seg;
+        return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f];
+      }
+    }
+    return pts[pts.length - 1];
+  };
+  const build = (a, b) => {
+    if (b - a <= 1e-9) return null;
+    const o = [ptAt(a)];
+    for (let i = 0; i < pts.length; i++) if (s[i] > a && s[i] < b) o.push(pts[i]);
+    o.push(ptAt(b));
+    return o;
+  };
+  const res = [];
+  const left = build(0, Math.min(s0 - exArc, total)); if (left) res.push(left);
+  const right = build(Math.max(s0 + exArc, 0), total); if (right) res.push(right);
+  return res;
+}
+// 最小すきま（mm）を返す。負＝食い込み量（曲がらない）。exArc を渡すと曲げ頂点の
+// 前後をその弧長ぶん除外する（正規接触は当たって当たり前のため）。
+// hits は侵入0.05mm超の点の一覧（断面図での可視化用）。
+function minGap(chain, tools, t, vHalf, exArc) {
+  const margin = t + 6;
+  const boxes = tools.map((poly) => bboxOf(poly, margin));
+  if (!boxes.length) return { gap: Infinity, at: null, hits: [] };
+  const G = [
+    Math.min(...boxes.map((b) => b[0])), Math.max(...boxes.map((b) => b[1])),
+    Math.min(...boxes.map((b) => b[2])), Math.max(...boxes.map((b) => b[3])),
+  ];
+  const parts = exArc != null && chain.vIdx != null ? splitChain(chain.pts, chain.vIdx, exArc) : [chain.pts];
+  const samples = [];
+  for (const pr of parts) samples.push(...sampleInBox(pr, G, 0.8));
+  let g = Infinity, at = null;
+  const hits = [];
+  for (const p of samples) {
+    for (let i = 0; i < tools.length; i++) {
+      const B = boxes[i];
+      if (p[0] < B[0] || p[0] > B[1] || p[1] < B[2] || p[1] > B[3]) continue;
+      const poly = tools[i];
+      const d = pointInPoly(p, poly) ? -distPoly(p, poly) : distPoly(p, poly);
+      const clearance = d - t / 2;
+      if (clearance < g) { g = clearance; at = p; }
+      if (clearance < -0.05) hits.push(p);
+    }
+  }
+  return { gap: g === Infinity ? margin - t / 2 : g, at, hits };
 }
 
 // ============================================================================
@@ -306,8 +392,11 @@ function buildPunch(punchType, punchFlip, tipY, chukanSel) {
 // 板のキネマティクス（エアベンディング近似・中立軸ポリライン）
 // アクティブ曲げ頂点はパンチ直下、両側はV肩支点で回転。最大90°。
 // ============================================================================
+// segs（展開値）の各辺は、曲げが1か所できるたび、その両隣の辺が
+// シャープコーナー換算で（片伸び − 板厚/2）だけ長くなる（経緯まとめ 第11章）。
+// growArr は曲げごとのその伸び量（元の曲げ番号でインデックス）。
 function computeChain(part, seq, stepIdx, prog, vHalf) {
-  const { t, segs, bends } = part;
+  const { t, segs, bends, growArr } = part;
   const B = bends.length;
   const st = seq[stepIdx];
   const msegs = st.mirror ? [...segs].reverse() : segs;
@@ -319,12 +408,22 @@ function computeChain(part, seq, stepIdx, prog, vHalf) {
   }
   const j = st.mirror ? B - 1 - st.bend : st.bend;
   const done = new Set(seq.slice(0, stepIdx).map((s) => s.bend));
+  const pr = Math.max(0, Math.min(1, prog));
+
+  const growOf = (i) => (growArr ? growArr[mb[i].src] || 0 : 0);
+  const wOf = (i) => (done.has(mb[i].src) ? 1 : i === j ? pr : 0);
+  const ms = msegs.map((L, k) =>
+    L + (k > 0 ? growOf(k - 1) * wOf(k - 1) : 0) + (k < B ? growOf(k) * wOf(k) : 0));
 
   const activeDirOK = mb[j].dir > 0;
-  const theta = rad(Math.min(90, mb[j].angle)) * Math.max(0, Math.min(1, prog));
+  const theta = rad(Math.min(90, mb[j].angle)) * pr;
   const alpha = theta / 2;
-  const d = vHalf * Math.tan(alpha);
-  const vy = -t / 2 + d;
+  // 板の外面がV肩に接するのがエアベンドの幾何。中立軸(vy)は外面から板厚半分だけ
+  // 面直方向にオフセットする（旧式は鉛直オフセットで、深曲げで vHalf·(1-cosα) だけ
+  // ずれていた＝経緯まとめ 第8.1章バグ2）。innerY は板の内側面（マイター点＝刃先が
+  // 当たる点）で、中立軸からさらに板厚半分だけ面直に入った位置（同章バグ3）。
+  const vy = vHalf * Math.tan(alpha) - (t / 2) / Math.cos(alpha);
+  const innerY = vy - (t / 2) / Math.cos(alpha);
 
   const signedOf = (i) =>
     done.has(mb[i].src) ? rad(mb[i].angle) * mb[i].dir : 0;
@@ -333,42 +432,52 @@ function computeChain(part, seq, stepIdx, prog, vHalf) {
   let D = [-Math.cos(alpha), -Math.sin(alpha)];
   let pos = [0, vy];
   for (let i = j; i >= 0; i--) {
-    pos = [pos[0] + D[0] * msegs[i], pos[1] + D[1] * msegs[i]];
+    pos = [pos[0] + D[0] * ms[i], pos[1] + D[1] * ms[i]];
     left.push(pos);
     if (i > 0) D = rotV(D, signedOf(i - 1));
   }
   const right = [];
   D = [Math.cos(alpha), -Math.sin(alpha)];
   pos = [0, vy];
-  for (let i = j + 1; i < msegs.length; i++) {
-    pos = [pos[0] + D[0] * msegs[i], pos[1] + D[1] * msegs[i]];
+  for (let i = j + 1; i < ms.length; i++) {
+    pos = [pos[0] + D[0] * ms[i], pos[1] + D[1] * ms[i]];
     right.push(pos);
-    if (i < msegs.length - 1) D = rotV(D, -signedOf(i));
+    if (i < ms.length - 1) D = rotV(D, -signedOf(i));
   }
 
   const pts = [...left.reverse(), [0, vy], ...right];
-  return { pts, vy, d, activeDirOK, thetaDeg: (theta * 180) / Math.PI };
+  return { pts, vIdx: left.length, vy, innerY, activeDirOK, thetaDeg: (theta * 180) / Math.PI };
 }
 
-// ============================================================================
-// 干渉判定：中立軸を密サンプリングし金型ポリゴンへの侵入／板厚未満の接近を検出。
-// 正規接触点（V肩・パンチ刃先）は除外。
-// ============================================================================
-function detectCollisions(chain, tools, t, vHalf) {
-  const clearance = t * 0.45;
-  const exR = t * 1.8 + 1.5;
-  const excl = [[-vHalf, 0], [vHalf, 0], [0, chain.vy]];
-  const hits = [];
-  for (const p of densify(chain.pts)) {
-    if (excl.some((e) => Math.hypot(p[0] - e[0], p[1] - e[1]) < exR)) continue;
-    for (const poly of tools) {
-      if (pointInPoly(p, poly) || distPoly(p, poly) < clearance) {
-        hits.push(p);
-        break;
-      }
-    }
-  }
-  return hits;
+// 曲げ頂点からV肩の接触点までの中立軸長さ（90°ではほぼ板厚に依らず0.707×V幅に収束）。
+// これより短いフランジはV肩に届かず溝に落ちる（経緯まとめ 第8.2章）。
+function shoulderReach(vHalf, t, ang) {
+  const a = rad(Math.min(90, ang)) / 2;
+  const vy = vHalf * Math.tan(a) - (t / 2) / Math.cos(a);
+  return Math.hypot(vHalf - (t / 2) * Math.sin(a), vy + (t / 2) * Math.cos(a));
+}
+
+// 現在の工程で、曲げ頂点の左右の辺がV肩に届く長さを持っているか。
+// computeChain は届く／届かないに関わらず肩支点で回転させてしまうため、
+// この判定はそれとは別立てで行う必要がある。
+function reachCheck(part, seq, stepIdx, vHalf) {
+  const { t, segs, bends, growArr } = part;
+  const B = bends.length;
+  const st = seq[stepIdx];
+  const msegs = st.mirror ? [...segs].reverse() : segs;
+  const srcOf = (i) => (st.mirror ? B - 1 - i : i);
+  const j = st.mirror ? B - 1 - st.bend : st.bend;
+  const done = new Set(seq.slice(0, stepIdx).map((s) => s.bend));
+  const growOf = (i) => (growArr ? growArr[srcOf(i)] || 0 : 0);
+  const wOf = (i) => (done.has(srcOf(i)) ? 1 : 0); // この工程の開始時点＝進捗0%
+  const ms = msegs.map((L, k) =>
+    L + (k > 0 ? growOf(k - 1) * wOf(k - 1) : 0) + (k < B ? growOf(k) * wOf(k) : 0));
+  const need = shoulderReach(vHalf, t, bends[srcOf(j)].angle);
+  let Lf = 0;
+  for (let i = j; i >= 0; i--) { Lf += ms[i]; if (i > 0 && done.has(srcOf(i - 1))) break; }
+  let Rf = 0;
+  for (let i = j + 1; i < ms.length; i++) { Rf += ms[i]; if (i < ms.length - 1 && done.has(srcOf(i))) break; }
+  return { ok: Lf >= need && Rf >= need, need, have: Math.min(Lf, Rf) };
 }
 
 // ============================================================================
@@ -389,11 +498,13 @@ function bendDeduction(angleDeg, R, t, K) {
 function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel) {
   const seq = [...prefix, st];
   const idx = prefix.length;
+  if (!reachCheck(part, seq, idx, vHalf).ok) return false;
+  const exArc = shoulderReach(vHalf, part.t, 90) + part.t;
   for (let p = 0; p <= 1.0001; p += 0.1) {
     const ch = computeChain(part, seq, idx, p, vHalf);
     if (!ch.activeDirOK) return false;
-    const punchPolys = buildPunch(punchType, punchFlip, ch.vy - part.t / 2, chukanSel);
-    if (detectCollisions(ch, [...diePolys, ...punchPolys], part.t, vHalf).length > 0) return false;
+    const punchPolys = buildPunch(punchType, punchFlip, ch.innerY, chukanSel);
+    if (minGap(ch, [...diePolys, ...punchPolys], part.t, vHalf, exArc).gap < -0.05) return false;
   }
   return true;
 }
@@ -504,39 +615,47 @@ const BendingSimulator = () => {
     return outerSegs.map((L, i) =>
       Math.max(1, L - (i > 0 ? bdList[i - 1] / 2 : 0) - (i < bends.length ? bdList[i] / 2 : 0)));
   }, [inputMode, segs, outerSegs, bdList, bends.length]);
-  const part = useMemo(() => ({ t, segs: effSegs, bends }), [t, effSegs, bends]);
+  // 曲げ済みの辺の伸び（片伸び − 板厚/2）。実測の折り曲げ表値（片伸び）に置き換えるべき
+  // ところを、ここでは暫定として K係数式の伸び値の半分を片伸びとして使う
+  // （経緯まとめ 第11章／棚卸し_jsx移植と多曲げ設計 E16・フェーズ3で表に差し替え予定）。
+  const growArr = useMemo(() => bdList.map((bd) => bd / 2 - t / 2), [bdList, t]);
+  const part = useMemo(() => ({ t, segs: effSegs, bends, growArr }), [t, effSegs, bends, growArr]);
   const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf), [dieSel, vW, dieHalf]);
   const diePolys = dieInfo.polys;
   const vHalf = dieInfo.vHalf;
 
   // --- 全工程スイープ判定（ストローク0→100%を走査）---
   const verdicts = useMemo(() => {
+    const exArc = shoulderReach(vHalf, t, 90) + t;
     return seq.map((_, si) => {
+      const reach = reachCheck(part, seq, si, vHalf);
+      if (!reach.ok) return { orientationNG: false, reachFail: reach, firstHit: null };
       let orientationNG = false;
       let firstHit = null;
       for (let p = 0; p <= 1.0001; p += 0.04) {
         const ch = computeChain(part, seq, si, p, vHalf);
         if (!ch.activeDirOK) orientationNG = true;
-        const punchPolys = buildPunch(punchType, punchFlip, ch.vy - t / 2, chukanSel);
-        const hits = detectCollisions(ch, [...diePolys, ...punchPolys], t, vHalf);
-        if (hits.length > 0) {
-          firstHit = { prog: p, count: hits.length };
+        const punchPolys = buildPunch(punchType, punchFlip, ch.innerY, chukanSel);
+        const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
+        if (g.gap < -0.05) {
+          firstHit = { prog: p, gap: g.gap };
           break;
         }
       }
-      return { orientationNG, firstHit };
+      return { orientationNG, reachFail: null, firstHit };
     });
   }, [part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, t]);
 
-  const allOK = verdicts.every((v) => !v.firstHit && !v.orientationNG);
+  const allOK = verdicts.every((v) => !v.firstHit && !v.orientationNG && !v.reachFail);
 
   // --- 現在フレーム ---
   const frame = useMemo(() => {
+    const exArc = shoulderReach(vHalf, t, 90) + t;
     const ch = computeChain(part, seq, step, prog, vHalf);
-    const punchPolys = buildPunch(punchType, punchFlip, ch.vy - t / 2, chukanSel);
-    const hits = detectCollisions(ch, [...diePolys, ...punchPolys], t, vHalf);
+    const punchPolys = buildPunch(punchType, punchFlip, ch.innerY, chukanSel);
+    const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
     const guide = computeChain(part, seq, step, 0, vHalf); // 曲げ開始前（ストローク0%）
-    return { ch, punchPolys, hits, guide };
+    return { ch, punchPolys, hits: g.hits, gap: g.gap, guide };
   }, [part, seq, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t]);
 
   // --- 機械チェック（型合わせ・曲げ切り・部品出し入れ）---
@@ -680,10 +799,10 @@ const BendingSimulator = () => {
       ctx.fillStyle = '#fbbf24';
       ctx.fillText('⚠ この向きでは谷曲げ（下向き）になります。「山谷反転」で裏返してください', 16, 44);
     }
-    if (frame.hits.length) {
+    if (frame.gap < -0.05) {
       ctx.fillStyle = '#fb923c';
       ctx.font = 'bold 14px ui-monospace, monospace';
-      ctx.fillText(`⚠ 干渉検出：${frame.hits.length} 点`, 16, H - 18);
+      ctx.fillText(`⚠ 干渉：${(-frame.gap).toFixed(2)}mm 食い込み`, 16, H - 18);
     }
   }, [frame, diePolys, step, seq.length, t, view, showGuide, prog]);
 
@@ -768,8 +887,13 @@ const BendingSimulator = () => {
                 onClick={() => { setStep(i); setProg(1); setPlaying(false); }}
                 className={`px-2.5 py-1 rounded text-xs font-mono border transition ${
                   step === i ? 'border-sky-400 bg-sky-900/40' : 'border-slate-700 bg-slate-900'
-                } ${v.firstHit || v.orientationNG ? 'text-red-300' : 'text-emerald-300'}`}>
-                工程{i + 1} {v.orientationNG ? '要反転' : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で干渉` : '○'}
+                } ${v.firstHit || v.orientationNG || v.reachFail ? 'text-red-300' : 'text-emerald-300'}`}>
+                工程{i + 1} {
+                  v.reachFail ? `✕ フランジ不足(${v.reachFail.need.toFixed(1)}mm必要)`
+                  : v.orientationNG ? '要反転'
+                  : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で干渉（${(-v.firstHit.gap).toFixed(1)}mm）`
+                  : '○'
+                }
               </button>
             ))}
           </div>
@@ -1101,8 +1225,11 @@ const BendingSimulator = () => {
           干渉判定はヤゲン・中間板・ダイ（スタック含む）の全てに対して行います。
           板は中立軸で表現し、展開寸法（図面値 30 / 16.3 / 40、展開長86.3）で入力します。
           エアベンディングの肩支点近似で内Rとスプリングバックは無視、曲げ角度は90°まで。
-          判定は全ストロークを走査し、板厚の半分未満まで接近／侵入した点を干渉として橙色で表示します
-          （V肩・刃先の正規接触部は除外）。
+          判定は全ストロークを走査し、板厚の半分（余裕0.05mm）を超えて侵入した点を干渉として橙色で
+          表示します（正規接触部は板に沿った長さ＝弧長で除外。V肩に届かないフランジは「フランジ不足」
+          として別途判定）。曲げ済みの辺は片伸び相当ぶん伸びるものとして扱います（伸び値は暫定的に
+          K係数式から近似。上型ホルダ・実測ダイ台・Z曲げ段差の実績値は未移植 — 詳細は
+          <code>棚卸し_jsx移植と多曲げ設計_20260909.md</code> を参照）。
         </div>
       </div>
     </div>

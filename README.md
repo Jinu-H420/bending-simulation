@@ -11,8 +11,11 @@
 | ファイル / フォルダ | 内容 |
 |---|---|
 | `bending-simulator.jsx` | メインの2Dキネマティクス・シミュレーター（React本体） |
-| `bending-sim-step3.html` | AP100のDXFを読み込む単体HTMLツール（ブラウザで直接開ける） |
-| `dxf/` | 金型DXFライブラリ（`kanagata/` 35個＋`bending.dxf`／`ヤゲン.dxf`） |
+| `曲げ可否判断シート.html` | 4型（V12・V25・V32・V40）の曲げ可否判断シート（単体HTML・DXF実測のみ）。社内ミーティング配布用 |
+| `bending-sim-step3.html` | AP100のDXFを読み込む単体HTMLツール（曲げ線の自動検出まで） |
+| `bending-sim-step4.html` | AP100のDXFを曲げ線で分割し、各面の折り曲げ角度と断面を抽出する単体HTMLツール |
+| `dxf/` | 金型DXFライブラリ（`kanagata/` 35個＋`bending.dxf`／`ヤゲン.dxf`／`ホルダ.dxf`／`test/`） |
+| `参考資料/` | 出典資料（ベンダー折り曲げ表 xlsx・下逃げ表 csv・図面照合 png） |
 | `経緯まとめ.md` | 開発の全経緯・実装内容・TODO |
 | `index.html` / `src/` / `vite.config.js` | Vite実行環境の足場 |
 
@@ -48,10 +51,17 @@ npm run preview   # ビルド結果をローカル確認
 
 ---
 
-## AP100 DXF読み込みツール（`bending-sim-step3.html`）
+## 曲げ可否判断シート（`曲げ可否判断シート.html`）
 
-こちらは**単体HTML**なので、ビルド不要でブラウザに直接ドラッグ＆ドロップして開けます。
+**単体HTML**。ビルド不要・ネット接続不要（フォントのみ CDN）でブラウザに直接開けます。
+金型の断面・台・ヤゲン・上型ホルダの寸法はすべて社内DXFの実測値を埋め込んであり、推定値は入っていません。
+対応は現時点で HG2203 の V12・V25／HD3504NT の V32・V40 の4型のみ。
+
+## AP100 DXF読み込みツール（`bending-sim-step3.html` / `bending-sim-step4.html`）
+
+こちらも**単体HTML**なので、ビルド不要でブラウザに直接ドラッグ＆ドロップして開けます。
 DXFの解析ライブラリをCDNから読み込むため、**実行時にネット接続が必要**です。
+step3 は曲げ線の自動検出まで、step4 は曲げ線での分割・折り曲げ角度・断面抽出まで。
 
 ---
 

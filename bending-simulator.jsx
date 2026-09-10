@@ -797,6 +797,23 @@ function strokeState(prog, openGap) {
 // ============================================================================
 const NOBI_V_LIST = [8, 12, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160];
 const V_INNER_R = { 8: 1.3, 12: 2, 16: 2.6, 20: 3.3, 25: 4, 32: 5, 40: 6.5, 50: 8, 63: 10, 80: 13, 100: 16, 125: 20, 160: 26 };
+
+// ============================================================================
+// Z曲げの段差の最小（外-外）
+//  段差が小さいZは、2曲げ目で1曲げ目の立上りとヤゲンが同時に成立せず抜けない。
+//  断面の幾何は角を直角（内R=0）として計算しているので、実際より小さい値が出る。
+//  そのため実績が判明している組み合わせは実績を正とし、無い組み合わせだけ
+//  3×(曲げ内R＋板厚) の暫定値で埋める（実績2件 V12・t2.3＝12.3／V25・t6＝30 に
+//  合わせた式。経緯まとめ 第21〜22章）。
+// ============================================================================
+const ZMIN = { 12: { 2.3: 12.3 }, 25: { 6: 30 } };
+function zMinStep(V, t) {
+  const tb = ZMIN[V] || {};
+  if (tb[t] != null) return { val: tb[t], src: '実績' };
+  const r = V_INNER_R[V];
+  if (r == null) return null;
+  return { val: Math.round(3 * (r + t) * 10) / 10, src: '計算' };
+}
 const NOBI_TABLE = {
   鉄: {
     8: { 1.2: 1, 1.6: 1.3 },
@@ -1035,6 +1052,24 @@ const BendingSimulator = () => {
     if (inputMode !== 'outer' || !minOutLookup) return [];
     return outerSegs.map((L, i) => (L < minOutLookup.val ? i + 1 : null)).filter((x) => x != null);
   }, [inputMode, outerSegs, minOutLookup]);
+  // Z段差＝両隣の曲げが逆向きになっている辺。内Rのぶん、外-外でこの寸法を下回ると
+  // 2曲げ目で抜けない。段差の寸法は外-外で見るので、入力モードごとに外寸へ戻す。
+  const zStepWarn = useMemo(() => {
+    const need = zMinStep(nobiV, t);
+    if (!need) return [];
+    const outerOf = (k) =>
+      inputMode === 'outer' ? outerSegs[k]
+      : inputMode === 'inner' ? innerSegs[k] + 2 * t
+      : effSegs[k] + (nobiPerBend[k - 1] || 0) + (nobiPerBend[k] || 0);
+    const out = [];
+    for (let k = 1; k < effSegs.length - 1; k++) {
+      if (bends[k - 1].dir === bends[k].dir) continue;   // 同じ向きなら段差ではない
+      const outer = outerOf(k);
+      if (outer < need.val) out.push({ seg: k + 1, outer, val: need.val, src: need.src });
+    }
+    return out;
+  }, [effSegs, outerSegs, innerSegs, inputMode, bends, nobiPerBend, nobiV, t]);
+
   // 展開 → 曲げ上がりの実寸（シャープコーナー）への伸び。内寸モードは展開＝内寸なので片伸び＝板厚相当。
   const growPerBend = useMemo(
     () => (inputMode === 'inner' ? bends.map(() => t / 2) : nobiPerBend.map((n) => n - t / 2)),
@@ -1088,7 +1123,8 @@ const BendingSimulator = () => {
     });
   }, [part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends]);
 
-  const allOK = verdicts.every((v) => !v.firstHit && !v.orientationNG && !v.reachNG);
+  const noHit = verdicts.every((v) => !v.firstHit && !v.orientationNG && !v.reachNG);
+  const allOK = noHit && zStepWarn.length === 0;
 
   // --- 現在フレーム ---
   const frame = useMemo(() => {
@@ -1482,7 +1518,9 @@ const BendingSimulator = () => {
           allOK ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300'
                 : 'bg-red-950/60 border-red-700 text-red-300'}`}>
           <span className="text-lg">{allOK ? '○' : '✕'}</span>
-          {allOK ? '全工程 曲げ可能（干渉なし）' : '干渉あり — この段取りでは曲がりません'}
+          {allOK ? '全工程 曲げ可能（干渉なし）'
+            : !noHit ? '干渉あり — この段取りでは曲がりません'
+            : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
           <div className="ml-auto flex gap-2 flex-wrap">
             {verdicts.map((v, i) => (
               <button key={i}
@@ -1608,6 +1646,11 @@ const BendingSimulator = () => {
                       : `｜⚠ 表に ${matType}・V${nobiV} のデータなし（0扱い→片伸びを手入力してください）`}
                 </div>
                 <div className="text-slate-500">展開値: {effSegs.map((L) => L.toFixed(1)).join(' / ')}</div>
+                {zStepWarn.map((z) => (
+                  <div key={z.seg} className="text-rose-400">
+                    ⚠ 辺{z.seg} はZ段差。外-外 {z.outer.toFixed(1)}mm が最小 {z.val}mm（{z.src}）未満で抜けません
+                  </div>
+                ))}
                 {minOutWarn.length > 0 && (
                   <div className="text-rose-400">⚠ 最小外寸 {minOutLookup.val} 未満の辺: {minOutWarn.map((n) => `辺${n}`).join('・')}（曲げ不可の可能性）</div>
                 )}

@@ -389,6 +389,13 @@ function resolveDie(sel, vW, dieHalf, withBase = true) {
 }
 
 // パンチ組立体：ヤゲン＋中間板（DXFの実位置のまま一体で昇降）。ポリゴン配列を返す。
+// minGap に渡した工具の並び順に対応する名前。判定に「どこに当たったか」を出すため。
+// buildPunch は [ヤゲン, 中間板]（ストレートは1枚）を返す。
+const toolNames = (nDie, nPunch) => [
+  ...Array(nDie).fill('ダイ・台'),
+  ...(nPunch > 1 ? ['ヤゲン', '中間板'] : ['ヤゲン']),
+];
+
 function buildPunch(punchType, punchFlip, tipY, chukanSel) {
   if (punchType === 'straight') {
     return [PUNCH_STRAIGHT.map(([x, y]) => [punchFlip ? -x : x, y + tipY])];
@@ -553,7 +560,7 @@ function minGap(chain, tools, t, vHalf, exArc) {
   const parts = exArc != null && chain.vIdx != null ? splitChain(chain.pts, chain.vIdx, exArc) : [chain.pts];
   const samples = [];
   for (const pr of parts) samples.push(...sampleInBox(pr, G, 0.8));
-  let g = Infinity, at = null;
+  let g = Infinity, at = null, atIdx = -1;
   const hits = [];
   for (const p of samples) {
     for (let i = 0; i < tools.length; i++) {
@@ -562,11 +569,11 @@ function minGap(chain, tools, t, vHalf, exArc) {
       const poly = tools[i];
       const d = pointInPoly(p, poly) ? -distPoly(p, poly) : distPoly(p, poly);
       const clearance = d - t / 2;
-      if (clearance < g) { g = clearance; at = p; }
+      if (clearance < g) { g = clearance; at = p; atIdx = i; }
       if (clearance < -0.05) hits.push(p);
     }
   }
-  return { gap: g === Infinity ? margin - t / 2 : g, at, hits };
+  return { gap: g === Infinity ? margin - t / 2 : g, at, atIdx, hits };
 }
 
 // ============================================================================
@@ -766,11 +773,75 @@ const lookupNobi = (material, V, t) => lookupTable(NOBI_TABLE, material, V, t);
 const lookupMinOut = (material, V, t) => lookupTable(MINOUT_TABLE, material, V, t);
 
 // ============================================================================
+// 基準金型（ベンダー折り曲げ表 2022-04-01 の赤枠）
+//  実務は「この板厚ならこのV」で指示するので、板厚と材質から既定の金型を決める。
+//  V≒8t の機械的な計算ではなく、表に載っている組み合わせを正とする。
+// ============================================================================
+const BASEV = {
+  鉄: { 1.2: 'V12', 1.6: 'V12', 2.3: 'V12', 3.2: 'V20', 4.5: 'V25', 5: 'V40', 6: 'V40',
+        8: 'V50', 9: 'V80', 10: 'V80', 12: 'V100', 16: 'V125', 19: 'V160', 22: 'V160' },
+  縞: { 2.3: 'V25', 3.2: 'V40', 4.5: 'V40', 6: 'V40', 9: 'V80', 12: 'V80' },
+};
+// 基準金型名 → このライブラリでの選択値。断面の実測がある型を優先する。
+const BASEV_SEL = {
+  V12: 'ins:974061:stack', V20: 'ins:979061:stack', V25: 'ins:982061:stack',
+  V32: 'lib:03500:0', V40: 'lib:03600:0', V50: 'lib:03700:0', V63: 'lib:03800:0',
+  V80: 'lib:01360:0', V100: 'lib:01860:0', V125: 'lib:03900:0', V160: 'lib:01400:0',
+};
+// 表に無い板厚は最も近い行で代用し、代用したことを exact:false で伝える
+function pickDie(material, t) {
+  const tbl = BASEV[material];
+  if (!tbl) return null;
+  const keys = Object.keys(tbl).map(Number).sort((a, b) => a - b);
+  let k = keys.find((x) => Math.abs(x - t) < 1e-6);
+  const exact = k != null;
+  if (!exact) k = keys.reduce((best, x) => (Math.abs(x - t) < Math.abs(best - t) ? x : best), keys[0]);
+  const v = tbl[k];
+  return { v, sel: BASEV_SEL[v] || null, exact, tUsed: k };
+}
+
+// 入力した山谷どおりの「出来上がり形状」の断面。
+// 工程の断面図はプレス上での姿勢なので、アクティブな曲げは山谷に関わらず上向きに
+// 描かれる（上にしか曲げられないため）。つまり最後の曲げの山谷は工程図には出ない。
+// 指定した形を目で確かめられるように、これは別に描く。y は画面と同じで負が上。
+function finishedOutline(segs, bends) {
+  const pts = [[0, 0]];
+  let d = [1, 0];
+  let p = [0, 0];
+  segs.forEach((L, i) => {
+    p = [p[0] + d[0] * L, p[1] + d[1] * L];
+    pts.push(p);
+    if (i < bends.length) d = rotV(d, -rad(bends[i].angle) * bends[i].dir);
+  });
+  return pts;
+}
+
+// ============================================================================
 // 数値入力欄（スマホ対応）
 //  ・type="text" + inputMode="decimal" → iOSでも数字キーパッド、バックスペースが効く
 //  ・編集中は文字列を保持（空欄・"1." など途中状態も許可）→ 消してから打ち直せる
 //  ・スピナー（0.1刻みプルタブ）を廃止。値の確定は入力ごと、範囲チェックはblur時
 // ============================================================================
+// 出来上がり形状のミニ断面。入力した山谷がそのまま出るので、指定の確認に使う。
+function FinishedPreview({ segs, bends }) {
+  const pts = finishedOutline(segs, bends);
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const span = Math.max(x1 - x0, y1 - y0) || 1;
+  const m = span * 0.1;
+  const vb = `${x0 - m} ${y0 - m} ${x1 - x0 + 2 * m} ${y1 - y0 + 2 * m}`;
+  const sw = span / 55;
+  return (
+    <svg viewBox={vb} style={{ width: '100%', height: 108 }} preserveAspectRatio="xMidYMid meet">
+      <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke="#38bdf8"
+        strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={pts[0][0]} cy={pts[0][1]} r={sw * 1.7} fill="#f59e0b" />
+    </svg>
+  );
+}
+
 function NumField({ value, onChange, min, max, className }) {
   const [text, setText] = useState(String(value));
   const [focused, setFocused] = useState(false);
@@ -886,6 +957,12 @@ const BendingSimulator = () => {
     () => (inputMode === 'inner' ? bends.map(() => t / 2) : nobiPerBend.map((n) => n - t / 2)),
     [inputMode, bends, t, nobiPerBend]);
   const part = useMemo(() => ({ t, segs: effSegs, bends, grow: growPerBend }), [t, effSegs, bends, growPerBend]);
+  // 板厚・材質から基準金型（折り曲げ表の赤枠）を決め、変わったら金型を自動で切り替える。
+  // 手で選び直したものは、板厚か材質を変えるまでそのまま残る。
+  const baseDie = useMemo(() => pickDie(matType, t), [matType, t]);
+  useEffect(() => {
+    if (baseDie && baseDie.sel) setDieSel(baseDie.sel);
+  }, [baseDie && baseDie.sel]);
   const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase), [dieSel, vW, dieHalf, dieBase]);
   const diePolys = dieInfo.polys;
   const vHalf = dieInfo.vHalf;
@@ -909,7 +986,8 @@ const BendingSimulator = () => {
         const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
         if (g.gap < worst) worst = g.gap;
         if (g.gap < -0.05) {
-          firstHit = { prog: p, count: g.hits.length, gap: g.gap };
+          firstHit = { prog: p, count: g.hits.length, gap: g.gap,
+                       where: toolNames(diePolys.length, punchPolys.length)[g.atIdx] || null };
           break;
         }
       }
@@ -927,7 +1005,8 @@ const BendingSimulator = () => {
     const exArc = shoulderReach(vHalf, t, 90) + t;
     const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
     const guide = computeChain(part, seq, step, 0, vHalf); // 曲げ開始前（ストローク0%）
-    return { ch, punchPolys, hits: g.hits, gap: g.gap, guide };
+    const where = toolNames(diePolys.length, punchPolys.length)[g.atIdx] || null;
+    return { ch, punchPolys, hits: g.hits, gap: g.gap, where, guide };
   }, [part, seq, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap]);
 
   // --- 機械チェック（型合わせ・曲げ切り・部品出し入れ）---
@@ -1182,10 +1261,10 @@ const BendingSimulator = () => {
     if (frame.hits.length) {
       ctx.fillStyle = '#fb923c';
       ctx.font = 'bold 14px ui-monospace, monospace';
-      ctx.fillText(`⚠ 干渉検出：${frame.hits.length} 点　食い込み ${(-frame.gap).toFixed(2)}mm`, 16, H - 18);
+      ctx.fillText(`⚠ ${frame.where || '工具'}に干渉：${frame.hits.length} 点　食い込み ${(-frame.gap).toFixed(2)}mm`, 16, H - 18);
     } else if (Number.isFinite(frame.gap)) {
       ctx.fillStyle = '#64748b';
-      ctx.fillText(`最小すきま ${frame.gap.toFixed(2)}mm`, 16, H - 18);
+      ctx.fillText(`最小すきま ${frame.gap.toFixed(2)}mm（${frame.where || '工具'}）`, 16, H - 18);
     }
     } catch (err) {
       // 描画で例外が出ても画面全体を白くしない（前フレームを残す）
@@ -1260,7 +1339,15 @@ const BendingSimulator = () => {
 
   // --- 形状編集 ---
   const setSeg = (i, v) => setSegs(segs.map((s, k) => (k === i ? v : s)));
-  const setBend = (i, patch) => setBends(bends.map((b, k) => (k === i ? { ...b, ...patch } : b)));
+  const setBend = (i, patch) => {
+    setBends(bends.map((b, k) => (k === i ? { ...b, ...patch } : b)));
+    // 山谷を変えたら、その曲げを担当する工程のセット向きも合わせる。
+    // プレスは上にしか曲げられないので、谷曲げは板を裏返してセットするしかない。
+    // ここを手で合わせる作りだと、Z曲げのつもりがコの字として判定されてしまう。
+    if (patch.dir !== undefined) {
+      setSeq(seq.map((s) => (s.bend === i ? { ...s, valley: patch.dir < 0 } : s)));
+    }
+  };
   const addSeg = () => {
     setSegs([...segs, 30]);
     setOuterSegs([...outerSegs, 30]);
@@ -1305,7 +1392,7 @@ const BendingSimulator = () => {
                 className={`px-2.5 py-1 rounded text-xs font-mono border transition ${
                   step === i ? 'border-sky-400 bg-sky-900/40' : 'border-slate-700 bg-slate-900'
                 } ${v.firstHit || v.orientationNG || v.reachNG ? 'text-red-300' : 'text-emerald-300'}`}>
-                工程{i + 1} {v.orientationNG ? '要反転' : v.reachNG ? `✕ フランジ不足(${v.reachNG}mm必要)` : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で干渉 ${(-v.firstHit.gap).toFixed(1)}mm` : `○ 余裕${Number.isFinite(v.worst) ? v.worst.toFixed(1) : '—'}mm`}
+                工程{i + 1} {v.orientationNG ? '要反転' : v.reachNG ? `✕ フランジ不足(${v.reachNG}mm必要)` : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で${v.firstHit.where || '工具'}に干渉 ${(-v.firstHit.gap).toFixed(1)}mm` : `○ 余裕${Number.isFinite(v.worst) ? v.worst.toFixed(1) : '—'}mm`}
               </button>
             ))}
           </div>
@@ -1460,6 +1547,12 @@ const BendingSimulator = () => {
                 </React.Fragment>
               ))}
             </div>
+
+            {/* 工程の断面図はプレス上での姿勢なので、山谷の指定はこちらで確認する */}
+            <div className="mt-3 rounded border border-slate-800 bg-slate-950/60 px-2 py-1.5">
+              <div className="text-[11px] text-slate-500 mb-0.5">出来上がり形状（山谷の指定どおり）</div>
+              <FinishedPreview segs={effSegs} bends={bends} />
+            </div>
           </div>
 
           {/* 金型・段取り */}
@@ -1498,6 +1591,21 @@ const BendingSimulator = () => {
                   ? `✓ 部品の出し入れ可（余裕 ${machineCheck.loadMargin.toFixed(1)}mm）`
                   : `✗ 上死点でも部品が抜けません（${(-machineCheck.loadMargin).toFixed(1)}mm干渉）`}
               </span>
+            </div>
+            {/* どの金型が「表どおり」なのかを示す。手で替えたときに戻し方が分かるように */}
+            <div className="text-[11px] font-mono mb-2">
+              {baseDie
+                ? <span className={dieSel === baseDie.sel ? 'text-emerald-400' : 'text-amber-400'}>
+                    基準金型 {baseDie.v}（{matType}・t{baseDie.exact ? t : `${t}→表のt${baseDie.tUsed}で代用`}／折り曲げ表 2022-04-01）
+                    {dieSel === baseDie.sel ? ' — 選択中' : ' — いまは別の金型を選んでいます'}
+                    {dieSel !== baseDie.sel && baseDie.sel && (
+                      <button onClick={() => setDieSel(baseDie.sel)}
+                        className="ml-2 px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">
+                        基準金型に戻す
+                      </button>
+                    )}
+                  </span>
+                : <span className="text-slate-500">基準金型 — {matType} の表がありません</span>}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2">
               <label className="flex items-center gap-1.5">

@@ -3,3 +3,10 @@ dist/
 .vite/
 *.log
 dist-single/
+
+# 作業中に出た一時ファイル・退避（成果物ではないので入れない）
+*.zip
+*.bak
+*.bak2
+*.tmp.js
+.claude/settings.local.json

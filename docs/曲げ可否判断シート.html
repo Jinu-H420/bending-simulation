@@ -699,7 +699,15 @@ function render(){
   const res=rs.reduce((a,b)=>a.worstP<b.worstP?a:b);
   const okReach=res.reachW&&res.reachH&&res.reachH2, okP=res.worstP>-0.05, okD=res.worstD>-0.05;
   const okUp = res.up>-0.05;
-  const ok=okReach&&okP&&okD&&okUp&&okWin, fitV=die.V>=4*t&&die.V<=20*t;
+  // 折り曲げ表の最小外寸。幾何（V肩に届くか）より厳しいことが多いので、これも見る。
+  // 表は外寸なので、展開に隣接する曲げの数ぶんの片伸びを足して外寸に直して比べる。
+  const moT=(D.MINOUT[state.mat]||{})[Math.round(die.V)]||{};
+  const moK=Object.keys(moT).map(Number);
+  const mo=moK.length?moT[moK.includes(t)?t:moK.reduce((a,b)=>Math.abs(b-t)<Math.abs(a-t)?b:a)]:null;
+  const moOuter=[H+nobi, W+2*nobi, H2+nobi];
+  const okMinOut = mo==null || moOuter.every(x=>x>=mo);
+  const moShort = okMinOut?null:['H1','W','H2'][moOuter.findIndex(x=>x<mo)];
+  const ok=okReach&&okP&&okD&&okUp&&okWin&&okMinOut, fitV=die.V>=4*t&&die.V<=20*t;
   $('#i-flat').innerHTML =
     (state.mode==='flat'?'':`<p class="eyebrow" style="margin:0">展開（切板）　H1 <b>${f1(H)}</b> ／ W <b>${f1(W)}</b> ／ H2 <b>${f1(H2)}</b>　合計 <b>${f1(H+W+H2)}</b> mm</p>`)
     +`<p class="note" style="margin:1px 0 0">判定に使う曲げ上がりの実寸　H1 <b>${f1(H+grow)}</b> ／ W <b>${f1(W+2*grow)}</b> ／ H2 <b>${f1(H2+grow)}</b> mm</p>`
@@ -727,9 +735,12 @@ function render(){
     }
   }
   const rows=[
-    [okReach?'ok':'ng', f1(res.need+0.5), 'A 溝に落ちる', okReach
-      ? `H1・W・H2 とも最小フランジ <b>${f1(res.need+0.5)}mm</b> 以上`
-      : `最小フランジ <b>${f1(res.need+0.5)}mm</b> に対し ${short}mm。溝に落ちます`],
+    [(okReach&&okMinOut)?'ok':'ng', f1(Math.max(res.need+0.5+t/2, mo==null?0:mo)), 'A 溝に落ちる',
+      (okReach&&okMinOut)
+      ? `H1・W・H2 とも足りています（折り曲げ表の最小外寸 <b>${mo==null?'—':f1(mo)}mm</b> ／ 幾何 <b>${f1(res.need+0.5+t/2)}mm</b>・いずれも外寸）`
+      : !okReach
+        ? `最小フランジ <b>${f1(res.need+0.5)}mm</b> に対し ${short}mm。溝に落ちます`
+        : `折り曲げ表の最小外寸 <b>${f1(mo)}mm</b> に対し ${moShort}＝<b>${f1(moOuter[['H1','W','H2'].indexOf(moShort)])}mm</b>。溝に落ちます`],
     [okP?'ok':'ng', (res.worstP>0?'+':'')+f1(res.worstP), 'B ヤゲンに当たる', okP
       ? `ヤゲンとのすきま <b>${f1(res.worstP)}mm</b>（${res.flip?'背中側':'逃げ側'}向き）`
       : `${f1(-res.worstP)}mm 食い込みます。W を <b>${need?f1(need)+'mm':'—'}</b> 以上に、または向きを変える／ヤゲンを替える`],

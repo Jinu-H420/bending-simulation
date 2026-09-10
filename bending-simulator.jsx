@@ -846,6 +846,11 @@ const V_INNER_R = { 8: 1.3, 12: 2, 16: 2.6, 20: 3.3, 25: 4, 32: 5, 40: 6.5, 50: 
 //  合わせた式。経緯まとめ 第21〜22章）。
 // ============================================================================
 const ZMIN = { 12: { 2.3: 12.3 }, 25: { 6: 30 } };
+
+// 捨て曲げ＝底を一旦への字に曲げ、両サイドを90°まで曲げてから、底を曲げ戻す手。
+// 上型に当たって普通には曲がらない形でも、底の内-内がこれ以上あれば曲げ戻せるので作れる。
+// 曲げ戻すときに底がダイの上で開ける必要があるため、この寸法が要る（経緯まとめ 第17章）。
+const SUTE_MIN_INNER = 120;
 function zMinStep(V, t) {
   const tb = ZMIN[V] || {};
   if (tb[t] != null) return { val: tb[t], src: '実績' };
@@ -1168,6 +1173,24 @@ const BendingSimulator = () => {
   const punchSpecial = PUNCH_LIB[punchType] ? PUNCH_LIB[punchType].special : null;
   const winNG = punchSpecial && bendLen > punchSpecial.win ? punchSpecial : null;
   const allOK = noHit && zStepWarn.length === 0 && !winNG;
+
+  // 捨て曲げが使えるか。効くのは上型（ヤゲン・中間板・ホルダ・柱）に当たって
+  // いる場合だけで、フランジ不足やダイ側の干渉は捨て曲げでも解決しない。
+  // 対象は両隣の曲げが同じ向きの辺＝コの字・ハットの底。
+  const suteHint = useMemo(() => {
+    if (allOK) return null;
+    const upperHit = verdicts.some((v) => v.firstHit &&
+      ['ヤゲン', '中間板', 'ホルダ', '柱（機械上部）', 'ヤゲン（中低）'].includes(v.firstHit.where));
+    if (!upperHit) return null;
+    let best = null;
+    for (let k = 1; k < effSegs.length - 1; k++) {
+      if (bends[k - 1].dir !== bends[k].dir) continue;   // 逆向きなら底ではない
+      // 曲げ上がりの実寸（シャープコーナー）から板厚を引くと内-内になる
+      const inner = effSegs[k] + (growPerBend[k - 1] || 0) + (growPerBend[k] || 0) - t;
+      if (!best || inner > best.inner) best = { seg: k + 1, inner };
+    }
+    return best ? { ...best, ok: best.inner >= SUTE_MIN_INNER } : null;
+  }, [allOK, verdicts, effSegs, bends, growPerBend, t]);
 
   // --- 現在フレーム ---
   const frame = useMemo(() => {
@@ -1577,6 +1600,17 @@ const BendingSimulator = () => {
             ))}
           </div>
         </div>
+
+        {/* 捨て曲げの逃げ道。普通に曲がらないときだけ出す */}
+        {suteHint && (
+          <div className={`rounded-md px-4 py-2 mb-3 border text-xs ${
+            suteHint.ok ? 'bg-amber-950/50 border-amber-700 text-amber-200'
+                        : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+            {suteHint.ok
+              ? `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。捨て曲げなら作れます — 底を一旦への字に曲げ、両サイドを90°にしてから底を曲げ戻す`
+              : `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。捨て曲げにも内-内 ${SUTE_MIN_INNER}mm 要るので、この形では逃げ道がありません`}
+          </div>
+        )}
 
         {/* キャンバス */}
         <div className="border border-slate-800 rounded-md overflow-hidden bg-black relative">

@@ -855,6 +855,72 @@ const SUTE_MIN_INNER = 120;
 // 金型の所有（ベンダー折り曲げ金型寸法表）。ダイは1台835mmなので、
 // 何台持っているかで一度に曲げられる長さの上限が決まる。
 // V63 は1台しかないので835mmまで、V32 は2台で1670mmまで。
+
+// ============================================================================
+// 下逃げ（理由C）— 曲げ線の脇で板が下へ回り込む形が、ダイ本体や台に当たるか
+//  「曲げ線から w mm 離れていれば、下へ d mm まで下がれる」という表。
+//  実測の台がある金型は台そのものを工具として干渉判定に入れているのでそちらで見る。
+//  台の実測が無い金型（V63 など）や、選んだ機械と台の機械が違うときは、
+//  下に何も無いことになって当たりを見逃すので、そこだけこの表で代わりに見る。
+// ============================================================================
+const DOWNMAX_W = [10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 120, 150, 200];
+// [V幅][板厚] = 各距離で下へ何mmまで下がれるか。null＝不可、floor＝床まで
+const DOWNMAX = {
+  12: {
+    1.2: [49, 95, 95, 95, 95, 95, 95, 95, 95, 95, 185, 185, 185, 185, 185, 235, 235],
+    1.6: [49, 95, 95, 95, 95, 95, 95, 95, 95, 95, 185, 185, 185, 185, 185, 235, 235],
+    2.3: [49, 95, 95, 95, 95, 95, 95, 95, 95, 95, 185, 185, 185, 185, 185, 235, 235],
+  },
+  25: {
+    3.2: [null, null, 94, 94, 94, 94, 94, 94, 94, 94, 184, 184, 184, 184, 184, 234, 234],
+    4.5: [null, null, 94, 94, 94, 94, 94, 94, 94, 94, 184, 184, 184, 184, 184, 234, 234],
+    6: [null, null, 94, 94, 94, 94, 94, 94, 94, 94, 184, 184, 184, 184, 184, 234, 234],
+  },
+  32: {
+    3.2: [null, null, null, 0, 42, 42, 50, 58, 97, 97, 97, 97, 97, 97, 125, 'floor', 'floor'],
+    4.5: [null, null, null, 0, 42, 42, 49, 58, 97, 97, 97, 97, 97, 97, 125, 'floor', 'floor'],
+    6: [null, null, null, 0, 0, 42, 48, 57, 98, 98, 98, 98, 98, 98, 126, 'floor', 'floor'],
+  },
+  40: {
+    3.2: [null, null, null, 0, 5, 42, 50, 58, 97, 97, 97, 97, 97, 97, 125, 'floor', 'floor'],
+    4.5: [null, null, null, null, 5, 42, 49, 58, 97, 97, 97, 97, 97, 97, 125, 'floor', 'floor'],
+    6: [null, null, null, null, 0, 43, 48, 57, 98, 98, 98, 98, 98, 98, 125, 'floor', 'floor'],
+    9: [null, null, null, null, 0, 42, 47, 56, 97, 97, 97, 97, 97, 97, 125, 'floor', 'floor'],
+  },
+  63: {
+    9: [null, null, null, null, null, null, null, 71, 111, 111, 111, 111, 111, 111, 139, 'floor', 'floor'],
+  },
+};
+// 距離 w での許容深さ。null＝どんな浅い下がりも不可、'floor'＝床まで可
+function downAllow(V, t, w) {
+  const byT = DOWNMAX[V];
+  if (!byT) return undefined;
+  const ts = Object.keys(byT).map(Number);
+  const tt = ts.includes(t) ? t : ts.reduce((a, b) => (Math.abs(b - t) < Math.abs(a - t) ? b : a));
+  const row = byT[tt];
+  let v = null;
+  for (let i = 0; i < DOWNMAX_W.length; i++) if (DOWNMAX_W[i] <= w) v = row[i];
+  return v;
+}
+// 板のうちダイ上面より下に来る点を見て、表の許容を超えていないか調べる
+function downCheck(chain, V, t, vHalf) {
+  if (!DOWNMAX[V]) return null;
+  let worst = null;
+  for (const [x, y] of densify(chain.pts, 2)) {
+    if (y <= 0) continue;                 // ダイ上面より上は対象外
+    const w = Math.abs(x);
+    if (w < vHalf + t) continue;          // V溝の中は当たって当たり前
+    const a = downAllow(V, t, w);
+    if (a === 'floor') continue;
+    const lim = a == null ? 0 : a;
+    if (y > lim) {
+      const over = y - lim;
+      if (!worst || over > worst.over) worst = { w, depth: y, allow: a, over };
+    }
+  }
+  return worst;
+}
+
 const DIE_UNIT_LEN = 835;
 const DIE_STOCK = { 8: 5, 12: 5, 16: 5, 20: 5, 25: 5, 32: 2, 40: 5, 50: 5, 63: 1, 80: 5, 100: 5, 125: 5, 160: 5 };
 function zMinStep(V, t) {
@@ -1188,7 +1254,22 @@ const BendingSimulator = () => {
     return c.length ? c.reduce((a, b) => (a.v <= b.v ? a : b)) : null;
   }, [nobiV, machineSel]);
   const lenNG = lenLimit && bendLen > lenLimit.v ? lenLimit : null;
-  const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG;
+
+  // 台の実測が使えていない金型のときだけ、下逃げの表で当たりを見る
+  const downWarn = useMemo(() => {
+    if (!dieInfo || dieInfo.baseKind === 'measured' || !DOWNMAX[nobiV]) return null;
+    let worst = null;
+    for (let si = 0; si < seq.length; si++) {
+      for (let p = 0; p <= 1.0001; p += 0.1) {
+        const { bendProg } = strokeState(p, openGap);
+        const ch = computeChain(part, seq, si, bendProg, vHalf);
+        const dc = downCheck(ch, nobiV, t, vHalf);
+        if (dc && (!worst || dc.over > worst.over)) worst = { ...dc, step: si + 1 };
+      }
+    }
+    return worst;
+  }, [dieInfo, nobiV, t, vHalf, part, seq, openGap]);
+  const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG && !downWarn;
 
   // 捨て曲げが使えるか。効くのは上型（ヤゲン・中間板・ホルダ・柱）に当たって
   // いる場合だけで、フランジ不足やダイ側の干渉は捨て曲げでも解決しない。
@@ -1604,6 +1685,7 @@ const BendingSimulator = () => {
             : !noHit ? '干渉あり — この段取りでは曲がりません'
             : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
             : lenNG ? `曲げ長さ ${bendLen}mm が上限 ${lenNG.v}mm を超えています — ${lenNG.why}`
+            : downWarn ? `下がりがダイ・台に当たります — 曲げ線から ${downWarn.w.toFixed(0)}mm で ${downWarn.depth.toFixed(0)}mm 下がっています`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
           <div className="ml-auto flex gap-2 flex-wrap">
             {verdicts.map((v, i) => (
@@ -1617,6 +1699,15 @@ const BendingSimulator = () => {
             ))}
           </div>
         </div>
+
+        {/* 下逃げ（台の実測が無い金型のときだけ表で見ている） */}
+        {downWarn && (
+          <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-red-950/40 border-red-800 text-red-200">
+            ⚠ 工程{downWarn.step}：曲げ線から {downWarn.w.toFixed(0)}mm のところで {downWarn.depth.toFixed(1)}mm 下がっていますが、
+            この金型は {downWarn.allow == null ? 'その距離では下げられません' : `${downWarn.allow}mm までです`}
+            （台の実測が無いので折り曲げ表の下逃げで判定しています）
+          </div>
+        )}
 
         {/* 捨て曲げの逃げ道。普通に曲がらないときだけ出す */}
         {suteHint && (

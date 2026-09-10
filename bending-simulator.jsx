@@ -944,6 +944,37 @@ function downCheck(chain, V, t, vHalf) {
 
 const DIE_UNIT_LEN = 835;
 const DIE_STOCK = { 8: 5, 12: 5, 16: 5, 20: 5, 25: 5, 32: 2, 40: 5, 50: 5, 63: 1, 80: 5, 100: 5, 125: 5, 160: 5 };
+// シミュレーターの幾何だけで、その段差をどこまで小さくできるかを探す。
+// 実績と並べて見せるためのもの。判定そのものは実績（ZMIN）と干渉判定の
+// 両方で行うので、ここで出す値は「幾何だけならここまで」という参考。
+// 全ストローク走査を何度も回すので、刻みは粗め（0.1）にしてある。
+function simMinStep(part, seq, k, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap) {
+  const t = part.t;
+  const exArc = shoulderReach(vHalf, t, 90) + t;
+  const feasible = (val) => {
+    const segs = part.segs.slice();
+    segs[k] = val;
+    const p2 = { ...part, segs };
+    for (let si = 0; si < seq.length; si++) {
+      if (!reachCheck(p2, seq, si, vHalf).ok) return false;
+      for (let p = 0; p <= 1.0001; p += 0.1) {
+        const { bendProg, lift } = strokeState(p, openGap);
+        const ch = computeChain(p2, seq, si, bendProg, vHalf);
+        if (!ch.activeDirOK) return false;
+        const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
+        if (minGap(ch, tools.polys, t, vHalf, exArc).gap < -0.05) return false;
+      }
+    }
+    return true;
+  };
+  let hi = Math.max(part.segs[k] * 2, 60);
+  if (!feasible(hi)) return null;          // いくら広げても通らない＝段差以外が原因
+  let lo = 0.5;
+  if (feasible(lo)) return lo;
+  for (let i = 0; i < 8; i++) { const m = (lo + hi) / 2; if (feasible(m)) hi = m; else lo = m; }
+  return hi;                                // 展開（ブランク）での値
+}
+
 function zMinStep(V, t) {
   const tb = ZMIN[V] || {};
   if (tb[t] != null) return { val: tb[t], src: '実績' };
@@ -1192,9 +1223,9 @@ const BendingSimulator = () => {
   }, [inputMode, outerSegs, minOutLookup]);
   // Z段差＝両隣の曲げが逆向きになっている辺。内Rのぶん、外-外でこの寸法を下回ると
   // 2曲げ目で抜けない。段差の寸法は外-外で見るので、入力モードごとに外寸へ戻す。
-  const zStepWarn = useMemo(() => {
+  // 両隣の曲げが逆向きの辺＝Z段差。違反していなくても実績値と並べて見せる。
+  const zSteps = useMemo(() => {
     const need = zMinStep(nobiV, t);
-    if (!need) return [];
     const outerOf = (k) =>
       inputMode === 'outer' ? outerSegs[k]
       : inputMode === 'inner' ? innerSegs[k] + 2 * t
@@ -1203,10 +1234,13 @@ const BendingSimulator = () => {
     for (let k = 1; k < effSegs.length - 1; k++) {
       if (bends[k - 1].dir === bends[k].dir) continue;   // 同じ向きなら段差ではない
       const outer = outerOf(k);
-      if (outer < need.val) out.push({ seg: k + 1, outer, val: need.val, src: need.src });
+      out.push({ seg: k + 1, k, outer,
+                 val: need ? need.val : null, src: need ? need.src : null,
+                 ok: !need || outer >= need.val });   // シミュレーション側は干渉判定が別に見る
     }
     return out;
   }, [effSegs, outerSegs, innerSegs, inputMode, bends, nobiPerBend, nobiV, t]);
+  const zStepWarn = zSteps.filter((z) => !z.ok);
 
   // 展開 → 曲げ上がりの実寸（シャープコーナー）への伸び。内寸モードは展開＝内寸なので片伸び＝板厚相当。
   const growPerBend = useMemo(
@@ -1260,6 +1294,19 @@ const BendingSimulator = () => {
       return { orientationNG, firstHit, reachNG, worst };
     });
   }, [part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends]);
+
+  // シミュレーションの幾何だけで見た最小段差。実績と見比べるために出す。
+  // 重い処理なのでZ段差が実際にある形のときだけ、最初の1か所について計算する。
+  const zSim = useMemo(() => {
+    if (!zSteps.length) return null;
+    const k = zSteps[0].k;
+    const flat = simMinStep(part, seq, k, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap);
+    if (flat == null) return null;
+    // 展開 → 外-外 に戻して実績と同じ土俵にする
+    const outer = inputMode === 'inner' ? flat + 2 * t
+      : flat + (nobiPerBend[k - 1] || 0) + (nobiPerBend[k] || 0);
+    return { seg: zSteps[0].seg, flat, outer };
+  }, [zSteps, part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap, inputMode, nobiPerBend, t]);
 
   const noHit = verdicts.every((v) => !v.firstHit && !v.orientationNG && !v.reachNG);
   // 特殊ヤゲン（中低）は中央の窓の中でしか使えない。窓を超えると両端の全高部に当たる。
@@ -1854,11 +1901,22 @@ const BendingSimulator = () => {
                       : `｜⚠ 表に ${matType}・V${nobiV} のデータなし（0扱い→片伸びを手入力してください）`}
                 </div>
                 <div className="text-slate-500">展開値: {effSegs.map((L) => L.toFixed(1)).join(' / ')}</div>
-                {zStepWarn.map((z) => (
-                  <div key={z.seg} className="text-rose-400">
-                    ⚠ 辺{z.seg} はZ段差。外-外 {z.outer.toFixed(1)}mm が最小 {z.val}mm（{z.src}）未満で抜けません
-                  </div>
-                ))}
+                {zSteps.map((z) => {
+                  const sim = zSim && zSim.seg === z.seg ? zSim.outer : null;
+                  const bind = Math.max(z.val != null ? z.val : 0, sim != null ? sim : 0) || null;
+                  const ng = bind != null && z.outer < bind;
+                  return (
+                    <div key={z.seg} className={ng ? 'text-rose-400' : 'text-slate-400'}>
+                      {ng ? '⚠' : '◇'} 辺{z.seg} はZ段差 — いま 外-外 {z.outer.toFixed(1)}mm
+                      {z.val != null && (z.src === '実績'
+                        ? <>　／　実績 <b className="text-slate-200">{z.val}mm</b></>
+                        : <>　／　表の計算 <b className="text-slate-200">{z.val}mm</b>（実績なし）</>)}
+                      {sim != null && <>　／　シミュレーション <b className="text-slate-200">{sim.toFixed(1)}mm</b></>}
+                      {bind != null && <>　→ 厳しいほう <b className="text-slate-200">{bind.toFixed(1)}mm</b> で見ています</>}
+                      {ng && '　✕ 抜けません'}
+                    </div>
+                  );
+                })}
                 {minOutWarn.length > 0 && (
                   <div className="text-rose-400">⚠ 最小外寸 {minOutLookup.val} 未満の辺: {minOutWarn.map((n) => `辺${n}`).join('・')}（曲げ不可の可能性）</div>
                 )}

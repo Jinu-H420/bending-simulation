@@ -344,16 +344,32 @@ const DIE_MOUNT = {
   ] },
 };
 // 台つきのダイは parts をそのまま使う（描画も干渉判定も図面どおり）
-function mountParts(sel) {
+// 台（ホルダ・ベース・ベッド）は機械ごとにまったく別物。選んでいる機械と違う台を
+// 当てはめると図面と違うものを見せることになるので、機械が一致するときだけ出す。
+function mountParts(sel, machine) {
   const m = DIE_MOUNT[sel];
-  return m ? m.parts.map((p) => p.map(([x, y]) => [x, y])) : null;
+  if (!m) return null;
+  if (machine && m.machine !== machine) return null;
+  return m.parts.map((p) => p.map(([x, y]) => [x, y]));
 }
 
 const dieMountInfo = (sel) => DIE_MOUNT[sel] || null;
 
 // ダイ選択の解決：{ polys:[...], vHalf, note } を返す
 // sel: 'v12stack' | 'flat' | 'lib:ID:溝index' | 'ins:ID:solo' | 'ins:ID:stack'
-function resolveDie(sel, vW, dieHalf, withBase = true) {
+// 台をどう扱ったかを一言で返す。「なぜ下に何も無いのか」が画面で分かるように。
+function baseNote(mp, sel, machine, stack) {
+  if (mp) return '＋台（図面実測）';
+  const mi = DIE_MOUNT[sel];
+  if (mi && machine && mi.machine !== machine) {
+    const mn = MACHINE_LIB[mi.machine] ? MACHINE_LIB[mi.machine].name : mi.machine;
+    return `（台なし・実測台は ${mn} 用のみ）`;
+  }
+  if (stack) return '＋スタック（bending.dxf の一般化・参考）';
+  return '（台なし・この金型は取付図の実測がありません）';
+}
+
+function resolveDie(sel, vW, dieHalf, withBase = true, machine = null) {
   if (sel === 'flat') {
     const vh = vW / 2;
     const W = Math.max(dieHalf, vh + 2);
@@ -367,11 +383,14 @@ function resolveDie(sel, vW, dieHalf, withBase = true) {
   const d = DIE_LIB[id];
   if (mode === 'ins') {
     const stack = sub === 'stack';
-    const mp = withBase ? mountParts(sel) : null;
-    const polys = mp || [d.pts];
+    const mp = withBase ? mountParts(sel, machine) : null;
+    // 実測の台が無いときは、bending.dxf のホルダ・ベースを一般化した形で代用する。
+    // 何も描かないとインサートが宙に浮き、下に当たる相手がいない判定になってしまう。
+    const polys = mp || (stack ? [d.pts, mirrorClose(INSERT_STACK_RIGHT)] : [d.pts]);
     const vh = grooveVHalf([d.pts], d.grooves[0][2], d.grooves[0][1]);
     return { polys, mount: dieMountInfo(sel), vHalf: vh, maxDepth: d.grooves[0][2],
-             note: `${id} ${d.name}${mp ? '＋台（図面実測）' : '（台なし）'}` };
+             baseKind: mp ? 'measured' : stack ? 'generic' : 'none',
+             note: `${id} ${d.name}${baseNote(mp, sel, machine, stack)}` };
   }
   // lib:ID:gi
   const gi = Number(sub) || 0;
@@ -381,10 +400,11 @@ function resolveDie(sel, vW, dieHalf, withBase = true) {
   const g = d.grooves[Math.min(gi, d.grooves.length - 1)];
   const block = [d.pts.map(([x, y]) => [x - g[0], y])];
   const vh = grooveVHalf(block, g[2], g[1]);
-  const mp = withBase ? mountParts(sel) : null;
+  const mp = withBase ? mountParts(sel, machine) : null;
   const polys = mp || block;
   return { polys, mount: dieMountInfo(sel), vHalf: vh,
-           note: `${id} ${d.name}｜V幅${(vh * 2).toFixed(1)}・深さ${g[2]}${mp ? '＋台（図面実測）' : '（台なし）'}`,
+           baseKind: mp ? 'measured' : 'none',
+           note: `${id} ${d.name}｜V幅${(vh * 2).toFixed(1)}・深さ${g[2]}${baseNote(mp, sel, machine, false)}`,
            maxDepth: g[2] };
 }
 
@@ -675,12 +695,12 @@ function dieCandidates(t, minFlange) {
     .sort((a, b) => Math.abs(a.vHalf * 2 - 8 * t) - Math.abs(b.vHalf * 2 - 8 * t));
 }
 
-function searchTools(part, vW, dieHalf, chukanSel, maxCombos = 8, withBase = true) {
+function searchTools(part, vW, dieHalf, chukanSel, maxCombos = 8, withBase = true, machine = null) {
   const minFlange = Math.min(...part.segs);
   const dies = dieCandidates(part.t, minFlange);
   const found = [];
   for (const dc of dies) {
-    const info = resolveDie(dc.sel, vW, dieHalf, withBase);
+    const info = resolveDie(dc.sel, vW, dieHalf, withBase, machine);
     for (const pid of Object.keys(PUNCH_LIB)) {
       for (const flip of [false, true]) {
         const { sols } = searchSequences(part, info.vHalf, info.polys, pid, flip, chukanSel, 1);
@@ -963,7 +983,18 @@ const BendingSimulator = () => {
   useEffect(() => {
     if (baseDie && baseDie.sel) setDieSel(baseDie.sel);
   }, [baseDie && baseDie.sel]);
-  const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase), [dieSel, vW, dieHalf, dieBase]);
+  const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase, machineSel),
+    [dieSel, vW, dieHalf, dieBase, machineSel]);
+
+  // 板厚→金型→V幅→片伸び を繋ぐ。金型が変われば伸び値の引く列も変わるのが実務。
+  // 手で入れた片伸びの上書きは、金型が変わった時点で解除する。
+  const dieV = dieInfo && dieInfo.vHalf ? dieInfo.vHalf * 2 : null;
+  useEffect(() => {
+    if (dieV == null) return;
+    const col = NOBI_V_LIST.reduce((b, v) => (Math.abs(v - dieV) < Math.abs(b - dieV) ? v : b), NOBI_V_LIST[0]);
+    setNobiV(col);
+    setNobiOverride(null);
+  }, [dieV]);
   const diePolys = dieInfo.polys;
   const vHalf = dieInfo.vHalf;
   const openGap = Math.max(0, OPEN_GAP_MM - t); // 刃先がV金型上面の170mm上になる開き量
@@ -1718,7 +1749,7 @@ const BendingSimulator = () => {
               </button>
               <button
                 onClick={() => {
-                  const r = searchTools(part, vW, dieHalf, chukanSel, 8, dieBase);
+                  const r = searchTools(part, vW, dieHalf, chukanSel, 8, dieBase, machineSel);
                   setToolResults(r); setSeqResults(null);
                 }}
                 className="px-3 py-1 text-xs rounded bg-sky-700 hover:bg-sky-600 text-white">

@@ -91,6 +91,36 @@ const PUNCH_LIB = {
   },
 };
 
+// ============================================================================
+// 特殊ヤゲン（中低）— 中央だけ高さ37mmまで落としたヤゲン。断面は 00402 を切ったもの。
+// 曲げ長さが中央の窓に収まっていれば、両端の全高部にも上型ホルダにも当たらないので、
+// 背の高いコの字が曲がる。窓を超えると両端に当たる（断面では見えないので長さで判定）。
+// ============================================================================
+const SPECIAL_MID = 37;
+const SPECIAL_PUNCH = [
+  { id: '特殊 くの字165', base: '00402', win: 200, end: 65, total: 330,
+    note: 'くの字・両逃がし／両端165＋165＝330・窓200' },
+  { id: '特殊 くの字100', base: '00402', win: 70, end: 65, total: 200,
+    note: 'くの字・両逃がし／両端100＋100＝200・窓70' },
+];
+// 刃先から高さ mid までを残して上を切り落とす（刃先が y=0・上が負）
+function clipLow(pts, mid) {
+  const ym = -mid, out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    if (a[1] >= ym) out.push(a);
+    if ((a[1] - ym) * (b[1] - ym) < 0) {
+      const f = (ym - a[1]) / (b[1] - a[1]);
+      out.push([a[0] + f * (b[0] - a[0]), ym]);
+    }
+  }
+  return out;
+}
+SPECIAL_PUNCH.forEach((s) => {
+  const b = PUNCH_LIB[s.base];
+  if (b) PUNCH_LIB[s.id] = { pts: clipLow(b.pts, SPECIAL_MID), special: s };
+});
+
 // ダイライブラリ（金型.dxf 実測）。上面＝y0、下向き＝正。grooves=[中心x, 半幅, 深さ]。
 const DIE_LIB = {
   '01360': { name: 'V80', kind: 'v', grooves: [[0.0, 42.65, 41.27]],
@@ -480,6 +510,15 @@ function placeRam(punchType, punchFlip, tipY) {
 // 干渉判定に渡す工具ひとそろい。ヤゲンだけ見ていると、背の高い形状で
 // ホルダに当たるのを見逃す（経緯まとめ 第13章・棚卸し E7〜E9）。
 function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
+  const sp = PUNCH_LIB[punchType] && PUNCH_LIB[punchType].special;
+  if (sp) {
+    // 中央の窓の上には何も無いので、中間板もホルダも柱も当たりようがない。
+    // 窓に収まっているかは曲げ長さで別に見る。
+    const tool = PUNCH_LIB[punchType].pts.map(([x, y]) => [punchFlip ? -x : x, y + tipY]);
+    return { punchPolys: [tool], holder: null, ram: null,
+             polys: [...diePolys, tool],
+             names: [...Array(diePolys.length).fill('ダイ・台'), 'ヤゲン（中低）'] };
+  }
   const punchPolys = buildPunch(punchType, punchFlip, tipY, chukanSel);
   const holder = placeHolder(punchType, punchFlip, tipY);
   const ram = placeRam(punchType, punchFlip, tipY);
@@ -1008,6 +1047,7 @@ const BendingSimulator = () => {
   const [dieHalf, setDieHalf] = useState(30);
   const [dieBase, setDieBase] = useState(true); // ダイの下の台（ホルダ・ベース）を干渉判定に含める
   const [punchType, setPunchType] = useState('904061');
+  const [bendLen, setBendLen] = useState(100);   // 曲げ長さ（特殊ヤゲンの窓判定に使う）
   const [machineSel, setMachineSel] = useState('hd3504nt');
   const [ohAdj, setOhAdj] = useState(0); // OH補正（クランプ・中間板取付形態の差分）
   const [punchFlip, setPunchFlip] = useState(false);
@@ -1124,7 +1164,10 @@ const BendingSimulator = () => {
   }, [part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends]);
 
   const noHit = verdicts.every((v) => !v.firstHit && !v.orientationNG && !v.reachNG);
-  const allOK = noHit && zStepWarn.length === 0;
+  // 特殊ヤゲン（中低）は中央の窓の中でしか使えない。窓を超えると両端の全高部に当たる。
+  const punchSpecial = PUNCH_LIB[punchType] ? PUNCH_LIB[punchType].special : null;
+  const winNG = punchSpecial && bendLen > punchSpecial.win ? punchSpecial : null;
+  const allOK = noHit && zStepWarn.length === 0 && !winNG;
 
   // --- 現在フレーム ---
   const frame = useMemo(() => {
@@ -1520,6 +1563,7 @@ const BendingSimulator = () => {
           <span className="text-lg">{allOK ? '○' : '✕'}</span>
           {allOK ? '全工程 曲げ可能（干渉なし）'
             : !noHit ? '干渉あり — この段取りでは曲がりません'
+            : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
           <div className="ml-auto flex gap-2 flex-wrap">
             {verdicts.map((v, i) => (
@@ -1799,13 +1843,24 @@ const BendingSimulator = () => {
               <label className="flex items-center gap-1.5">
                 <span className={lbl}>パンチ</span>
                 <select value={punchType} onChange={(e) => setPunchType(e.target.value)} className={sel}>
-                  {Object.keys(PUNCH_LIB).map((id) => (
-                    <option key={id} value={id}>ヤゲン {id}{id === '00300' ? '（先端R6）' : ''}</option>
+                  {Object.entries(PUNCH_LIB).map(([id, p]) => (
+                    <option key={id} value={id}>
+                      {p.special ? `${id}｜${p.special.note}` : `ヤゲン ${id}${id === '00300' ? '（先端R6）' : ''}`}
+                    </option>
                   ))}
                   <option value="straight">ストレート（汎用）</option>
                 </select>
               </label>
-              {punchType !== 'straight' && (
+              {punchSpecial && (
+                <label className="flex items-center gap-1.5">
+                  <span className={lbl}>曲げ長さ</span>
+                  <NumField value={bendLen} min={1} onChange={setBendLen} className={inp} />
+                  <span className={`${lbl} ${winNG ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    mm ／ 窓 {punchSpecial.win}mm{winNG ? ' を超過' : ' に収まる'}
+                  </span>
+                </label>
+              )}
+              {punchType !== 'straight' && !punchSpecial && (
                 <label className="flex items-center gap-1.5">
                   <span className={lbl}>中間板</span>
                   <select value={chukanSel} onChange={(e) => setChukanSel(e.target.value)} className={sel}>

@@ -1217,10 +1217,6 @@ const BendingSimulator = () => {
       Math.max(1, L - (i > 0 ? nobiPerBend[i - 1] : 0) - (i < bends.length ? nobiPerBend[i] : 0)));
   }, [inputMode, segs, innerSegs, outerSegs, nobiPerBend, bends.length]);
   // 最小外寸を下回る辺の警告（外寸法モードのみ）
-  const minOutWarn = useMemo(() => {
-    if (inputMode !== 'outer' || !minOutLookup) return [];
-    return outerSegs.map((L, i) => (L < minOutLookup.val ? i + 1 : null)).filter((x) => x != null);
-  }, [inputMode, outerSegs, minOutLookup]);
   // Z段差＝両隣の曲げが逆向きになっている辺。内Rのぶん、外-外でこの寸法を下回ると
   // 2曲げ目で抜けない。段差の寸法は外-外で見るので、入力モードごとに外寸へ戻す。
   // 両隣の曲げが逆向きの辺＝Z段差。違反していなくても実績値と並べて見せる。
@@ -1267,6 +1263,27 @@ const BendingSimulator = () => {
   }, [dieV]);
   const diePolys = dieInfo.polys;
   const vHalf = dieInfo.vHalf;
+  // 最小フランジ（外寸）。折り曲げ表の値は実績なので、V肩に届くかの幾何より厳しいことが多い。
+  // 短いほうは表・長いほうは段差ごとの上限（記入シートのI列）で挟まれる、というのが実際の姿。
+  // 幾何のほうは reachCheck が工程ごとに見ているので、ここでは表の値を判定に加える。
+  const minFlange = useMemo(() => {
+    const geoOuter = shoulderReach(vHalf, t, 90) + 0.5 + (nobiPerBend[0] || 0); // 外寸に直した幾何
+    const tbl = minOutLookup ? minOutLookup.val : null;
+    const outerOf = (k) =>
+      inputMode === 'outer' ? outerSegs[k]
+      : inputMode === 'inner' ? innerSegs[k] + 2 * t
+      : effSegs[k] + (k > 0 ? (nobiPerBend[k - 1] || 0) : 0)
+                   + (k < bends.length ? (nobiPerBend[k] || 0) : 0);
+    const bad = [];
+    if (tbl != null) {
+      for (let k = 0; k < effSegs.length; k++) {
+        const o = outerOf(k);
+        if (o < tbl) bad.push({ seg: k + 1, outer: o });
+      }
+    }
+    return { tbl, geoOuter, bad };
+  }, [minOutLookup, inputMode, outerSegs, innerSegs, effSegs, nobiPerBend, bends.length, vHalf, t]);
+  const minOutWarn = minFlange.bad;
   const openGap = Math.max(0, OPEN_GAP_MM - t); // 刃先がV金型上面の170mm上になる開き量
 
   // --- 全工程スイープ判定（ストローク0→100%を走査）---
@@ -1337,7 +1354,8 @@ const BendingSimulator = () => {
     }
     return worst;
   }, [dieInfo, nobiV, t, vHalf, part, seq, openGap]);
-  const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG && !downWarn;
+  const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG && !downWarn
+    && minOutWarn.length === 0;
 
   // 捨て曲げが使えるか。効くのは上型（ヤゲン・中間板・ホルダ・柱）に当たって
   // いる場合だけで、フランジ不足やダイ側の干渉は捨て曲げでも解決しない。
@@ -1755,6 +1773,7 @@ const BendingSimulator = () => {
             : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
             : lenNG ? `曲げ長さ ${bendLen}mm が上限 ${lenNG.v}mm を超えています — ${lenNG.why}`
             : downWarn ? `下がりがダイ・台に当たります — 曲げ線から ${downWarn.w.toFixed(0)}mm で ${downWarn.depth.toFixed(0)}mm 下がっています`
+            : minOutWarn.length ? `最小フランジ ${minFlange.tbl}mm（折り曲げ表）を下回る辺があります`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
           <div className="ml-auto flex gap-2 flex-wrap">
             {verdicts.map((v, i) => (
@@ -1917,8 +1936,15 @@ const BendingSimulator = () => {
                     </div>
                   );
                 })}
-                {minOutWarn.length > 0 && (
-                  <div className="text-rose-400">⚠ 最小外寸 {minOutLookup.val} 未満の辺: {minOutWarn.map((n) => `辺${n}`).join('・')}（曲げ不可の可能性）</div>
+                {minFlange.tbl != null && (
+                  <div className={minOutWarn.length ? 'text-rose-400' : 'text-slate-400'}>
+                    {minOutWarn.length ? '⚠' : '◇'} 最小フランジ（外寸）— 表 <b className="text-slate-200">{minFlange.tbl}mm</b>
+                    　／　幾何 <b className="text-slate-200">{minFlange.geoOuter.toFixed(1)}mm</b>
+                    　→ 厳しいほう <b className="text-slate-200">
+                      {Math.max(minFlange.tbl, minFlange.geoOuter).toFixed(1)}mm</b> で見ています
+                    {minOutWarn.length > 0 &&
+                      `　✕ 下回る辺: ${minOutWarn.map((b) => `辺${b.seg}(${b.outer.toFixed(1)})`).join('・')}`}
+                  </div>
                 )}
               </div>
             )}

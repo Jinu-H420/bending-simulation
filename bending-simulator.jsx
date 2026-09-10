@@ -497,14 +497,19 @@ function placeHolder(punchType, punchFlip, tipY) {
   return HOLDER_PTS.map(([x, h]) => [punchFlip ? -x : x, tipY - (H + h)]);
 }
 // 柱はホルダ断面の中心に合わせて左右対称に置く
-function placeRam(punchType, punchFlip, tipY) {
-  const H = punchTopOf(punchType);
+// ホルダ天端の高さ（タング下端から上へ）。ラムはこれより上にある。
+const HOLDER_TOP = Math.max(...HOLDER_PTS.map(([, h]) => h));
+// 指定した高さから上を、幅115mmの柱として塞ぐ
+function ramAt(topY, punchFlip) {
   const xs = HOLDER_PTS.map(([x]) => x);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   let x0 = cx - HOLDER_W / 2, x1 = cx + HOLDER_W / 2;
   if (punchFlip) { const a = -x1, b = -x0; x0 = a; x1 = b; }
-  const top = tipY - (H + 2);   // ヤゲン頂部より 2mm 上（タング差込口の天面）
-  return [[x0, top], [x1, top], [x1, top - RAM_UP], [x0, top - RAM_UP]];
+  return [[x0, topY], [x1, topY], [x1, topY - RAM_UP], [x0, topY - RAM_UP]];
+}
+function placeRam(punchType, punchFlip, tipY) {
+  const H = punchTopOf(punchType);
+  return ramAt(tipY - (H + 2), punchFlip);   // ヤゲン頂部より 2mm 上（タング差込口の天面）
 }
 
 // 干渉判定に渡す工具ひとそろい。ヤゲンだけ見ていると、背の高い形状で
@@ -512,12 +517,15 @@ function placeRam(punchType, punchFlip, tipY) {
 function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
   const sp = PUNCH_LIB[punchType] && PUNCH_LIB[punchType].special;
   if (sp) {
-    // 中央の窓の上には何も無いので、中間板もホルダも柱も当たりようがない。
-    // 窓に収まっているかは曲げ長さで別に見る。
+    // 窓の断面には、削られたヤゲンより上に中間板もホルダも無い（ホルダが咥えて
+    // いるのは両端の全高部で、窓の位置には来ない）。ただし、その上には機械の
+    // ラムが必ずある。ここを空にすると板がいくらでも上へ行けることになるので、
+    // 元のヤゲン（base）＋ホルダぶんの高さから上を塞ぐ。
     const tool = PUNCH_LIB[punchType].pts.map(([x, y]) => [punchFlip ? -x : x, y + tipY]);
-    return { punchPolys: [tool], holder: null, ram: null,
-             polys: [...diePolys, tool],
-             names: [...Array(diePolys.length).fill('ダイ・台'), 'ヤゲン（中低）'] };
+    const ram = ramAt(tipY - (punchTopOf(sp.base) + HOLDER_TOP), punchFlip);
+    return { punchPolys: [tool], holder: null, ram,
+             polys: [...diePolys, tool, ram],
+             names: [...Array(diePolys.length).fill('ダイ・台'), 'ヤゲン（中低）', 'ラム（機械上部）'] };
   }
   const punchPolys = buildPunch(punchType, punchFlip, tipY, chukanSel);
   const holder = placeHolder(punchType, punchFlip, tipY);
@@ -841,11 +849,24 @@ const V_INNER_R = { 8: 1.3, 12: 2, 16: 2.6, 20: 3.3, 25: 4, 32: 5, 40: 6.5, 50: 
 // Z曲げの段差の最小（外-外）
 //  段差が小さいZは、2曲げ目で1曲げ目の立上りとヤゲンが同時に成立せず抜けない。
 //  断面の幾何は角を直角（内R=0）として計算しているので、実際より小さい値が出る。
-//  そのため実績が判明している組み合わせは実績を正とし、無い組み合わせだけ
-//  3×(曲げ内R＋板厚) の暫定値で埋める（実績2件 V12・t2.3＝12.3／V25・t6＝30 に
-//  合わせた式。経緯まとめ 第21〜22章）。
+//  実際どこまで小さくできるかは現場の実績でしか決まらないので、実績があれば
+//  それを正とし、無い組み合わせだけ 3×(曲げ内R＋板厚) の暫定値で埋める。
+//
+//  下の表は Z曲げ_実績記入シート.xlsx（2026-09-11 受領）の「段差S 最小」列の実測値。
+//  材質はすべて鉄（縞は記入なし。ボンデは鉄と同じ扱い）。
+//  V8・t1.2 は段差Sの記入そのものが修正液の上に書き直されていて読み取りが
+//  確定しないため入れていない。
+//  注意：以前ここに入れていた V12・t2.3＝12.3／V25・t6＝30 は実績ではなく
+//  記入シートに印刷されていた計算値だった。実績はそれぞれ 24／48 で、ほぼ倍。
 // ============================================================================
-const ZMIN = { 12: { 2.3: 12.3 }, 25: { 6: 30 } };
+const ZMIN = {
+  8: { 1.6: 16.0 },
+  12: { 1.2: 22.5, 1.6: 23.0, 2.3: 24.0 },
+  16: { 2.3: 30.0, 3.2: 32.0 },
+  20: { 3.2: 38.0, 4.5: 40.0 },
+  25: { 3.2: 44.0, 4.5: 46.0, 5.0: 47.0, 6.0: 48.0 },
+  32: { 3.2: 55.0, 4.5: 57.0, 5.0: 58.0, 6.0: 60.0 },
+};
 
 // 捨て曲げ＝底を一旦への字に曲げ、両サイドを90°まで曲げてから、底を曲げ戻す手。
 // 上型に当たって普通には曲がらない形でも、底の内-内がこれ以上あれば曲げ戻せるので作れる。
@@ -1629,8 +1650,9 @@ const BendingSimulator = () => {
     if (name === 'tip') setView({ scale: 5.5, cx: 0, cy: -25 });
     else if (name === 'open') setView({ scale: 0.8, cx: 0, cy: -40 }); // 開き170を含む全景
     else if (name === 'all') setView({ scale: 1.7, cx: 0, cy: 60 });
-    // ホルダは刃先から上へ 120〜270mm あたり。当たった相手を見るための位置
-    else if (name === 'holder') setView({ scale: 1.5, cx: 0, cy: -150 });
+    // ダイから上型ホルダ・柱までを一度に映す。上に何があるか（無いか）を見るための位置。
+    // 刃先から上へ 270mm あたりまでがホルダなので、ダイ上面の下 100mm ほどと一緒に入れる。
+    else if (name === 'holder') setView({ scale: 1.25, cx: 0, cy: -110 });
     else setView({ scale: 4.2, cx: 0, cy: -20 });
   };
 

@@ -432,6 +432,69 @@ function buildPunch(punchType, punchFlip, tipY, chukanSel) {
 }
 
 // ============================================================================
+// 上型ホルダ（ヤゲンのタングを咥える金具）と、その上の柱
+// ============================================================================
+// ホルダ.dxf の実測36点。11本のヤゲンで共通。y はヤゲン頂部からの高さで、
+// マイナス側（-30〜0）がタングを咥え込んでいる部分。x=0 はタング中心。
+// 背の高い形状（コの字など）が曲がらないのは、ヤゲンではなくここに当たるため。
+const HOLDER_PTS = [
+  [-33.64, 56.598], [-37.936, 63.969], [-47.037, 69.622],
+  [-47.037, 71.781], [-51.016, 71.781], [-51.016, 56.236],
+  [-40.29, 49.058], [-40.29, 23.9], [-35.79, 23.9],
+  [-35.79, -2.83], [-30.09, -24.1], [-20, -24.1],
+  [-20, 2], [-7, 2], [-7, -30],
+  [7, -30], [7, 2], [20, 2],
+  [20, -24.1], [30.09, -24.1], [35.79, -2.83],
+  [35.79, 23.9], [40.29, 23.9], [40.29, 55.38],
+  [35.79, 55.38], [35.79, 58.5], [44.2, 58.5],
+  [44.2, 87.43], [30.7, 87.43], [30.7, 71.75],
+  [22, 71.75], [22, 89.8], [-20, 89.8],
+  [-20, 120.7], [-33, 120.7], [-33, 56.598],
+];
+// ホルダ本体の幅 115mm（実測・現場確認）。ホルダ.dxf の断面は 95.2mm しか写って
+// いないので、ヤゲン頂部より上は 115mm 幅の柱として扱う。ホルダより上も機械の
+// 上部が続くので、板がホルダを越えてもそのまま当たる。
+const HOLDER_W = 115, RAM_UP = 4000;
+
+// 刃先からヤゲン頂部までの高さ
+function punchTopOf(punchType) {
+  const pts = punchType === 'straight' ? PUNCH_STRAIGHT : PUNCH_LIB[punchType].pts;
+  return -Math.min(...pts.map((p) => p[1]));
+}
+// タング下端をヤゲンのタングに合わせて位置決めする
+function placeHolder(punchType, punchFlip, tipY) {
+  const H = punchTopOf(punchType);
+  return HOLDER_PTS.map(([x, h]) => [punchFlip ? -x : x, tipY - (H + h)]);
+}
+// 柱はホルダ断面の中心に合わせて左右対称に置く
+function placeRam(punchType, punchFlip, tipY) {
+  const H = punchTopOf(punchType);
+  const xs = HOLDER_PTS.map(([x]) => x);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  let x0 = cx - HOLDER_W / 2, x1 = cx + HOLDER_W / 2;
+  if (punchFlip) { const a = -x1, b = -x0; x0 = a; x1 = b; }
+  const top = tipY - (H + 2);   // ヤゲン頂部より 2mm 上（タング差込口の天面）
+  return [[x0, top], [x1, top], [x1, top - RAM_UP], [x0, top - RAM_UP]];
+}
+
+// 干渉判定に渡す工具ひとそろい。ヤゲンだけ見ていると、背の高い形状で
+// ホルダに当たるのを見逃す（経緯まとめ 第13章・棚卸し E7〜E9）。
+function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
+  const punchPolys = buildPunch(punchType, punchFlip, tipY, chukanSel);
+  const holder = placeHolder(punchType, punchFlip, tipY);
+  const ram = placeRam(punchType, punchFlip, tipY);
+  return {
+    punchPolys, holder, ram,
+    polys: [...diePolys, ...punchPolys, holder, ram],
+    names: [
+      ...Array(diePolys.length).fill('ダイ・台'),
+      ...(punchPolys.length > 1 ? ['ヤゲン', '中間板'] : ['ヤゲン']),
+      'ホルダ', '柱（機械上部）',
+    ],
+  };
+}
+
+// ============================================================================
 // 板のキネマティクス（エアベンディング近似・中立軸ポリライン）
 // アクティブ曲げ頂点はパンチ直下、両側はV肩支点で回転。最大90°。
 // ============================================================================
@@ -649,8 +712,8 @@ function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, c
   for (let p = 0; p <= 1.0001; p += 0.1) {
     const ch = computeChain(part, seq, idx, p, vHalf);
     if (!ch.activeDirOK) return false;
-    const punchPolys = buildPunch(punchType, punchFlip, ch.innerY, chukanSel);
-    if (minGap(ch, [...diePolys, ...punchPolys], part.t, vHalf, exArc).gap < -0.05) return false;
+    const tools = toolsFor(punchType, punchFlip, ch.innerY, chukanSel, diePolys);
+    if (minGap(ch, tools.polys, part.t, vHalf, exArc).gap < -0.05) return false;
   }
   return true;
 }
@@ -1013,12 +1076,11 @@ const BendingSimulator = () => {
         const { bendProg, lift } = strokeState(p, openGap);
         const ch = computeChain(part, seq, si, bendProg, vHalf);
         if (!ch.activeDirOK) orientationNG = true;
-        const punchPolys = buildPunch(punchType, punchFlip, ch.innerY - lift, chukanSel);
-        const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
+        const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
+        const g = minGap(ch, tools.polys, t, vHalf, exArc);
         if (g.gap < worst) worst = g.gap;
         if (g.gap < -0.05) {
-          firstHit = { prog: p, count: g.hits.length, gap: g.gap,
-                       where: toolNames(diePolys.length, punchPolys.length)[g.atIdx] || null };
+          firstHit = { prog: p, count: g.hits.length, gap: g.gap, where: tools.names[g.atIdx] || null };
           break;
         }
       }
@@ -1032,12 +1094,12 @@ const BendingSimulator = () => {
   const frame = useMemo(() => {
     const { bendProg, lift } = strokeState(prog, openGap);
     const ch = computeChain(part, seq, step, bendProg, vHalf);
-    const punchPolys = buildPunch(punchType, punchFlip, ch.innerY - lift, chukanSel);
+    const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
     const exArc = shoulderReach(vHalf, t, 90) + t;
-    const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
+    const g = minGap(ch, tools.polys, t, vHalf, exArc);
     const guide = computeChain(part, seq, step, 0, vHalf); // 曲げ開始前（ストローク0%）
-    const where = toolNames(diePolys.length, punchPolys.length)[g.atIdx] || null;
-    return { ch, punchPolys, hits: g.hits, gap: g.gap, where, guide };
+    return { ch, punchPolys: tools.punchPolys, holder: tools.holder, ram: tools.ram,
+             hits: g.hits, gap: g.gap, where: tools.names[g.atIdx] || null, guide };
   }, [part, seq, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap]);
 
   // --- 機械チェック（型合わせ・曲げ切り・部品出し入れ）---
@@ -1138,6 +1200,9 @@ const BendingSimulator = () => {
     };
 
     diePolys.forEach((poly) => drawPoly(poly, '#161a10', '#d4a017'));
+    // ホルダと柱。当たっている相手が見えないと理由が分からないので必ず描く
+    if (frame.ram) drawPoly(frame.ram, '#12151b', '#5b6472');
+    if (frame.holder) drawPoly(frame.holder, '#181c24', '#7c8797');
     frame.punchPolys.forEach((poly, i) =>
       drawPoly(poly, i === 0 ? '#10201c' : '#141821', i === 0 ? '#4ade80' : '#8a93a8'));
 
@@ -1365,6 +1430,8 @@ const BendingSimulator = () => {
     if (name === 'tip') setView({ scale: 5.5, cx: 0, cy: -25 });
     else if (name === 'open') setView({ scale: 0.8, cx: 0, cy: -40 }); // 開き170を含む全景
     else if (name === 'all') setView({ scale: 1.7, cx: 0, cy: 60 });
+    // ホルダは刃先から上へ 120〜270mm あたり。当たった相手を見るための位置
+    else if (name === 'holder') setView({ scale: 1.5, cx: 0, cy: -150 });
     else setView({ scale: 4.2, cx: 0, cy: -20 });
   };
 
@@ -1463,6 +1530,7 @@ const BendingSimulator = () => {
             <button className={vbtn} onClick={() => viewPreset('tip')}>刃先</button>
             <button className={vbtn} onClick={() => viewPreset('std')}>標準</button>
             <button className={vbtn} onClick={() => viewPreset('open')}>開き</button>
+            <button className={vbtn} onClick={() => viewPreset('holder')}>ホルダ</button>
             <button className={vbtn} onClick={() => viewPreset('all')}>全体</button>
           </div>
           <div className="absolute bottom-2 right-3 text-[10px] text-slate-500 font-mono">

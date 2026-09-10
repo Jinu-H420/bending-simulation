@@ -389,11 +389,7 @@ const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t); if(c)e.className=c; if(h!=null)e.innerHTML=h; return e;};
 const f1=x=>(Math.round(x*10)/10).toFixed(1);
 
-/* ---- 幾何エンジン ----
-   もとは bending-simulator.jsx と共通だったが、第8〜23章の修正（伸び grow・刃先 innerY・
-   最小フランジ・弧長除外 splitChain・minGap・上型ホルダ・理由E・実測台ほか）は
-   このシート側だけに入っている。jsx は第7章相当のまま未同期。
-   差分の棚卸しは 棚卸し_jsx移植と多曲げ設計_20260909.md を参照。 ---- */
+/* ---- 幾何エンジン（bending-simulator.jsx と同一） ---- */
 const rad=d=>d*Math.PI/180;
 const rotV=(v,p)=>{const c=Math.cos(p),s=Math.sin(p);return [v[0]*c-v[1]*s,v[0]*s+v[1]*c];};
 function pointInPoly(p,poly){let i2=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];

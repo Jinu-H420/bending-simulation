@@ -39,12 +39,15 @@ const DIE_RIGHT_HALF = [
   [207.5, 356.9],  // ベース下端（DXF実測：ダイ全高356.9）
 ];
 
-// 修正済（経緯まとめ 第9.3章）：もとは index 0 の鏡像を飛ばしていたため、先頭点が
-// 中心線上にない輪郭（INSERT_STACK_RIGHT など）は天面が水平にならず斜め線で閉じていた。
-// 先頭点も鏡像に含める。先頭点が x=0 の場合は無害な重複頂点（ゼロ長辺）になるだけ。
+// 右半分の輪郭を左右対称に閉じる。
+// 先頭点が中心線上（x=0）なら重複を避けて index1 から折り返すが、
+// ホルダやスタックのように先頭点が x>0 の場合は index0 も折り返さないと、
+// 天面が水平にならず (-x0,y1)→(x0,y0) の斜め線で閉じてしまう。
+// （INSERT_STACK_RIGHT がこれに当たり、ホルダ天面が斜めに欠けていた）
 function mirrorClose(right) {
   const pts = [];
-  for (let i = right.length - 1; i >= 0; i--) pts.push([-right[i][0], right[i][1]]);
+  const skip = Math.abs(right[0][0]) < 1e-9 ? 1 : 0;
+  for (let i = right.length - 1; i >= skip; i--) pts.push([-right[i][0], right[i][1]]);
   for (const p of right) pts.push(p);
   return pts;
 }
@@ -90,23 +93,23 @@ const PUNCH_LIB = {
 
 // ダイライブラリ（金型.dxf 実測）。上面＝y0、下向き＝正。grooves=[中心x, 半幅, 深さ]。
 const DIE_LIB = {
-  '01360': { name: 'V85', kind: 'v', grooves: [[0.0, 42.65, 41.27]],
+  '01360': { name: 'V80', kind: 'v', grooves: [[0.0, 42.65, 41.27]],
     pts: [[-30.0, 94.99], [30.0, 94.99], [30.0, 76.98], [32.0, 75.0], [47.5, 75.0], [47.5, 0.0], [42.65, 0.0], [41.4, 0.12], [40.23, 0.5], [39.14, 1.11], [38.23, 1.93], [32.49, 8.17], [32.49, 9.65], [5.89, 38.68], [3.23, 40.61], [0.0, 41.27], [-3.23, 40.61], [-5.89, 38.68], [-32.509, 9.65], [-32.509, 8.17], [-38.23, 1.93], [-39.14, 1.11], [-40.23, 0.5], [-41.4, 0.12], [-42.65, 0.0], [-47.5, 0.0], [-47.5, 75.0], [-32.0, 75.0], [-30.0, 76.98]] },
-  '01400': { name: 'V170', kind: 'v', grooves: [[0.0, 85.1, 98.5]],
+  '01400': { name: 'V160', kind: 'v', grooves: [[0.0, 85.1, 98.5]],
     pts: [[-60.0, 140.0], [60.0, 140.0], [60.0, 120.0], [87.5, 120.0], [92.5, 115.0], [92.5, 0.0], [85.1, 0.0], [83.2, 0.2], [81.4, 0.7], [79.6, 1.5], [78.1, 2.6], [76.7, 4.0], [66.5, 16.1], [66.5, 19.2], [0.0, 98.5], [-66.5, 19.2], [-66.5, 16.1], [-76.7, 4.0], [-78.1, 2.6], [-79.6, 1.5], [-81.4, 0.7], [-83.2, 0.2], [-85.1, 0.0], [-92.5, 0.0], [-92.5, 115.0], [-87.5, 120.0], [-60.0, 120.0]] },
-  '01860': { name: 'V106', kind: 'v', grooves: [[0.0, 53.09, 52.73]],
+  '01860': { name: 'V100', kind: 'v', grooves: [[0.0, 53.09, 52.73]],
     pts: [[-30.0, 110.0], [30.0, 110.0], [30.0, 92.0], [32.0, 90.02], [59.99, 90.02], [59.99, 0.0], [53.09, 0.0], [51.64, 0.15], [50.27, 0.61], [49.0, 1.32], [47.9, 2.29], [41.0, 9.83], [41.0, 12.8], [7.37, 49.48], [4.01, 51.89], [0.0, 52.73], [-4.04, 51.89], [-7.37, 49.48], [-41.0, 12.8], [-41.0, 9.83], [-47.93, 2.29], [-49.0, 1.32], [-50.27, 0.61], [-51.64, 0.15], [-53.09, 0.0], [-59.99, 0.0], [-59.99, 90.02], [-32.0, 90.02], [-30.0, 92.0]] },
-  '03500': { name: 'V35.5', kind: 'v', grooves: [[0.0, 17.75, 17.5]],
+  '03500': { name: 'V32', kind: 'v', grooves: [[0.0, 17.75, 17.5]],
     pts: [[-30.0, 59.99], [30.0, 59.99], [30.0, 0.0], [17.75, 0.0], [16.94, 0.08], [16.149, 0.33], [15.42, 0.74], [14.81, 1.3], [11.99, 4.37], [11.99, 5.84], [2.21, 16.51], [1.19, 17.25], [0.0, 17.5], [-1.22, 17.25], [-2.21, 16.51], [-12.01, 5.84], [-12.01, 4.37], [-14.81, 1.3], [-15.44, 0.74], [-16.149, 0.33], [-16.94, 0.08], [-17.75, 0.0], [-30.0, 0.0]] },
-  '03600': { name: 'V43.5', kind: 'v', grooves: [[0.01, 21.76, 21.39]],
+  '03600': { name: 'V40', kind: 'v', grooves: [[0.01, 21.76, 21.39]],
     pts: [[-29.995, 60.0], [29.995, 60.0], [29.995, 0.0], [21.765, 0.0], [20.925, 0.08], [20.145, 0.33], [19.435, 0.74], [18.795, 1.3], [16.005, 4.37], [16.005, 5.84], [2.945, 20.1], [1.605, 21.03], [-0.005, 21.39], [-1.625, 21.03], [-2.945, 20.1], [-16.005, 5.84], [-16.005, 4.37], [-18.825, 1.3], [-19.435, 0.74], [-20.145, 0.33], [-20.925, 0.08], [-21.745, 0.0], [-29.995, 0.0]] },
-  '03700': { name: 'V53.5', kind: 'v', grooves: [[-0.01, 26.76, 26.36]],
+  '03700': { name: 'V50', kind: 'v', grooves: [[-0.01, 26.76, 26.36]],
     pts: [[-30.0, 59.99], [30.0, 59.99], [30.0, 0.0], [26.75, 0.0], [25.93, 0.07], [25.15, 0.32], [24.43, 0.73], [23.8, 1.29], [19.99, 5.46], [19.99, 6.93], [3.68, 24.73], [2.009, 25.93], [0.0, 26.36], [-2.009, 25.93], [-3.68, 24.73], [-20.02, 6.93], [-20.02, 5.46], [-23.82, 1.29], [-24.43, 0.73], [-25.15, 0.32], [-25.93, 0.07], [-26.77, 0.0], [-30.0, 0.0]] },
-  '03800': { name: 'V67', kind: 'v', grooves: [[0.0, 33.71, 32.97]],
+  '03800': { name: 'V63', kind: 'v', grooves: [[0.0, 33.71, 32.97]],
     pts: [[-30.0, 75.0], [30.0, 75.0], [30.0, 55.02], [40.01, 55.02], [40.01, 0.0], [33.71, 0.0], [32.659, 0.1], [31.7, 0.43], [30.79, 0.94], [30.02, 1.63], [26.52, 5.46], [26.52, 6.93], [4.42, 31.04], [2.41, 32.46], [0.0, 32.97], [-2.41, 32.46], [-4.42, 31.04], [-26.49, 6.93], [-26.49, 5.46], [-30.0, 1.63], [-30.79, 0.94], [-31.67, 0.43], [-32.659, 0.1], [-33.71, 0.0], [-40.01, 0.0], [-40.01, 55.02], [-30.0, 55.02]] },
-  '03900': { name: 'V133', kind: 'v', grooves: [[-0.0, 66.69, 59.8]],
+  '03900': { name: 'V125', kind: 'v', grooves: [[-0.0, 66.69, 59.8]],
     pts: [[-45.0, 123.0], [44.99, 123.0], [44.99, 104.99], [47.0, 103.0], [77.0, 103.0], [77.0, 0.0], [66.68, 0.0], [64.76, 0.21], [62.9, 0.85], [61.22, 1.86], [59.8, 3.21], [52.0, 12.5], [52.0, 15.63], [24.52, 48.37], [13.52, 56.8], [0.01, 59.8], [-13.53, 56.8], [-24.53, 48.37], [-52.01, 15.63], [-52.01, 12.5], [-59.81, 3.21], [-61.23, 1.86], [-62.91, 0.85], [-64.759, 0.21], [-66.69, 0.0], [-77.0, 0.0], [-77.0, 103.0], [-47.01, 103.0], [-45.0, 104.99]] },
-  '34300': { name: 'V47鋭角', kind: 'v', grooves: [[0.0, 23.34, 41.73]],
+  '34300': { name: 'V40鋭角', kind: 'v', grooves: [[0.0, 23.34, 41.73]],
     pts: [[-30.0, 80.0], [30.0, 80.0], [30.0, 60.02], [40.01, 60.02], [40.01, 0.0], [23.34, 0.0], [21.9, 0.23], [20.57, 0.86], [19.48, 1.83], [18.72, 3.1], [12.5, 18.11], [12.5, 22.05], [6.02, 37.72], [3.61, 40.64], [0.0, 41.73], [-3.61, 40.64], [-5.99, 37.72], [-12.5, 22.05], [-12.5, 18.11], [-18.72, 3.1], [-19.48, 1.83], [-20.55, 0.86], [-21.9, 0.23], [-23.34, 0.0], [-40.01, 0.0], [-40.01, 60.02], [-30.0, 60.02]] },
   '30540': { name: '2溝 V12/V20', kind: 'v2', grooves: [[17.5, 6.0, 6.21], [-13.0, 10.0, 10.35]],
     pts: [[-25.0, 46.0], [-7.5, 46.0], [-7.5, 40.0], [7.5, 40.0], [7.5, 46.0], [25.0, 46.0], [25.0, 0.0], [23.5, 0.0], [17.5, 6.21], [11.5, 0.0], [-3.0, 0.0], [-13.0, 10.35], [-23.0, 0.0], [-25.0, 0.0]] },
@@ -114,6 +117,8 @@ const DIE_LIB = {
     pts: [[-25.0, 46.0], [-7.5, 46.0], [-7.5, 40.0], [7.5, 40.0], [7.5, 46.0], [25.0, 46.0], [25.0, 0.0], [23.5, 0.0], [15.5, 8.28], [7.5, 0.0], [2.0, 0.0], [-10.5, 12.94], [-23.0, 0.0], [-25.0, 0.0]] },
   '970061': { name: 'V6ｲﾝｻｰﾄ', kind: 'ins', grooves: [[0.0, 3.0, 3.22]],
     pts: [[-7.0, 59.999], [7.0, 59.999], [7.0, 44.999], [4.5, 44.999], [4.5, 0.0], [3.0, 0.0], [0.0, 3.217], [-3.0, 0.0], [-5.0, 0.0], [-7.0, 2.0]] },
+  '971561': { name: 'V8ｲﾝｻｰﾄ', kind: 'ins', grooves: [[0.0, 4.0, 4.29]],
+    pts: [[-7.0, 60.0], [7.0, 60.0], [7.0, 45.0], [6.0, 45.0], [6.0, 0.0], [4.0, 0.0], [0.0, 4.29], [-4.0, 0.0], [-6.0, 0.0], [-6.0, 45.0], [-7.0, 45.0]] },
   '974061': { name: 'V12ｲﾝｻｰﾄ', kind: 'ins', grooves: [[0.0, 6.0, 6.43]],
     pts: [[-7.0, 59.999], [7.0, 59.999], [7.0, 44.999], [8.0, 44.999], [8.0, 0.0], [6.0, 0.0], [0.0, 6.434], [-6.0, 0.0], [-8.0, 0.0], [-8.0, 44.999], [-7.0, 44.999]] },
   '977061': { name: 'V16ｲﾝｻｰﾄ', kind: 'ins', grooves: [[0.0, 8.0, 8.58]],
@@ -227,8 +232,250 @@ function distPoly(p, poly) {
   return m;
 }
 
-// 工具の外接枠の外にある板の点は当たりようがない。線分を枠でクリップしてから
-// 密サンプリングし、長い辺で計算量が爆発しないようにする（Liang–Barsky）。
+function densify(pts, step = 0.8) {
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const n = Math.max(1, Math.ceil(L / step));
+    for (let k = i === 0 ? 0 : 1; k <= n; k++) {
+      out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+    }
+  }
+  return out;
+}
+
+// ============================================================================
+// 金型生成
+// ============================================================================
+// ============================================================================
+// 機械ライブラリ（アマダ公表カタログ値。OH=オープンハイト（クランプ無し基準）mm）
+// HD3504NT: 米国仕様シートより stroke 350 / OH 620。HG2203・EGB-1303e: 国内仕様表より。
+// 実機の金型クランプ形式によりOHは変わるため、手動補正欄で調整可。
+// ============================================================================
+const MACHINE_LIB = {
+  hd3504nt: { name: 'AMADA HD3504NT（350t×4,000）', oh: 620, stroke: 350, ton: 350, len: 4000 },
+  hg2203:   { name: 'AMADA HG2203（220t×3,000）',   oh: 520, stroke: 250, ton: 220, len: 3000 },
+  egb1303e: { name: 'AMADA EGB1303E（130t×3,000）', oh: 520, stroke: 250, ton: 130, len: 3000 },
+  manual:   { name: '手動入力', oh: 520, stroke: 250, ton: 0, len: 0 },
+};
+
+// インサート用スタック（bending.dxfのホルダ・ベース。インサート露出45に合わせ深さ-5シフト）
+const INSERT_STACK_RIGHT = [
+  [14, 45], [14, 62.5], [17.5, 62.5], [17.5, 67.5], [14, 67.5], [14, 90],
+  [67.5, 90], [67.5, 180], [127.5, 180], [127.5, 230], [207.5, 230], [207.5, 351.9],
+];
+
+// ============================================================================
+// 溝の「真のV半幅」を金型輪郭から求める
+//  DIE_LIB の grooves[1] は肩R外端の座標のため、カタログのV幅より 8〜11% 大きい
+//  （例：03500＝カタログV32 なのに 35.5）。エアベンドの支点は「V壁を型上面まで
+//  延長した点」なので、輪郭から直接求め直す。溝内の傾斜直線（肩R・底Rの短い弦は
+//  除外）を y=0 まで延長し、その最小 x を採用する。
+//  → 全19溝でカタログ呼称と一致することを確認済み（V32/V40/V50/V63/V80/V100/
+//    V125/V160/V40鋭角45°/インサートV8〜V25/2溝V12・V16・V20・V25）
+// ============================================================================
+function grooveVHalf(polys, depth, fallback) {
+  if (!depth || !polys || !polys.length) return fallback;
+  const poly = polys[0];
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    if (Math.abs(dx) < 0.4 || Math.abs(dy) < 0.4) continue;   // 垂直・水平は壁でない
+    if (Math.hypot(dx, dy) < 1.5) continue;                   // 肩R・底Rの短い弦を除外
+    if ((a[0] + b[0]) / 2 <= 0) continue;                     // 右半分のみ見る
+    const ymin = Math.min(a[1], b[1]), ymax = Math.max(a[1], b[1]);
+    if (ymax > depth * 1.02 || ymin < -0.01) continue;        // 溝の外は対象外
+    if (dx / dy >= 0) continue;                               // 下るほど内側へ入る壁のみ
+    const x0 = a[0] + (dx * (0 - a[1])) / dy;
+    if (x0 > (a[0] + b[0]) / 2 && x0 < best) best = x0;
+  }
+  return Number.isFinite(best) ? best : fallback;
+}
+
+// ============================================================================
+// ダイの台（ホルダ・ベース・機械ベッド） — 曲2.dxf のダイ取付図から実測
+//
+//  下がるフランジが当たるのはV溝ではなく、ダイ本体の肩・その下のホルダ・ベース、
+//  さらに機械のベッドまで。ここは「下に逃げる量」を決める一番効く箇所。
+//
+//  実測できているのは次の4通りだけ。それ以外のダイには台を付けない（推測しない）。
+//    HG2203  … 974061 V12インサート / 982061 V25インサート ＋ ホルダ ＋ 段付きベッド
+//    HD3504NT… 03500 V32 / 03600 V40（60×60ブロック）＋ ホルダ ＋ ベース
+//
+// ============================================================================
+// 実測できているのは次の4通りだけ。それ以外のダイには台を付けない（推測しない）。
+//   HG2203  … 974061 V12インサート / 982061 V25インサート ＋ ホルダ ＋ 段付きベッド
+//   HD3504NT… 03500 V32 / 03600 V40 ＋ 05500形ホルダ ＋ 中間ベース ＋ ベース ＋ ナット ＋ ベッド
+// parts は図面の閉領域をそのまま入れてある（ダイ本体も含む）。ダイ上面が深さ0、V中心がx=0。
+// 深さ128〜148・幅124の小片はナット（ボルト留め）。金型ではないが板は当たるので残す。
+// floor は地面までの深さ。図面の825/900は図示寸法として扱い、金型を載せる面としては使わない。
+const DIE_MOUNT = {
+  'ins:974061:stack': { machine: 'hg2203', floor: 1061.5, note: '974061 V12インサート ＋ ホルダ ＋ 段付きベッド（HG2203）', parts: [
+      [[67, 96.5], [30, 96.5], [30, 111.5], [-30, 111.5], [-30, 96.5], [-68, 96.5], [-68, 186.5], [-128, 186.5], [-128, 236.5], [-208, 236.5], [-208, 1061.5], [207, 1061.5], [207, 236.5], [127, 236.5], [127, 186.5], [67, 186.5]],
+      [[30, 96.5], [12.5, 96.5], [12.5, 50], [7, 50], [7, 60], [-7, 60], [-7, 50], [-14.5, 50], [-14.5, 62.5], [-18.5, 62.5], [-18.5, 72.5], [-14.5, 72.5], [-14.5, 77.5], [-12.5, 77.5], [-12.5, 96.5], [-30, 96.5], [-30, 111.5], [30, 111.5]],
+      [[7, 60], [7, 50], [7, 45], [8, 45], [8, 0], [6, 0], [0, 6.43], [-6, 0], [-8, 0], [-8, 45], [-7, 45], [-7, 50], [-7, 60]],
+  ] },
+  'ins:982061:stack': { machine: 'hg2203', floor: 1061.5, note: '982061 V25インサート ＋ ホルダ ＋ 段付きベッド（HG2203）', parts: [
+      [[67, 96.5], [30, 96.5], [30, 111.5], [-30, 111.5], [-30, 96.5], [-68, 96.5], [-68, 186.5], [-128, 186.5], [-128, 236.5], [-208, 236.5], [-208, 1061.5], [207, 1061.5], [207, 236.5], [127, 236.5], [127, 186.5], [67, 186.5]],
+      [[30, 96.5], [12.5, 96.5], [12.5, 50], [7, 50], [7, 60], [-7, 60], [-7, 50], [-14.5, 50], [-14.5, 62.5], [-18.5, 62.5], [-18.5, 72.5], [-14.5, 72.5], [-14.5, 77.5], [-12.5, 77.5], [-12.5, 96.5], [-30, 96.5], [-30, 111.5], [30, 111.5]],
+      [[7, 60], [7, 50], [7, 45], [14.75, 45], [14.75, 0], [12.5, 0], [0, 13.4], [-12.5, 0], [-14.75, 0], [-14.75, 45], [-7, 45], [-7, 50], [-7, 60]],
+  ] },
+  'lib:03500:0': { machine: 'hd3504nt', floor: 1048.0, note: '03500 V32 ＋ 05500形ホルダ ＋ 中間ベース ＋ ベース ＋ ナット ＋ ベッド（HD3504NT）', parts: [
+      [[107, 153], [87, 153], [-86.98, 153], [-106.98, 153], [-106.98, 1048], [107, 1048]],
+      [[-29.98, 115], [-30, 115], [-86.98, 115], [-86.98, 153], [87, 153], [87, 115], [30, 115]],
+      [[30, 60], [-29.98, 60], [-30, 60], [-30, 45], [-36.99, 45], [-46.99, 62], [-46.99, 78], [-36.99, 95], [-30, 95], [-30, 100], [-30, 115], [-29.98, 115], [30, 115], [30, 100], [30, 95], [37.01, 95], [47.01, 78], [47.01, 62], [37.01, 45], [30, 45]],
+      [[-29.98, 60], [30, 60], [30, 45], [30, 0.01], [17.75, 0.01], [16.95, 0.09], [16.15, 0.34], [15.43, 0.75], [14.81, 1.31], [11.99, 4.38], [11.99, 5.85], [2.21, 16.52], [1.2, 17.26], [0.01, 17.51], [-1.22, 17.26], [-2.21, 16.52], [-12.01, 5.85], [-12.01, 4.38], [-14.8, 1.31], [-15.44, 0.75], [-16.14, 0.34], [-16.93, 0.09], [-17.75, 0.01], [-29.98, 0.01]],
+      [[30, 100], [30, 115], [87, 115], [87, 153], [107, 153], [107, 148], [107, 128], [107, 100]],
+      [[-30, 115], [-30, 100], [-106.98, 100], [-106.98, 128], [-106.98, 148], [-106.98, 153], [-86.98, 153], [-86.98, 115]],
+      [[-123.98, 128], [-123.98, 148], [-106.98, 148], [-106.98, 128]],
+      [[124, 148], [124, 128], [107, 128], [107, 148]],
+  ] },
+  'lib:03600:0': { machine: 'hd3504nt', floor: 1046.6, note: '03600 V40 ＋ 05500形ホルダ ＋ 中間ベース ＋ ベース ＋ ナット ＋ ベッド（HD3504NT）', parts: [
+      [[107, 153], [87, 153], [-86.99, 153], [-106.99, 153], [-106.99, 1048], [107, 1048]],
+      [[-29.99, 115], [-30, 115], [-86.99, 115], [-86.99, 153], [87, 153], [87, 115], [30, 115]],
+      [[30, 60], [-29.99, 60], [-30, 60], [-30, 45], [-37, 45], [-47, 62], [-47, 78], [-37, 95], [-30, 95], [-30, 100], [-30, 115], [-29.99, 115], [30, 115], [30, 100], [30, 95], [37, 95], [47, 78], [47, 62], [37, 45], [30, 45]],
+      [[-29.99, 60], [30, 60], [30, 45], [30, 0], [21.77, 0], [20.93, 0.08], [20.15, 0.33], [19.44, 0.74], [18.8, 1.3], [16.01, 4.37], [16.01, 5.84], [2.95, 20.1], [1.61, 21.03], [-0, 21.39], [-1.62, 21.03], [-2.94, 20.1], [-16, 5.84], [-16, 4.37], [-18.82, 1.3], [-19.43, 0.74], [-20.14, 0.33], [-20.92, 0.08], [-21.74, 0], [-29.99, 0]],
+      [[30, 100], [30, 115], [87, 115], [87, 153], [107, 153], [107, 148], [107, 128], [107, 100]],
+      [[-30, 115], [-30, 100], [-106.99, 100], [-106.99, 128], [-106.99, 148], [-106.99, 153], [-86.99, 153], [-86.99, 115]],
+      [[-123.99, 128], [-123.99, 148], [-106.99, 148], [-106.99, 128]],
+      [[124, 148], [124, 128], [107, 128], [107, 148]],
+  ] },
+};
+// 台つきのダイは parts をそのまま使う（描画も干渉判定も図面どおり）
+function mountParts(sel) {
+  const m = DIE_MOUNT[sel];
+  return m ? m.parts.map((p) => p.map(([x, y]) => [x, y])) : null;
+}
+
+const dieMountInfo = (sel) => DIE_MOUNT[sel] || null;
+
+// ダイ選択の解決：{ polys:[...], vHalf, note } を返す
+// sel: 'v12stack' | 'flat' | 'lib:ID:溝index' | 'ins:ID:solo' | 'ins:ID:stack'
+function resolveDie(sel, vW, dieHalf, withBase = true) {
+  if (sel === 'flat') {
+    const vh = vW / 2;
+    const W = Math.max(dieHalf, vh + 2);
+    const polys = [mirrorClose([[0, vh], [vh, 0], [W, 0], [W, 150]])];
+    return { polys, vHalf: vh, maxDepth: vh, note: `汎用 V${vW}` };
+  }
+  if (sel === 'v12stack') {
+    return { polys: [mirrorClose(DIE_RIGHT_HALF)], vHalf: 6, maxDepth: 6, note: '実機 V12 段付きスタック（bending.dxf）' };
+  }
+  const [mode, id, sub] = sel.split(':');
+  const d = DIE_LIB[id];
+  if (mode === 'ins') {
+    const stack = sub === 'stack';
+    const mp = withBase ? mountParts(sel) : null;
+    const polys = mp || [d.pts];
+    const vh = grooveVHalf([d.pts], d.grooves[0][2], d.grooves[0][1]);
+    return { polys, mount: dieMountInfo(sel), vHalf: vh, maxDepth: d.grooves[0][2],
+             note: `${id} ${d.name}${mp ? '＋台（図面実測）' : '（台なし）'}` };
+  }
+  // lib:ID:gi
+  const gi = Number(sub) || 0;
+  if (d.kind === 'manual' || d.grooves.length === 0) {
+    return { polys: [d.pts], vHalf: vW / 2, note: `${id} ${d.name}（特殊：V支点は手動V幅${vW}で近似）`, manual: true };
+  }
+  const g = d.grooves[Math.min(gi, d.grooves.length - 1)];
+  const block = [d.pts.map(([x, y]) => [x - g[0], y])];
+  const vh = grooveVHalf(block, g[2], g[1]);
+  const mp = withBase ? mountParts(sel) : null;
+  const polys = mp || block;
+  return { polys, mount: dieMountInfo(sel), vHalf: vh,
+           note: `${id} ${d.name}｜V幅${(vh * 2).toFixed(1)}・深さ${g[2]}${mp ? '＋台（図面実測）' : '（台なし）'}`,
+           maxDepth: g[2] };
+}
+
+// パンチ組立体：ヤゲン＋中間板（DXFの実位置のまま一体で昇降）。ポリゴン配列を返す。
+function buildPunch(punchType, punchFlip, tipY, chukanSel) {
+  if (punchType === 'straight') {
+    return [PUNCH_STRAIGHT.map(([x, y]) => [punchFlip ? -x : x, y + tipY])];
+  }
+  const tool = PUNCH_LIB[punchType].pts;
+  const top = Math.min(...tool.map((p) => p[1]));
+  const ck = CHUKAN_LIB[chukanSel];
+  const dy = ck.mount(top);
+  const chukan = ck.flipY
+    ? ck.pts.map(([x, y]) => [x, -y + dy])
+    : ck.pts.map(([x, y]) => [x, y + dy]);
+  const polys = [tool, chukan];
+  return polys.map((poly) => poly.map(([x, y]) => [punchFlip ? -x : x, y + tipY]));
+}
+
+// ============================================================================
+// 板のキネマティクス（エアベンディング近似・中立軸ポリライン）
+// アクティブ曲げ頂点はパンチ直下、両側はV肩支点で回転。最大90°。
+// ============================================================================
+// part.segs は「展開（ブランク）」の各辺。実際に曲げると、曲げた箇所の両隣の辺は
+// シャープコーナー換算で（片伸び − 板厚/2）だけ長くなる。part.grow[i] が曲げ i のその量。
+// 曲3.dxf（Z完成）・曲4.dxf（1曲げ目のみ）の実測と一致することを確認済み。
+function computeChain(part, seq, stepIdx, prog, vHalf) {
+  const { t, segs, bends } = part;
+  const B = bends.length;
+  const st = seq[stepIdx];
+  const msegs0 = st.mirror ? [...segs].reverse() : segs;
+  const srcOf = (i) => (st.mirror ? B - 1 - i : i);
+  const mb = [];
+  for (let i = 0; i < B; i++) {
+    const s = bends[srcOf(i)];
+    mb.push({ angle: s.angle, dir: (st.valley ? -1 : 1) * s.dir, src: srcOf(i) });
+  }
+  const j = st.mirror ? B - 1 - st.bend : st.bend;
+  const done = new Set(seq.slice(0, stepIdx).map((s) => s.bend));
+  const gArr = part.grow || [];
+  const pr01 = Math.max(0, Math.min(1, prog));
+  const growOf = (i) => (gArr[mb[i].src] || 0) *
+    (done.has(mb[i].src) ? 1 : (i === j ? pr01 : 0));
+  const msegs = msegs0.map((L, k) =>
+    L + (k > 0 ? growOf(k - 1) : 0) + (k < B ? growOf(k) : 0));
+
+  const activeDirOK = mb[j].dir > 0;
+  const theta = rad(Math.min(90, mb[j].angle)) * Math.max(0, Math.min(1, prog));
+  const alpha = theta / 2;
+  // V肩(±vHalf, 0)に板の「外面」が接するのがエアベンドの正しい幾何。
+  // 中立軸は外面から板厚半分だけ面直にオフセットするので、鉛直に t/2 ではなく
+  // (t/2)/cos α になる。旧式（鉛直 t/2）だと深曲げで中立軸が t/2·(1−cos α) 分だけ
+  // V壁側へ食い込み、健全な形状まで干渉と誤判定していた。
+  const vy = vHalf * Math.tan(alpha) - (t / 2) / Math.cos(alpha);
+  const d = vy + t / 2;
+  // パンチ刃先が当たるのは板の内側（上）面の頂点＝マイター点。同じ理由で
+  // 中立軸から鉛直 t/2 ではなく (t/2)/cos α だけ上になる。
+  const innerY = vy - (t / 2) / Math.cos(alpha);
+
+  const signedOf = (i) =>
+    done.has(mb[i].src) ? rad(mb[i].angle) * mb[i].dir : 0;
+
+  const left = [];
+  let D = [-Math.cos(alpha), -Math.sin(alpha)];
+  let pos = [0, vy];
+  for (let i = j; i >= 0; i--) {
+    pos = [pos[0] + D[0] * msegs[i], pos[1] + D[1] * msegs[i]];
+    left.push(pos);
+    if (i > 0) D = rotV(D, signedOf(i - 1));
+  }
+  const right = [];
+  D = [Math.cos(alpha), -Math.sin(alpha)];
+  pos = [0, vy];
+  for (let i = j + 1; i < msegs.length; i++) {
+    pos = [pos[0] + D[0] * msegs[i], pos[1] + D[1] * msegs[i]];
+    right.push(pos);
+    if (i < msegs.length - 1) D = rotV(D, -signedOf(i));
+  }
+
+  const pts = [...left.reverse(), [0, vy], ...right];
+  // vIdx＝pts の中の曲げ頂点の位置。minGap が弧長で除外区間を切るのに使う。
+  return { pts, vIdx: left.length, vy, d, innerY, activeDirOK, thetaDeg: (theta * 180) / Math.PI };
+}
+
+// ============================================================================
+// 干渉判定：中立軸を密サンプリングし、金型ポリゴンとの最小すきま（mm）を返す。
+// 負なら食い込み量。正規接触（V肩・パンチ刃先）は板に沿った弧長で除外する。
+// ============================================================================
+// 工具の外接枠（余裕ぶん広げたもの）の外にある板の点は当たりようがないので、
+// 先に線分を枠でクリップしてから密サンプリングする。
+// これをしないと、辺の長い部品でサンプル点が爆発して画面が固まる。
 function bboxOf(poly, m) {
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const p of poly) {
@@ -237,7 +484,7 @@ function bboxOf(poly, m) {
   }
   return [x0 - m, x1 + m, y0 - m, y1 + m];
 }
-function clipSeg(a, b, B) {
+function clipSeg(a, b, B) {              // Liang–Barsky
   let t0 = 0, t1 = 1;
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const P = [-dx, dx, -dy, dy], Q = [a[0] - B[0], B[1] - a[0], a[1] - B[2], B[3] - a[1]];
@@ -251,16 +498,15 @@ function clipSeg(a, b, B) {
   }
   return [[a[0] + t0 * dx, a[1] + t0 * dy], [a[0] + t1 * dx, a[1] + t1 * dy]];
 }
-function sampleInBox(pts, B, step = 0.8) {
+function sampleInBox(pts, B, step) {
   const out = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const c = clipSeg(pts[i], pts[i + 1], B);
     if (!c) continue;
     const L = Math.hypot(c[1][0] - c[0][0], c[1][1] - c[0][1]);
     const n = Math.max(1, Math.ceil(L / step));
-    for (let k = 0; k <= n; k++) {
+    for (let k = 0; k <= n; k++)
       out.push([c[0][0] + ((c[1][0] - c[0][0]) * k) / n, c[0][1] + ((c[1][1] - c[0][1]) * k) / n]);
-    }
   }
   return out;
 }
@@ -324,151 +570,45 @@ function minGap(chain, tools, t, vHalf, exArc) {
 }
 
 // ============================================================================
-// 金型生成
+// 伸び値（曲げ控除）計算：BD = 2(R+t)tan(θ/2) − BA、BA = θrad(R + K·t)
+// θは90°超の場合セットバックをtan45°で頭打ち（一般的な簡易式）。
 // ============================================================================
-// ============================================================================
-// 機械ライブラリ（アマダ公表カタログ値。OH=オープンハイト（クランプ無し基準）mm）
-// HD3504NT: 米国仕様シートより stroke 350 / OH 620。HG2203・EGB-1303e: 国内仕様表より。
-// 実機の金型クランプ形式によりOHは変わるため、手動補正欄で調整可。
-// ============================================================================
-const MACHINE_LIB = {
-  hd3504nt: { name: 'AMADA HD3504NT（350t×4,000）', oh: 620, stroke: 350, ton: 350, len: 4000 },
-  hg2203:   { name: 'AMADA HG2203（220t×3,000）',   oh: 520, stroke: 250, ton: 220, len: 3000 },
-  egb1303e: { name: 'AMADA EGB1303E（130t×3,000）', oh: 520, stroke: 250, ton: 130, len: 3000 },
-  manual:   { name: '手動入力', oh: 520, stroke: 250, ton: 0, len: 0 },
-};
-
-// インサート用スタック（bending.dxfのホルダ・ベース。インサート露出45に合わせ深さ-5シフト）
-const INSERT_STACK_RIGHT = [
-  [14, 45], [14, 62.5], [17.5, 62.5], [17.5, 67.5], [14, 67.5], [14, 90],
-  [67.5, 90], [67.5, 180], [127.5, 180], [127.5, 230], [207.5, 230], [207.5, 351.9],
-];
-
-// ダイ選択の解決：{ polys:[...], vHalf, note } を返す
-// sel: 'v12stack' | 'flat' | 'lib:ID:溝index' | 'ins:ID:solo' | 'ins:ID:stack'
-function resolveDie(sel, vW, dieHalf) {
-  if (sel === 'flat') {
-    const vh = vW / 2;
-    const W = Math.max(dieHalf, vh + 2);
-    return { polys: [mirrorClose([[0, vh], [vh, 0], [W, 0], [W, 150]])], vHalf: vh, note: `汎用 V${vW}` };
-  }
-  if (sel === 'v12stack') {
-    return { polys: [mirrorClose(DIE_RIGHT_HALF)], vHalf: 6, note: '実機 V12 段付きスタック（bending.dxf）' };
-  }
-  const [mode, id, sub] = sel.split(':');
-  const d = DIE_LIB[id];
-  if (mode === 'ins') {
-    const stack = sub === 'stack';
-    const polys = stack ? [d.pts, mirrorClose(INSERT_STACK_RIGHT)] : [d.pts];
-    return { polys, vHalf: d.grooves[0][1], note: `${id} ${d.name}${stack ? '＋スタック' : '（単体）'}` };
-  }
-  // lib:ID:gi
-  const gi = Number(sub) || 0;
-  if (d.kind === 'manual' || d.grooves.length === 0) {
-    return { polys: [d.pts], vHalf: vW / 2, note: `${id} ${d.name}（特殊：V支点は手動V幅${vW}で近似）`, manual: true };
-  }
-  const g = d.grooves[Math.min(gi, d.grooves.length - 1)];
-  const polys = [d.pts.map(([x, y]) => [x - g[0], y])];
-  return { polys, vHalf: g[1], note: `${id} ${d.name}｜溝 幅${(g[1] * 2).toFixed(1)}・深さ${g[2]}`, maxDepth: g[2] };
-}
-
-// パンチ組立体：ヤゲン＋中間板（DXFの実位置のまま一体で昇降）。ポリゴン配列を返す。
-function buildPunch(punchType, punchFlip, tipY, chukanSel) {
-  if (punchType === 'straight') {
-    return [PUNCH_STRAIGHT.map(([x, y]) => [punchFlip ? -x : x, y + tipY])];
-  }
-  const tool = PUNCH_LIB[punchType].pts;
-  const top = Math.min(...tool.map((p) => p[1]));
-  const ck = CHUKAN_LIB[chukanSel];
-  const dy = ck.mount(top);
-  const chukan = ck.flipY
-    ? ck.pts.map(([x, y]) => [x, -y + dy])
-    : ck.pts.map(([x, y]) => [x, y + dy]);
-  const polys = [tool, chukan];
-  return polys.map((poly) => poly.map(([x, y]) => [punchFlip ? -x : x, y + tipY]));
+function bendDeduction(angleDeg, R, t, K) {
+  const th = rad(angleDeg);
+  const sb = 2 * (R + t) * Math.tan(rad(Math.min(angleDeg, 90)) / 2);
+  const ba = th * (R + K * t);
+  return sb - ba;
 }
 
 // ============================================================================
-// 板のキネマティクス（エアベンディング近似・中立軸ポリライン）
-// アクティブ曲げ頂点はパンチ直下、両側はV肩支点で回転。最大90°。
+// V肩に届くか（最小フランジ）
+//  曲げ頂点から「板の外面がV肩に接触する点」までの中立軸上の距離。
+//  フランジがこれより短いと板が溝に落ちて支持されず、そもそも曲げられない。
+//  90°・薄板では ≒ 0.707×V幅。社内の折り曲げ表の最小外寸はこれに余裕を見た値。
 // ============================================================================
-// segs（展開値）の各辺は、曲げが1か所できるたび、その両隣の辺が
-// シャープコーナー換算で（片伸び − 板厚/2）だけ長くなる（経緯まとめ 第11章）。
-// growArr は曲げごとのその伸び量（元の曲げ番号でインデックス）。
-function computeChain(part, seq, stepIdx, prog, vHalf) {
-  const { t, segs, bends, growArr } = part;
-  const B = bends.length;
-  const st = seq[stepIdx];
-  const msegs = st.mirror ? [...segs].reverse() : segs;
-  const srcOf = (i) => (st.mirror ? B - 1 - i : i);
-  const mb = [];
-  for (let i = 0; i < B; i++) {
-    const s = bends[srcOf(i)];
-    mb.push({ angle: s.angle, dir: (st.valley ? -1 : 1) * s.dir, src: srcOf(i) });
-  }
-  const j = st.mirror ? B - 1 - st.bend : st.bend;
-  const done = new Set(seq.slice(0, stepIdx).map((s) => s.bend));
-  const pr = Math.max(0, Math.min(1, prog));
-
-  const growOf = (i) => (growArr ? growArr[mb[i].src] || 0 : 0);
-  const wOf = (i) => (done.has(mb[i].src) ? 1 : i === j ? pr : 0);
-  const ms = msegs.map((L, k) =>
-    L + (k > 0 ? growOf(k - 1) * wOf(k - 1) : 0) + (k < B ? growOf(k) * wOf(k) : 0));
-
-  const activeDirOK = mb[j].dir > 0;
-  const theta = rad(Math.min(90, mb[j].angle)) * pr;
-  const alpha = theta / 2;
-  // 板の外面がV肩に接するのがエアベンドの幾何。中立軸(vy)は外面から板厚半分だけ
-  // 面直方向にオフセットする（旧式は鉛直オフセットで、深曲げで vHalf·(1-cosα) だけ
-  // ずれていた＝経緯まとめ 第8.1章バグ2）。innerY は板の内側面（マイター点＝刃先が
-  // 当たる点）で、中立軸からさらに板厚半分だけ面直に入った位置（同章バグ3）。
+function shoulderReach(vHalf, t, angleDeg) {
+  const alpha = rad(Math.min(90, angleDeg)) / 2;
   const vy = vHalf * Math.tan(alpha) - (t / 2) / Math.cos(alpha);
-  const innerY = vy - (t / 2) / Math.cos(alpha);
-
-  const signedOf = (i) =>
-    done.has(mb[i].src) ? rad(mb[i].angle) * mb[i].dir : 0;
-
-  const left = [];
-  let D = [-Math.cos(alpha), -Math.sin(alpha)];
-  let pos = [0, vy];
-  for (let i = j; i >= 0; i--) {
-    pos = [pos[0] + D[0] * ms[i], pos[1] + D[1] * ms[i]];
-    left.push(pos);
-    if (i > 0) D = rotV(D, signedOf(i - 1));
-  }
-  const right = [];
-  D = [Math.cos(alpha), -Math.sin(alpha)];
-  pos = [0, vy];
-  for (let i = j + 1; i < ms.length; i++) {
-    pos = [pos[0] + D[0] * ms[i], pos[1] + D[1] * ms[i]];
-    right.push(pos);
-    if (i < ms.length - 1) D = rotV(D, -signedOf(i));
-  }
-
-  const pts = [...left.reverse(), [0, vy], ...right];
-  return { pts, vIdx: left.length, vy, innerY, activeDirOK, thetaDeg: (theta * 180) / Math.PI };
-}
-
-// 曲げ頂点からV肩の接触点までの中立軸長さ（90°ではほぼ板厚に依らず0.707×V幅に収束）。
-// これより短いフランジはV肩に届かず溝に落ちる（経緯まとめ 第8.2章）。
-function shoulderReach(vHalf, t, ang) {
-  const a = rad(Math.min(90, ang)) / 2;
-  const vy = vHalf * Math.tan(a) - (t / 2) / Math.cos(a);
-  return Math.hypot(vHalf - (t / 2) * Math.sin(a), vy + (t / 2) * Math.cos(a));
+  const cx = vHalf - (t / 2) * Math.sin(alpha);
+  const cy = -(t / 2) * Math.cos(alpha);
+  return Math.hypot(cx, vy - cy);
 }
 
 // 現在の工程で、曲げ頂点の左右の辺がV肩に届く長さを持っているか。
+// 単に隣の1辺だけを見ると足りない。既に曲げ終わった辺は次の曲げでは一体の
+// フランジとして効くので、曲げ済みの境界まで足し込んだ長さで判定する。
 // computeChain は届く／届かないに関わらず肩支点で回転させてしまうため、
 // この判定はそれとは別立てで行う必要がある。
 function reachCheck(part, seq, stepIdx, vHalf) {
-  const { t, segs, bends, growArr } = part;
+  const { t, segs, bends } = part;
+  const gArr = part.grow || [];
   const B = bends.length;
   const st = seq[stepIdx];
   const msegs = st.mirror ? [...segs].reverse() : segs;
   const srcOf = (i) => (st.mirror ? B - 1 - i : i);
   const j = st.mirror ? B - 1 - st.bend : st.bend;
   const done = new Set(seq.slice(0, stepIdx).map((s) => s.bend));
-  const growOf = (i) => (growArr ? growArr[srcOf(i)] || 0 : 0);
+  const growOf = (i) => gArr[srcOf(i)] || 0;
   const wOf = (i) => (done.has(srcOf(i)) ? 1 : 0); // この工程の開始時点＝進捗0%
   const ms = msegs.map((L, k) =>
     L + (k > 0 ? growOf(k - 1) * wOf(k - 1) : 0) + (k < B ? growOf(k) * wOf(k) : 0));
@@ -481,23 +621,13 @@ function reachCheck(part, seq, stepIdx, vHalf) {
 }
 
 // ============================================================================
-// 伸び値（曲げ控除）計算：BD = 2(R+t)tan(θ/2) − BA、BA = θrad(R + K·t)
-// θは90°超の場合セットバックをtan45°で頭打ち（一般的な簡易式）。
-// ============================================================================
-function bendDeduction(angleDeg, R, t, K) {
-  const th = rad(angleDeg);
-  const sb = 2 * (R + t) * Math.tan(rad(Math.min(angleDeg, 90)) / 2);
-  const ba = th * (R + K * t);
-  return sb - ba;
-}
-
-// ============================================================================
 // 自動段取り探索（Dr.ABE_Bend相当の簡易版）
 // 曲げ順×姿勢（左右反転・表裏）をDFSで総当りし、粗ストローク走査で干渉チェック
 // ============================================================================
 function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel) {
   const seq = [...prefix, st];
   const idx = prefix.length;
+  // アクティブ曲げの左右のフランジがV肩に届かなければ不可
   if (!reachCheck(part, seq, idx, vHalf).ok) return false;
   const exArc = shoulderReach(vHalf, part.t, 90) + part.t;
   for (let p = 0; p <= 1.0001; p += 0.1) {
@@ -549,12 +679,12 @@ function dieCandidates(t, minFlange) {
     .sort((a, b) => Math.abs(a.vHalf * 2 - 8 * t) - Math.abs(b.vHalf * 2 - 8 * t));
 }
 
-function searchTools(part, vW, dieHalf, chukanSel, maxCombos = 8) {
+function searchTools(part, vW, dieHalf, chukanSel, maxCombos = 8, withBase = true) {
   const minFlange = Math.min(...part.segs);
   const dies = dieCandidates(part.t, minFlange);
   const found = [];
   for (const dc of dies) {
-    const info = resolveDie(dc.sel, vW, dieHalf);
+    const info = resolveDie(dc.sel, vW, dieHalf, withBase);
     for (const pid of Object.keys(PUNCH_LIB)) {
       for (const flip of [false, true]) {
         const { sols } = searchSequences(part, info.vHalf, info.polys, pid, flip, chukanSel, 1);
@@ -569,16 +699,145 @@ function searchTools(part, vW, dieHalf, chukanSel, maxCombos = 8) {
 }
 
 // ============================================================================
+// ストローク(0..1)を「ヤゲン下降（開き→接触）」と「曲げ」に分割
+//  前半 APPROACH_FRAC でヤゲンが開き位置から接触まで下降（板は平ら）、後半で曲げる
+//  → ストローク0% ＝ 刃先がV金型上面の 170mm 上（170.pdf）
+// ============================================================================
+const OPEN_GAP_MM = 170;    // ヤゲン刃先とV金型上面の開き（170.pdf）
+const APPROACH_FRAC = 0.2;  // ストローク前半を下降に割り当てる割合
+function strokeState(prog, openGap) {
+  if (prog <= APPROACH_FRAC) return { bendProg: 0, lift: openGap * (1 - prog / APPROACH_FRAC) };
+  return { bendProg: (prog - APPROACH_FRAC) / (1 - APPROACH_FRAC), lift: 0 };
+}
+
+// ============================================================================
+// 折り曲げ表（\\srv02\共有\…\ベンダー折り曲げ表.xlsx より・2024/07/26版）
+//  NOBI_TABLE[材質][V幅][板厚] = 片伸び（片側の伸び量・正で控除）
+//  展開長 ＝ Σ外寸 −（片伸び × 各曲げの両側）＝ 外寸から左右の隣接曲げ分を差し引く
+//  ※6mm以下・150°以上の鈍角は片伸び0（表の注記）
+// ============================================================================
+const NOBI_V_LIST = [8, 12, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160];
+const V_INNER_R = { 8: 1.3, 12: 2, 16: 2.6, 20: 3.3, 25: 4, 32: 5, 40: 6.5, 50: 8, 63: 10, 80: 13, 100: 16, 125: 20, 160: 26 };
+const NOBI_TABLE = {
+  鉄: {
+    8: { 1.2: 1, 1.6: 1.3 },
+    12: { 1.2: 1.2, 1.6: 1.5, 2.3: 2 },
+    16: { 2.3: 2.3, 3.2: 3 },
+    20: { 3.2: 3, 4.5: 4 },
+    25: { 3.2: 3.2, 4.5: 4, 5: 4.2, 6: 4.8 },
+    32: { 3.2: 4, 4.5: 4.5, 5: 4.5, 6: 5 },
+    40: { 3.2: 4, 4.5: 4.5, 5: 4.5, 6: 5, 9: 7 },
+    50: { 6: 6, 8: 7 },
+    63: { 9: 8 },
+    80: { 9: 9, 10: 9.5, 12: 11 },
+    100: { 12: 12 },
+    125: { 12: 13.5, 16: 15 },
+    160: { 16: 18, 19: 19.5, 22: 21 },
+  },
+  縞: {
+    25: { 2.3: 2.3, 3.2: 3, 4.5: 4 },
+    40: { 3.2: 3.2, 4.5: 4.5, 6: 5 },
+    80: { 9: 9, 12: 11 },
+  },
+};
+// 最小外寸（同表）：外寸がこれ未満だと曲げられない → 警告用
+const MINOUT_TABLE = {
+  鉄: {
+    8: { 1.2: 6.5, 1.6: 7.5 },
+    12: { 1.2: 9, 1.6: 10, 2.3: 10 },
+    16: { 2.3: 12, 3.2: 13 },
+    20: { 3.2: 15, 4.5: 17.5 },
+    25: { 3.2: 18.5, 4.5: 20, 5: 20, 6: 21 },
+    32: { 3.2: 22, 4.5: 23, 5: 24, 6: 25 },
+    40: { 3.2: 25, 4.5: 27, 5: 27, 6: 30, 9: 37 },
+    50: { 6: 35, 8: 38.5 },
+    63: { 9: 45 },
+    80: { 9: 55, 10: 55, 12: 60 },
+    100: { 12: 75 },
+    125: { 12: 90, 16: 95 },
+    160: { 16: 110, 19: 115, 22: 131 },
+  },
+  縞: {
+    25: { 2.3: 18.5, 3.2: 19, 4.5: 20 },
+    40: { 3.2: 27, 4.5: 29, 6: 30 },
+    80: { 9: 56, 12: 60 },
+  },
+};
+// (material, V, t) から表の値を引く。板厚が表に無ければ最も近い行で代用し exact:false を返す
+function lookupTable(tbl, material, V, t) {
+  const byV = (tbl[material] || {})[V];
+  if (!byV) return null;
+  const keys = Object.keys(byV).map(Number);
+  if (!keys.length) return null;
+  let best = keys[0];
+  for (const k of keys) if (Math.abs(k - t) < Math.abs(best - t)) best = k;
+  return { val: byV[best], tUsed: best, exact: Math.abs(best - t) < 1e-6 };
+}
+const lookupNobi = (material, V, t) => lookupTable(NOBI_TABLE, material, V, t);
+const lookupMinOut = (material, V, t) => lookupTable(MINOUT_TABLE, material, V, t);
+
+// ============================================================================
+// 数値入力欄（スマホ対応）
+//  ・type="text" + inputMode="decimal" → iOSでも数字キーパッド、バックスペースが効く
+//  ・編集中は文字列を保持（空欄・"1." など途中状態も許可）→ 消してから打ち直せる
+//  ・スピナー（0.1刻みプルタブ）を廃止。値の確定は入力ごと、範囲チェックはblur時
+// ============================================================================
+function NumField({ value, onChange, min, max, className }) {
+  const [text, setText] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+  // フォーカスしていない間だけ外部値に追従（モード切替・辺の増減に対応）
+  useEffect(() => {
+    if (!focused) setText(String(value));
+  }, [value, focused]);
+
+  const clamp = (n) => {
+    if (min != null) n = Math.max(min, n);
+    if (max != null) n = Math.min(max, n);
+    return n;
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      className={className}
+      onFocus={(e) => { setFocused(true); e.target.select(); }}
+      onChange={(e) => {
+        const s = e.target.value;
+        setText(s);
+        const n = Number(s);
+        // 有効な数値になった瞬間だけ反映（空欄・"-"・"." などの途中状態は保留）
+        if (s.trim() !== '' && Number.isFinite(n)) onChange(n);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const n = Number(text);
+        if (text.trim() === '' || !Number.isFinite(n)) {
+          setText(String(value)); // 無効入力は確定値に戻す
+        } else {
+          const c = clamp(n);
+          onChange(c);
+          setText(String(c));
+        }
+      }}
+    />
+  );
+}
+
+// ============================================================================
 // メインコンポーネント
 // ============================================================================
 const BendingSimulator = () => {
   // --- 板形状（初期値：図面の展開 86.3 = 30 + 16.3 + 40、t2.3、Z曲げ90°×2）---
   const [t, setT] = useState(2.3);
   const [segs, setSegs] = useState([30, 16.3, 40]);
-  const [inputMode, setInputMode] = useState('flat'); // 'flat'=展開値 / 'outer'=仕上がり外寸
+  const [inputMode, setInputMode] = useState('flat'); // 'flat'=展開値 / 'outer'=外寸法 / 'inner'=内寸法
   const [outerSegs, setOuterSegs] = useState([32.3, 21.2, 42.3]);
-  const [innerR, setInnerR] = useState(1.5);
-  const [kf, setKf] = useState(0.446);
+  const [innerSegs, setInnerSegs] = useState([27.7, 11.7, 37.7]); // 内寸法入力（展開＝内寸合計・伸び0）
+  const [matType, setMatType] = useState('鉄');      // 鉄 / 縞（折り曲げ表が分かれている）
+  const [nobiV, setNobiV] = useState(12);            // 伸び計算に使うV幅（表の列）
+  const [nobiOverride, setNobiOverride] = useState(null); // 片伸びの手動上書き（null=表から自動）
   const [bends, setBends] = useState([
     { angle: 90, dir: 1 },
     { angle: 90, dir: -1 },
@@ -587,6 +846,7 @@ const BendingSimulator = () => {
   const [dieSel, setDieSel] = useState('v12stack');
   const [vW, setVW] = useState(12);
   const [dieHalf, setDieHalf] = useState(30);
+  const [dieBase, setDieBase] = useState(true); // ダイの下の台（ホルダ・ベース）を干渉判定に含める
   const [punchType, setPunchType] = useState('904061');
   const [machineSel, setMachineSel] = useState('hd3504nt');
   const [ohAdj, setOhAdj] = useState(0); // OH補正（クランプ・中間板取付形態の差分）
@@ -598,65 +858,88 @@ const BendingSimulator = () => {
     { bend: 1, mirror: false, valley: true },
   ]);
   const [step, setStep] = useState(0);
-  const [prog, setProg] = useState(1);
+  const [prog, setProg] = useState(0); // 初期は開いた状態（ヤゲンとダイを離して表示）
   const [playing, setPlaying] = useState(false);
   // --- 表示 ---
-  const [view, setView] = useState({ scale: 4.2, cx: 0, cy: -20 }); // cx,cy=注視点(mm)
+  const [view, setView] = useState({ scale: 0.8, cx: 0, cy: -40 }); // 初期＝開き170を含む全景
   const [showGuide, setShowGuide] = useState(true);     // 曲げ開始前の板位置（ガイド線）
+  const [showDim, setShowDim] = useState(true);         // 各フランジの寸法（長さ）表示
+  const [showDieDim, setShowDieDim] = useState(true);   // 下型（Vダイ）の寸法表示
+  const [showPunchDim, setShowPunchDim] = useState(true); // 上型（ヤゲン）の寸法表示
   const [seqResults, setSeqResults] = useState(null);   // 曲げ順探索結果
   const [toolResults, setToolResults] = useState(null); // 金型総当り結果
   const dragRef = useRef(null);
 
   const canvasRef = useRef(null);
-  // 仕上がり外寸モード：伸び値（BD）で展開値へ換算
-  const bdList = useMemo(() => bends.map((b) => bendDeduction(b.angle, innerR, t, kf)), [bends, innerR, t, kf]);
+  // --- 外寸法モード：折り曲げ表の片伸びで展開値へ換算 ---
+  const nobiLookup = useMemo(() => lookupNobi(matType, nobiV, t), [matType, nobiV, t]);
+  const minOutLookup = useMemo(() => lookupMinOut(matType, nobiV, t), [matType, nobiV, t]);
+  // 基準の片伸び（手動上書き優先、無ければ表の値。表に無ければ0）
+  const baseNobi = nobiOverride != null ? nobiOverride : (nobiLookup ? nobiLookup.val : 0);
+  // 各曲げの片伸び（6mm以下・150°以上の鈍角は0＝表の注記）
+  const nobiPerBend = useMemo(
+    () => bends.map((b) => (b.angle >= 150 && t <= 6 ? 0 : baseNobi)),
+    [bends, t, baseNobi]);
   const effSegs = useMemo(() => {
     if (inputMode === 'flat') return segs;
+    if (inputMode === 'inner') return innerSegs.map((L) => Math.max(1, L)); // 内寸＝展開（伸び0）
+    // 外寸法：外寸から左右の隣接曲げの片伸びを差し引く
     return outerSegs.map((L, i) =>
-      Math.max(1, L - (i > 0 ? bdList[i - 1] / 2 : 0) - (i < bends.length ? bdList[i] / 2 : 0)));
-  }, [inputMode, segs, outerSegs, bdList, bends.length]);
-  // 曲げ済みの辺の伸び（片伸び − 板厚/2）。実測の折り曲げ表値（片伸び）に置き換えるべき
-  // ところを、ここでは暫定として K係数式の伸び値の半分を片伸びとして使う
-  // （経緯まとめ 第11章／棚卸し_jsx移植と多曲げ設計 E16・フェーズ3で表に差し替え予定）。
-  const growArr = useMemo(() => bdList.map((bd) => bd / 2 - t / 2), [bdList, t]);
-  const part = useMemo(() => ({ t, segs: effSegs, bends, growArr }), [t, effSegs, bends, growArr]);
-  const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf), [dieSel, vW, dieHalf]);
+      Math.max(1, L - (i > 0 ? nobiPerBend[i - 1] : 0) - (i < bends.length ? nobiPerBend[i] : 0)));
+  }, [inputMode, segs, innerSegs, outerSegs, nobiPerBend, bends.length]);
+  // 最小外寸を下回る辺の警告（外寸法モードのみ）
+  const minOutWarn = useMemo(() => {
+    if (inputMode !== 'outer' || !minOutLookup) return [];
+    return outerSegs.map((L, i) => (L < minOutLookup.val ? i + 1 : null)).filter((x) => x != null);
+  }, [inputMode, outerSegs, minOutLookup]);
+  // 展開 → 曲げ上がりの実寸（シャープコーナー）への伸び。内寸モードは展開＝内寸なので片伸び＝板厚相当。
+  const growPerBend = useMemo(
+    () => (inputMode === 'inner' ? bends.map(() => t / 2) : nobiPerBend.map((n) => n - t / 2)),
+    [inputMode, bends, t, nobiPerBend]);
+  const part = useMemo(() => ({ t, segs: effSegs, bends, grow: growPerBend }), [t, effSegs, bends, growPerBend]);
+  const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase), [dieSel, vW, dieHalf, dieBase]);
   const diePolys = dieInfo.polys;
   const vHalf = dieInfo.vHalf;
+  const openGap = Math.max(0, OPEN_GAP_MM - t); // 刃先がV金型上面の170mm上になる開き量
 
   // --- 全工程スイープ判定（ストローク0→100%を走査）---
   const verdicts = useMemo(() => {
-    const exArc = shoulderReach(vHalf, t, 90) + t;
     return seq.map((_, si) => {
-      const reach = reachCheck(part, seq, si, vHalf);
-      if (!reach.ok) return { orientationNG: false, reachFail: reach, firstHit: null };
       let orientationNG = false;
       let firstHit = null;
+      let worst = Infinity;
+      // V肩に届かないフランジ（最小フランジ割れ）
+      const reach = reachCheck(part, seq, si, vHalf);
+      const reachNG = reach.ok ? null : +reach.need.toFixed(1);
+      const exArc = shoulderReach(vHalf, t, 90) + t;
       for (let p = 0; p <= 1.0001; p += 0.04) {
-        const ch = computeChain(part, seq, si, p, vHalf);
+        const { bendProg, lift } = strokeState(p, openGap);
+        const ch = computeChain(part, seq, si, bendProg, vHalf);
         if (!ch.activeDirOK) orientationNG = true;
-        const punchPolys = buildPunch(punchType, punchFlip, ch.innerY, chukanSel);
+        const punchPolys = buildPunch(punchType, punchFlip, ch.innerY - lift, chukanSel);
         const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
+        if (g.gap < worst) worst = g.gap;
         if (g.gap < -0.05) {
-          firstHit = { prog: p, gap: g.gap };
+          firstHit = { prog: p, count: g.hits.length, gap: g.gap };
           break;
         }
       }
-      return { orientationNG, reachFail: null, firstHit };
+      return { orientationNG, firstHit, reachNG, worst };
     });
-  }, [part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, t]);
+  }, [part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends]);
 
-  const allOK = verdicts.every((v) => !v.firstHit && !v.orientationNG && !v.reachFail);
+  const allOK = verdicts.every((v) => !v.firstHit && !v.orientationNG && !v.reachNG);
 
   // --- 現在フレーム ---
   const frame = useMemo(() => {
+    const { bendProg, lift } = strokeState(prog, openGap);
+    const ch = computeChain(part, seq, step, bendProg, vHalf);
+    const punchPolys = buildPunch(punchType, punchFlip, ch.innerY - lift, chukanSel);
     const exArc = shoulderReach(vHalf, t, 90) + t;
-    const ch = computeChain(part, seq, step, prog, vHalf);
-    const punchPolys = buildPunch(punchType, punchFlip, ch.innerY, chukanSel);
     const g = minGap(ch, [...diePolys, ...punchPolys], t, vHalf, exArc);
     const guide = computeChain(part, seq, step, 0, vHalf); // 曲げ開始前（ストローク0%）
     return { ch, punchPolys, hits: g.hits, gap: g.gap, guide };
-  }, [part, seq, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t]);
+  }, [part, seq, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap]);
 
   // --- 機械チェック（型合わせ・曲げ切り・部品出し入れ）---
   const machineCheck = useMemo(() => {
@@ -711,11 +994,16 @@ const BendingSimulator = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     const W = canvas.width, H = canvas.height;
-    const { scale, cx, cy } = view;
+    // view が万一 NaN/Infinity でも描画で落ちないよう安全化
+    const scale = Number.isFinite(view.scale) ? Math.min(12, Math.max(0.4, view.scale)) : 4.2;
+    const cx = Number.isFinite(view.cx) ? view.cx : 0;
+    const cy = Number.isFinite(view.cy) ? view.cy : 0;
     const tx = (x) => W / 2 + (x - cx) * scale;
     const ty = (y) => H / 2 + (y - cy) * scale;
 
+    try {
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0c1116';
     ctx.fillRect(0, 0, W, H);
@@ -725,10 +1013,10 @@ const BendingSimulator = () => {
     ctx.lineWidth = 1;
     const gx0 = Math.floor((cx - W / 2 / scale) / 10) * 10;
     const gy0 = Math.floor((cy - H / 2 / scale) / 10) * 10;
-    for (let gx = gx0; tx(gx) < W; gx += 10) {
+    for (let gx = gx0, n = 0; tx(gx) < W && n < 400; gx += 10, n++) {
       ctx.beginPath(); ctx.moveTo(tx(gx), 0); ctx.lineTo(tx(gx), H); ctx.stroke();
     }
-    for (let gy = gy0; ty(gy) < H; gy += 10) {
+    for (let gy = gy0, n = 0; ty(gy) < H && n < 400; gy += 10, n++) {
       ctx.beginPath(); ctx.moveTo(0, ty(gy)); ctx.lineTo(W, ty(gy)); ctx.stroke();
     }
     // V中心線
@@ -778,6 +1066,109 @@ const BendingSimulator = () => {
     ctx.lineCap = 'butt';
     ctx.stroke();
 
+    // 寸法（各フランジの長さ mm）。外側にラベルを出して形状が判断しやすいようにする
+    if (showDim) {
+      const P = frame.ch.pts;
+      let cxp = 0, cyp = 0;
+      P.forEach((p) => { cxp += p[0]; cyp += p[1]; });
+      cxp /= P.length; cyp /= P.length;
+      ctx.save();
+      ctx.font = 'bold 12px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let k = 0; k < P.length - 1; k++) {
+        const a = P[k], b = P[k + 1];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (len < 2) continue;
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        // 辺の法線（板の重心から外向き）
+        let nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
+        if ((mx - cxp) * nx + (my - cyp) * ny < 0) { nx = -nx; ny = -ny; }
+        const off = 18;
+        const sx = tx(mx) + nx * off, sy = ty(my) + ny * off;
+        // 引出し線
+        ctx.strokeStyle = 'rgba(251,191,36,0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(tx(mx), ty(my)); ctx.lineTo(sx, sy); ctx.stroke();
+        // ラベル（読みやすいよう背景付き）
+        const label = len.toFixed(1);
+        const w = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(12,17,22,0.88)';
+        ctx.fillRect(sx - w / 2 - 4, sy - 9, w + 8, 18);
+        ctx.strokeStyle = 'rgba(148,163,184,0.4)';
+        ctx.strokeRect(sx - w / 2 - 4, sy - 9, w + 8, 18);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillText(label, sx, sy);
+      }
+      ctx.restore();
+    }
+
+    // 金型寸法。あと何mmで金型に当たるかの判断用。下型/上型で別々に表示切替できる
+    const bbox = (polys) => {
+      let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+      for (const poly of polys) for (const [x, y] of poly) {
+        if (x < a) a = x; if (x > b) b = x; if (y < c) c = y; if (y > d) d = y;
+      }
+      return { minX: a, maxX: b, minY: c, maxY: d };
+    };
+    // world 2点間の寸法線を、画面上で (offX,offY)px ずらした位置に引く
+    const drawDimLine = (p1, p2, offX, offY, color, label) => {
+      const x1 = tx(p1[0]) + offX, y1 = ty(p1[1]) + offY;
+      const x2 = tx(p2[0]) + offX, y2 = ty(p2[1]) + offY;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.45; // 補助線
+      ctx.beginPath(); ctx.moveTo(tx(p1[0]), ty(p1[1])); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx(p2[0]), ty(p2[1])); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const w = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(12,17,22,0.9)';
+      ctx.fillRect(mx - w / 2 - 3, my - 8, w + 6, 16);
+      ctx.fillStyle = color;
+      ctx.fillText(label, mx, my);
+      ctx.restore();
+    };
+
+    // 下型（Vダイ＋台）：sunpou.pdf の寸法一式。中心からの半幅を上へ、上面からの高さを右へ
+    // はしご状にスタックして重ならないよう配置（数字のみ）
+    if (showDieDim && diePolys.length) {
+      const dim = '#f1f5f9'; // 寸法色（Vダイの金色と別の白系にして重なっても読めるように）
+      const depth = dieInfo.maxDepth || 0;
+      // V開き幅（横・上）・V深さ（縦）
+      drawDimLine([-vHalf, 0], [vHalf, 0], 0, -16, dim, `${(vHalf * 2).toFixed(1)}`);
+      if (depth) drawDimLine([-vHalf, 0], [-vHalf, depth], -18, 0, dim, `${depth.toFixed(1)}`);
+      // 右半分：垂直フェースのx（=中心からの半幅）と、外形が広がる高さレベル
+      const faceSet = new Set(), levels = new Map();
+      for (const poly of diePolys) for (const [x, y] of poly) {
+        const ax = Math.abs(x);
+        if (ax > vHalf + 0.1) faceSet.add(Math.round(ax * 10) / 10);
+        if (ax >= vHalf - 0.01) { const k = Math.round(y * 10) / 10, c = levels.get(k); if (c == null || ax > c) levels.set(k, ax); }
+      }
+      const faces = [...faceSet].sort((a, b) => a - b);
+      const arr = [...levels.entries()].map(([y, hw]) => ({ y: +y, hw })).sort((a, b) => a.y - b.y);
+      // 幅ラダー：中心(0)から各フェースまで、上方向にスタック（小さい半幅ほど下）
+      faces.forEach((x, i) => drawDimLine([0, 0], [x, 0], 0, -(30 + i * 15), dim, x.toFixed(1)));
+      // V金型ブロック全幅（実寸15）
+      if (faces.length) drawDimLine([-faces[0], 26], [faces[0], 26], 0, 0, dim, (faces[0] * 2).toFixed(0));
+      // 高さラダー：上面(y=0)から外形が広がる各段まで、段の外側にスタック
+      const heights = []; let run = -99;
+      for (const a of arr) { if (a.hw > run + 5) { heights.push(a); run = a.hw; } }
+      heights.forEach((a) => { if (a.y > 1) drawDimLine([a.hw, 0], [a.hw, a.y], 16, 0, dim, a.y.toFixed(0)); });
+    }
+
+    // 上型（ヤゲン）：数字のみ。横線＝幅、縦線＝高さ。ヤゲンの緑と別の白系
+    if (showPunchDim && frame.punchPolys[0]) {
+      const dim = '#f1f5f9';
+      const p = bbox([frame.punchPolys[0]]);
+      drawDimLine([p.minX, p.minY], [p.maxX, p.minY], 0, -24, dim, `${(p.maxX - p.minX).toFixed(1)}`);
+      drawDimLine([p.maxX, p.minY], [p.maxX, p.maxY], 26, 0, dim, `${(p.maxY - p.minY).toFixed(1)}`);
+    }
+
     // 干渉点
     for (const h of frame.hits) {
       ctx.beginPath();
@@ -799,36 +1190,70 @@ const BendingSimulator = () => {
       ctx.fillStyle = '#fbbf24';
       ctx.fillText('⚠ この向きでは谷曲げ（下向き）になります。「山谷反転」で裏返してください', 16, 44);
     }
-    if (frame.gap < -0.05) {
+    if (frame.hits.length) {
       ctx.fillStyle = '#fb923c';
       ctx.font = 'bold 14px ui-monospace, monospace';
-      ctx.fillText(`⚠ 干渉：${(-frame.gap).toFixed(2)}mm 食い込み`, 16, H - 18);
+      ctx.fillText(`⚠ 干渉検出：${frame.hits.length} 点　食い込み ${(-frame.gap).toFixed(2)}mm`, 16, H - 18);
+    } else if (Number.isFinite(frame.gap)) {
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(`最小すきま ${frame.gap.toFixed(2)}mm`, 16, H - 18);
     }
-  }, [frame, diePolys, step, seq.length, t, view, showGuide, prog]);
+    } catch (err) {
+      // 描画で例外が出ても画面全体を白くしない（前フレームを残す）
+      console.error('描画エラー:', err);
+    }
+  }, [frame, diePolys, dieInfo, vHalf, step, seq.length, t, view, showGuide, showDim, showDieDim, showPunchDim, prog]);
 
-  // --- ビュー操作（ドラッグ＝パン、ホイール＝ズーム）---
+  // --- ビュー操作（1本指＝パン、2本指ピンチ＝ズーム、ホイール＝ズーム）---
+  // touch-action:none で iPhone のページスクロール／ピンチ／引っ張り更新に奪われないようにする
+  const clampScale = (s) => Math.min(12, Math.max(0.4, s));
+  const ptsRef = useRef(new Map());   // 現在触れている指
+  const pinchRef = useRef(null);      // ピンチ開始時の距離・倍率
+  const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
   const onPointerDown = (e) => {
-    dragRef.current = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    ptsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptsRef.current.size === 1) {
+      dragRef.current = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy };
+    } else if (ptsRef.current.size === 2) {
+      dragRef.current = null; // パン中断→ピンチへ
+      const [p, q] = [...ptsRef.current.values()];
+      pinchRef.current = { dist: dist2(p, q) || 1, scale: view.scale };
+    }
   };
   const onPointerMove = (e) => {
-    if (!dragRef.current) return;
-    const canvas = canvasRef.current;
-    const r = canvas.getBoundingClientRect();
-    const k = canvas.width / r.width;
-    setView((v) => ({
-      ...v,
-      cx: dragRef.current.cx - ((e.clientX - dragRef.current.x) * k) / v.scale,
-      cy: dragRef.current.cy - ((e.clientY - dragRef.current.y) * k) / v.scale,
-    }));
+    if (!ptsRef.current.has(e.pointerId)) return;
+    ptsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pts = [...ptsRef.current.values()];
+    if (pts.length >= 2 && pinchRef.current) {
+      const ratio = dist2(pts[0], pts[1]) / pinchRef.current.dist;
+      setView((v) => ({ ...v, scale: clampScale(pinchRef.current.scale * ratio) }));
+    } else if (dragRef.current && pts.length === 1) {
+      const canvas = canvasRef.current;
+      const r = canvas.getBoundingClientRect();
+      const k = canvas.width / r.width;
+      setView((v) => ({
+        ...v,
+        cx: dragRef.current.cx - ((e.clientX - dragRef.current.x) * k) / v.scale,
+        cy: dragRef.current.cy - ((e.clientY - dragRef.current.y) * k) / v.scale,
+      }));
+    }
   };
-  const onPointerUp = () => { dragRef.current = null; };
+  const onPointerUp = (e) => {
+    ptsRef.current.delete(e.pointerId);
+    if (ptsRef.current.size < 2) pinchRef.current = null;
+    if (ptsRef.current.size === 1) {
+      // ピンチ後に1本残ったらパンを再開
+      const [p] = [...ptsRef.current.values()];
+      dragRef.current = { x: p.x, y: p.y, cx: view.cx, cy: view.cy };
+    } else if (ptsRef.current.size === 0) {
+      dragRef.current = null;
+    }
+  };
   const onWheel = useCallback((e) => {
     e.preventDefault();
-    setView((v) => {
-      const s = Math.min(12, Math.max(1.2, v.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
-      return { ...v, scale: s };
-    });
+    setView((v) => ({ ...v, scale: clampScale(v.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)) }));
   }, []);
   useEffect(() => {
     const c = canvasRef.current;
@@ -839,6 +1264,7 @@ const BendingSimulator = () => {
 
   const viewPreset = (name) => {
     if (name === 'tip') setView({ scale: 5.5, cx: 0, cy: -25 });
+    else if (name === 'open') setView({ scale: 0.8, cx: 0, cy: -40 }); // 開き170を含む全景
     else if (name === 'all') setView({ scale: 1.7, cx: 0, cy: 60 });
     else setView({ scale: 4.2, cx: 0, cy: -20 });
   };
@@ -849,6 +1275,7 @@ const BendingSimulator = () => {
   const addSeg = () => {
     setSegs([...segs, 30]);
     setOuterSegs([...outerSegs, 30]);
+    setInnerSegs([...innerSegs, 27.7]);
     setBends([...bends, { angle: 90, dir: 1 }]);
     setSeq([...seq, { bend: bends.length, mirror: false, valley: false }]);
   };
@@ -856,6 +1283,7 @@ const BendingSimulator = () => {
     if (segs.length <= 2) return;
     setSegs(segs.slice(0, -1));
     setOuterSegs(outerSegs.slice(0, -1));
+    setInnerSegs(innerSegs.slice(0, -1));
     setBends(bends.slice(0, -1));
     setSeq(seq.slice(0, -1).map((s) => ({ ...s, bend: Math.min(s.bend, bends.length - 2) })));
     setStep(0); setProg(1);
@@ -887,13 +1315,8 @@ const BendingSimulator = () => {
                 onClick={() => { setStep(i); setProg(1); setPlaying(false); }}
                 className={`px-2.5 py-1 rounded text-xs font-mono border transition ${
                   step === i ? 'border-sky-400 bg-sky-900/40' : 'border-slate-700 bg-slate-900'
-                } ${v.firstHit || v.orientationNG || v.reachFail ? 'text-red-300' : 'text-emerald-300'}`}>
-                工程{i + 1} {
-                  v.reachFail ? `✕ フランジ不足(${v.reachFail.need.toFixed(1)}mm必要)`
-                  : v.orientationNG ? '要反転'
-                  : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で干渉（${(-v.firstHit.gap).toFixed(1)}mm）`
-                  : '○'
-                }
+                } ${v.firstHit || v.orientationNG || v.reachNG ? 'text-red-300' : 'text-emerald-300'}`}>
+                工程{i + 1} {v.orientationNG ? '要反転' : v.reachNG ? `✕ フランジ不足(${v.reachNG}mm必要)` : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で干渉 ${(-v.firstHit.gap).toFixed(1)}mm` : `○ 余裕${Number.isFinite(v.worst) ? v.worst.toFixed(1) : '—'}mm`}
               </button>
             ))}
           </div>
@@ -901,12 +1324,38 @@ const BendingSimulator = () => {
 
         {/* キャンバス */}
         <div className="border border-slate-800 rounded-md overflow-hidden bg-black relative">
-          <canvas ref={canvasRef} width={880} height={560} className="w-full h-auto block cursor-grab active:cursor-grabbing"
+          <canvas ref={canvasRef} width={880} height={560}
+            className="w-full h-auto block cursor-grab active:cursor-grabbing touch-none select-none"
+            style={{ touchAction: 'none' }}
             onPointerDown={onPointerDown} onPointerMove={onPointerMove}
             onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
+          <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setShowDim((v) => !v)}
+              className={`px-3 py-0.5 text-xs rounded border font-bold ${showDim
+                ? 'bg-amber-500 border-amber-400 text-slate-900'
+                : 'bg-slate-800/80 border-slate-600 text-slate-300 hover:bg-slate-700'}`}>
+              板寸法 {showDim ? 'ON' : 'OFF'}
+            </button>
+            <button
+              onClick={() => setShowDieDim((v) => !v)}
+              className={`px-3 py-0.5 text-xs rounded border font-bold ${showDieDim
+                ? 'bg-sky-500 border-sky-400 text-slate-900'
+                : 'bg-slate-800/80 border-slate-600 text-slate-300 hover:bg-slate-700'}`}>
+              Vダイ寸法 {showDieDim ? 'ON' : 'OFF'}
+            </button>
+            <button
+              onClick={() => setShowPunchDim((v) => !v)}
+              className={`px-3 py-0.5 text-xs rounded border font-bold ${showPunchDim
+                ? 'bg-emerald-500 border-emerald-400 text-slate-900'
+                : 'bg-slate-800/80 border-slate-600 text-slate-300 hover:bg-slate-700'}`}>
+              ヤゲン寸法 {showPunchDim ? 'ON' : 'OFF'}
+            </button>
+          </div>
           <div className="absolute top-2 right-2 flex gap-1.5">
             <button className={vbtn} onClick={() => viewPreset('tip')}>刃先</button>
             <button className={vbtn} onClick={() => viewPreset('std')}>標準</button>
+            <button className={vbtn} onClick={() => viewPreset('open')}>開き</button>
             <button className={vbtn} onClick={() => viewPreset('all')}>全体</button>
           </div>
           <div className="absolute bottom-2 right-3 text-[10px] text-slate-500 font-mono">
@@ -935,61 +1384,82 @@ const BendingSimulator = () => {
           <div className="bg-slate-900 border border-slate-800 rounded-md p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-bold text-slate-100">
-                板形状（{inputMode === 'flat' ? '展開寸法' : '仕上がり外寸'} mm）
+                板形状（{inputMode === 'flat' ? '展開寸法' : inputMode === 'outer' ? '外寸法' : '内寸法'} mm）
               </h2>
               <div className="flex rounded overflow-hidden border border-slate-600 text-xs">
                 <button onClick={() => setInputMode('flat')}
                   className={`px-2 py-0.5 ${inputMode === 'flat' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>展開値</button>
                 <button onClick={() => setInputMode('outer')}
-                  className={`px-2 py-0.5 ${inputMode === 'outer' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>外寸→伸び値計算</button>
+                  className={`px-2 py-0.5 ${inputMode === 'outer' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>外寸法</button>
+                <button onClick={() => setInputMode('inner')}
+                  className={`px-2 py-0.5 ${inputMode === 'inner' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>内寸法</button>
               </div>
               <div className="flex gap-2">
                 <button onClick={addSeg} className="px-2 py-0.5 text-xs rounded border border-slate-600 hover:bg-slate-800">＋辺追加</button>
                 <button onClick={removeSeg} className="px-2 py-0.5 text-xs rounded border border-slate-600 hover:bg-slate-800">－削除</button>
               </div>
             </div>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className={lbl}>板厚 t</span>
-              <input type="number" step={0.1} min={0.5} max={9} value={t}
-                onChange={(e) => setT(Number(e.target.value) || 1)} className={inp} />
+              <NumField value={t} min={0.5} max={9} onChange={setT} className={inp} />
               <span className={`${lbl} ml-3`}>展開長 {effSegs.reduce((a, b) => a + b, 0).toFixed(1)} mm</span>
               {inputMode === 'outer' && (
                 <>
-                  <span className={`${lbl} ml-3`}>内R</span>
-                  <input type="number" step={0.1} min={0.1} value={innerR}
-                    onChange={(e) => setInnerR(Number(e.target.value) || 0.5)} className={inp} />
-                  <span className={lbl}>K係数</span>
-                  <input type="number" step={0.001} min={0.2} max={0.5} value={kf}
-                    onChange={(e) => setKf(Number(e.target.value) || 0.446)} className={inp} />
+                  <span className={`${lbl} ml-3`}>材質</span>
+                  <div className="flex rounded overflow-hidden border border-slate-600 text-xs">
+                    <button onClick={() => { setMatType('鉄'); setNobiOverride(null); }}
+                      className={`px-2 py-0.5 ${matType === '鉄' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>鉄</button>
+                    <button onClick={() => { setMatType('縞'); setNobiOverride(null); }}
+                      className={`px-2 py-0.5 ${matType === '縞' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>縞</button>
+                  </div>
+                  <span className={`${lbl} ml-2`}>V</span>
+                  <select value={nobiV} onChange={(e) => { setNobiV(Number(e.target.value)); setNobiOverride(null); }} className={sel}>
+                    {NOBI_V_LIST.map((v) => <option key={v} value={v}>V{v}</option>)}
+                  </select>
+                  <span className={`${lbl} ml-2`}>片伸び</span>
+                  <NumField value={Number(baseNobi.toFixed(2))} min={0} onChange={setNobiOverride} className={inp} />
+                  {nobiOverride != null && (
+                    <button onClick={() => setNobiOverride(null)} className={vbtn}>自動に戻す</button>
+                  )}
                 </>
               )}
             </div>
             {inputMode === 'outer' && (
-              <div className="text-[11px] text-slate-500 font-mono mb-2">
-                伸び値（曲げ控除）: {bdList.map((b, i) => `曲げ${i + 1}=${b.toFixed(2)}`).join('　')}
-                ｜展開値: {effSegs.map((L) => L.toFixed(2)).join(' / ')}
+              <div className="text-[11px] font-mono mb-2 space-y-0.5">
+                <div className="text-slate-500">
+                  片伸び −{baseNobi.toFixed(2)}／片側（1曲げで両側 −{(baseNobi * 2).toFixed(2)}）
+                  {nobiOverride != null ? '｜手動入力'
+                    : nobiLookup ? `｜表 ${matType}・V${nobiV}${nobiLookup.exact ? `・t${t}` : `（t${nobiLookup.tUsed}の行で代用）`}`
+                      : `｜⚠ 表に ${matType}・V${nobiV} のデータなし（0扱い→片伸びを手入力してください）`}
+                </div>
+                <div className="text-slate-500">展開値: {effSegs.map((L) => L.toFixed(1)).join(' / ')}</div>
+                {minOutWarn.length > 0 && (
+                  <div className="text-rose-400">⚠ 最小外寸 {minOutLookup.val} 未満の辺: {minOutWarn.map((n) => `辺${n}`).join('・')}（曲げ不可の可能性）</div>
+                )}
               </div>
+            )}
+            {inputMode === 'inner' && (
+              <div className="text-[11px] text-slate-500 font-mono mb-2">内寸法をそのまま展開長として計算（伸び値0）</div>
             )}
             <div className="space-y-1.5">
               {segs.map((L, i) => (
                 <React.Fragment key={i}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-slate-500 w-10">辺{i + 1}</span>
-                    <input type="number" step={0.1} min={2}
-                      value={inputMode === 'flat' ? L : outerSegs[i]}
-                      onChange={(e) => {
-                        const v = Number(e.target.value) || 2;
+                    <NumField min={2}
+                      value={inputMode === 'flat' ? L : inputMode === 'outer' ? outerSegs[i] : innerSegs[i]}
+                      onChange={(v) => {
                         if (inputMode === 'flat') setSeg(i, v);
-                        else setOuterSegs(outerSegs.map((x, k) => (k === i ? v : x)));
+                        else if (inputMode === 'outer') setOuterSegs(outerSegs.map((x, k) => (k === i ? v : x)));
+                        else setInnerSegs(innerSegs.map((x, k) => (k === i ? v : x)));
                       }} className={inp} />
                     <span className={lbl}>mm</span>
                   </div>
                   {i < bends.length && (
                     <div className="flex items-center gap-2 pl-6 border-l-2 border-slate-700 ml-3">
                       <span className="text-xs font-mono text-amber-500 w-12">曲げ{i + 1}</span>
-                      <input type="number" step={1} min={10} max={90} value={bends[i].angle}
-                        onChange={(e) => setBend(i, { angle: Math.min(90, Number(e.target.value) || 90) })}
-                        className={inp} />
+                      <NumField value={bends[i].angle} min={10} max={90}
+                        onChange={(v) => setBend(i, { angle: v })} className={inp} />
                       <span className={lbl}>°</span>
                       <select value={bends[i].dir}
                         onChange={(e) => setBend(i, { dir: Number(e.target.value) })} className={sel}>
@@ -1017,8 +1487,7 @@ const BendingSimulator = () => {
               </label>
               <label className="flex items-center gap-1.5">
                 <span className={lbl}>OH補正</span>
-                <input type="number" step={5} value={ohAdj}
-                  onChange={(e) => setOhAdj(Number(e.target.value) || 0)} className={inp} />
+                <NumField value={ohAdj} onChange={setOhAdj} className={inp} />
                 <span className={lbl}>mm</span>
               </label>
             </div>
@@ -1072,17 +1541,19 @@ const BendingSimulator = () => {
                   <option value="flat">汎用フラット（手動V幅）</option>
                 </select>
               </label>
+              <label className="flex items-center gap-1 text-xs text-slate-400" title="ダイ本体の下のホルダ・中間ベース・ベースを干渉判定に含めます。下がるフランジが当たるかはここで決まります。">
+                <input type="checkbox" checked={dieBase} onChange={(e) => setDieBase(e.target.checked)} />
+                台（ホルダ・ベース）を含める
+              </label>
               {(dieSel === 'flat' || dieInfo.manual) && (
                 <>
                   <label className="flex items-center gap-1.5">
                     <span className={lbl}>V幅</span>
-                    <input type="number" step={1} min={4} max={25} value={vW}
-                      onChange={(e) => setVW(Number(e.target.value) || 12)} className={inp} />
+                    <NumField value={vW} min={4} max={25} onChange={setVW} className={inp} />
                   </label>
                   <label className="flex items-center gap-1.5">
                     <span className={lbl}>ダイ半幅</span>
-                    <input type="number" step={1} min={8} max={60} value={dieHalf}
-                      onChange={(e) => setDieHalf(Number(e.target.value) || 30)} className={inp} />
+                    <NumField value={dieHalf} min={8} max={60} onChange={setDieHalf} className={inp} />
                   </label>
                 </>
               )}
@@ -1112,6 +1583,18 @@ const BendingSimulator = () => {
                 <input type="checkbox" checked={showGuide} onChange={(e) => setShowGuide(e.target.checked)} />
                 ガイド線（曲げ開始位置）
               </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                <input type="checkbox" checked={showDim} onChange={(e) => setShowDim(e.target.checked)} />
+                板寸法
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                <input type="checkbox" checked={showDieDim} onChange={(e) => setShowDieDim(e.target.checked)} />
+                Vダイ寸法
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                <input type="checkbox" checked={showPunchDim} onChange={(e) => setShowPunchDim(e.target.checked)} />
+                ヤゲン寸法
+              </label>
             </div>
             <div className="text-[11px] text-slate-500 font-mono mb-4 leading-relaxed">
               {`ダイ: ${dieInfo.note}｜V半幅 ${vHalf.toFixed(2)}（キネマティクス支点）`}
@@ -1138,7 +1621,7 @@ const BendingSimulator = () => {
               </button>
               <button
                 onClick={() => {
-                  const r = searchTools(part, vW, dieHalf, chukanSel, 8);
+                  const r = searchTools(part, vW, dieHalf, chukanSel, 8, dieBase);
                   setToolResults(r); setSeqResults(null);
                 }}
                 className="px-3 py-1 text-xs rounded bg-sky-700 hover:bg-sky-600 text-white">
@@ -1225,11 +1708,8 @@ const BendingSimulator = () => {
           干渉判定はヤゲン・中間板・ダイ（スタック含む）の全てに対して行います。
           板は中立軸で表現し、展開寸法（図面値 30 / 16.3 / 40、展開長86.3）で入力します。
           エアベンディングの肩支点近似で内Rとスプリングバックは無視、曲げ角度は90°まで。
-          判定は全ストロークを走査し、板厚の半分（余裕0.05mm）を超えて侵入した点を干渉として橙色で
-          表示します（正規接触部は板に沿った長さ＝弧長で除外。V肩に届かないフランジは「フランジ不足」
-          として別途判定）。曲げ済みの辺は片伸び相当ぶん伸びるものとして扱います（伸び値は暫定的に
-          K係数式から近似。上型ホルダ・実測ダイ台・Z曲げ段差の実績値は未移植 — 詳細は
-          <code>棚卸し_jsx移植と多曲げ設計_20260909.md</code> を参照）。
+          判定は全ストロークを走査し、板厚の半分未満まで接近／侵入した点を干渉として橙色で表示します
+          （V肩・刃先の正規接触部は除外）。
         </div>
       </div>
     </div>

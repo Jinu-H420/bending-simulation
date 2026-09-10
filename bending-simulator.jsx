@@ -851,6 +851,12 @@ const ZMIN = { 12: { 2.3: 12.3 }, 25: { 6: 30 } };
 // 上型に当たって普通には曲がらない形でも、底の内-内がこれ以上あれば曲げ戻せるので作れる。
 // 曲げ戻すときに底がダイの上で開ける必要があるため、この寸法が要る（経緯まとめ 第17章）。
 const SUTE_MIN_INNER = 120;
+
+// 金型の所有（ベンダー折り曲げ金型寸法表）。ダイは1台835mmなので、
+// 何台持っているかで一度に曲げられる長さの上限が決まる。
+// V63 は1台しかないので835mmまで、V32 は2台で1670mmまで。
+const DIE_UNIT_LEN = 835;
+const DIE_STOCK = { 8: 5, 12: 5, 16: 5, 20: 5, 25: 5, 32: 2, 40: 5, 50: 5, 63: 1, 80: 5, 100: 5, 125: 5, 160: 5 };
 function zMinStep(V, t) {
   const tb = ZMIN[V] || {};
   if (tb[t] != null) return { val: tb[t], src: '実績' };
@@ -1172,7 +1178,17 @@ const BendingSimulator = () => {
   // 特殊ヤゲン（中低）は中央の窓の中でしか使えない。窓を超えると両端の全高部に当たる。
   const punchSpecial = PUNCH_LIB[punchType] ? PUNCH_LIB[punchType].special : null;
   const winNG = punchSpecial && bendLen > punchSpecial.win ? punchSpecial : null;
-  const allOK = noHit && zStepWarn.length === 0 && !winNG;
+  // 一度に曲げられる長さの上限。金型の所有台数と機械の長さのうち短いほう。
+  const lenLimit = useMemo(() => {
+    const n = DIE_STOCK[nobiV];
+    const m = MACHINE_LIB[machineSel];
+    const c = [];
+    if (n) c.push({ v: DIE_UNIT_LEN * n, why: `V${nobiV} ${n}台×${DIE_UNIT_LEN}mm` });
+    if (m && m.len) c.push({ v: m.len, why: m.name.replace('AMADA ', '') });
+    return c.length ? c.reduce((a, b) => (a.v <= b.v ? a : b)) : null;
+  }, [nobiV, machineSel]);
+  const lenNG = lenLimit && bendLen > lenLimit.v ? lenLimit : null;
+  const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG;
 
   // 捨て曲げが使えるか。効くのは上型（ヤゲン・中間板・ホルダ・柱）に当たって
   // いる場合だけで、フランジ不足やダイ側の干渉は捨て曲げでも解決しない。
@@ -1587,6 +1603,7 @@ const BendingSimulator = () => {
           {allOK ? '全工程 曲げ可能（干渉なし）'
             : !noHit ? '干渉あり — この段取りでは曲がりません'
             : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
+            : lenNG ? `曲げ長さ ${bendLen}mm が上限 ${lenNG.v}mm を超えています — ${lenNG.why}`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
           <div className="ml-auto flex gap-2 flex-wrap">
             {verdicts.map((v, i) => (
@@ -1885,15 +1902,16 @@ const BendingSimulator = () => {
                   <option value="straight">ストレート（汎用）</option>
                 </select>
               </label>
-              {punchSpecial && (
-                <label className="flex items-center gap-1.5">
-                  <span className={lbl}>曲げ長さ</span>
-                  <NumField value={bendLen} min={1} onChange={setBendLen} className={inp} />
-                  <span className={`${lbl} ${winNG ? 'text-rose-400' : 'text-emerald-400'}`}>
-                    mm ／ 窓 {punchSpecial.win}mm{winNG ? ' を超過' : ' に収まる'}
-                  </span>
-                </label>
-              )}
+              <label className="flex items-center gap-1.5">
+                <span className={lbl}>曲げ長さ</span>
+                <NumField value={bendLen} min={1} onChange={setBendLen} className={inp} />
+                <span className={`${lbl} ${lenNG || winNG ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  mm
+                  {lenLimit ? ` ／ 上限 ${lenLimit.v}mm（${lenLimit.why}）` : ''}
+                  {punchSpecial ? ` ／ 窓 ${punchSpecial.win}mm` : ''}
+                  {lenNG ? ' を超過' : winNG ? ' の窓を超過' : ' に収まる'}
+                </span>
+              </label>
               {punchType !== 'straight' && !punchSpecial && (
                 <label className="flex items-center gap-1.5">
                   <span className={lbl}>中間板</span>

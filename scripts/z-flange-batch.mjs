@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 const lines = readFileSync('bending-simulator.jsx', 'utf8').split(/\r?\n/);
 const end = lines.findIndex((l) => l.startsWith('function FinishedPreview'));
 const engine = new Function(
-  lines.slice(1, end).join('\n') +
+  lines.slice(0, end).filter((l) => !l.startsWith('import ')).join('\n') +
   '\nreturn {resolveDie,computeChain,minGap,shoulderReach,reachCheck,toolsFor,strokeState,lookupTable,NOBI_TABLE};'
 )();
 

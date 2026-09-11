@@ -18,7 +18,7 @@ const XLSX_IN = 'docs/Z曲げ_実績記入シート.xlsx';
 const lines = readFileSync(SRC, 'utf8').split(/\r?\n/);
 const end = lines.findIndex((l) => l.startsWith('function FinishedPreview'));
 if (end < 0) throw new Error('コンポーネントの開始位置が見つかりません');
-const engineSrc = lines.slice(1, end).join('\n'); // 1行目の import は落とす
+const engineSrc = lines.slice(0, end).filter((l) => !l.startsWith('import ')).join('\n'); // 1行目の import は落とす
 
 const names = ['resolveDie', 'computeChain', 'minGap', 'shoulderReach', 'reachCheck',
   'toolsFor', 'strokeState', 'simMinStep', 'zMinStep', 'lookupTable', 'NOBI_TABLE',

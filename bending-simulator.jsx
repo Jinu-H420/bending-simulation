@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { loadRecords, addRecord, removeRecord, lookup, missRate, exportJSON, importJSON } from './src/records.js';
 
 // ============================================================================
 // 金型実測データ（bending.dxf のベクタ座標をそのまま採用・寸法照合済み）
@@ -383,6 +384,36 @@ function mountParts(sel, machine) {
   return m.parts.map((p) => p.map(([x, y]) => [x, y]));
 }
 
+// ライブラリのダイに付く台。DIE_LIB の座標系（ダイ中心が0・天面がy0）で持つので、
+// 溝を選んだときのずらし（x - g[0]）をダイ本体と同じだけ掛ければそのまま乗る。
+// 出典：ダイ.dxf（2026-09-11 受領）。ダイ本体は DIE_LIB 側にあるのでここには入れない。
+const DIE_MOUNT_LIB = {
+  // 出典：ダイV20-2.dxf（2026-09-11 受領）。DIE_LIB と同じ向き・同じ原点で持つ。
+  '30540': { note: 'ダイV20-2.dxf 実測（取付板・ホルダ・ベース・ベッド）', flipDy: -1, parts: [
+      [[-25, 57], [25, 57], [25, 47], [7.5, 47], [7.5, 41], [-7.5, 41], [-7.5, 47], [-25, 47]],
+      [[22, 132], [-38, 132], [-38, 112.5], [-21, 112.5], [-21, 57], [21, 57], [21, 112.5], [22, 112.5]],
+      [[22, 187], [-38, 187], [-38, 167], [-45, 167], [-55, 150], [-55, 134], [-45, 117], [-38, 117],
+       [-38, 132], [22, 132], [22, 117], [29, 117], [39, 134], [39, 150], [29, 167], [22, 167]],
+      [[-115, 172], [-38, 172], [-38, 187], [22, 187], [22, 172], [98.99, 172], [98.99, 225], [-115, 225]],
+      [[-115, 225], [98.99, 225], [98.99, 1120], [-115, 1120]],
+      [[-132, 220], [-115, 220], [-115, 200], [-132, 200]],
+      [[98.99, 220], [115.99, 220], [115.99, 200], [98.99, 200]],
+  ] },
+};
+
+// 取付図の実測が無い金型の台。HD3504NT の実測ホルダ・ベース・ベッドを、その金型の
+// 高さに合わせて上下させて代用する。何も描かないとダイが宙に浮き、下に当たる相手が
+// いないことになってしまうため。形は参考値で、実機とは違うことがある。
+const GENERIC_MOUNT_REF = 'lib:03500:0';
+const GENERIC_REF_BOTTOM = 60;    // 基準にした 03500 の底（ここから15mm上がホルダ天面）
+function genericMount(dieBottom) {
+  const m = DIE_MOUNT[GENERIC_MOUNT_REF];
+  if (!m) return null;
+  const dy = dieBottom - GENERIC_REF_BOTTOM;
+  return m.parts.filter((_, i) => i !== 3)     // 3番は基準ダイ本体なので外す
+    .map((p) => p.map(([x, y]) => [x, y + dy]));
+}
+
 const dieMountInfo = (sel) => DIE_MOUNT[sel] || null;
 
 // ダイ選択の解決：{ polys:[...], vHalf, note } を返す
@@ -399,7 +430,9 @@ function baseNote(mp, sel, machine, stack) {
   return '（台なし・この金型は取付図の実測がありません）';
 }
 
-function resolveDie(sel, vW, dieHalf, withBase = true, machine = null) {
+// flip=true はダイを左右ひっくり返して置いた状態。2溝ダイのように左右非対称な型では、
+// 使う溝が台に対して逆側に来るので、台は動かさずダイだけを反す（ダイV20.dxf で確認）。
+function resolveDie(sel, vW, dieHalf, withBase = true, machine = null, flip = false) {
   if (sel === 'flat') {
     const vh = vW / 2;
     const W = Math.max(dieHalf, vh + 2);
@@ -428,13 +461,34 @@ function resolveDie(sel, vW, dieHalf, withBase = true, machine = null) {
     return { polys: [d.pts], vHalf: vW / 2, note: `${id} ${d.name}（特殊：V支点は手動V幅${vW}で近似）`, manual: true };
   }
   const g = d.grooves[Math.min(gi, d.grooves.length - 1)];
-  const block = [d.pts.map(([x, y]) => [x - g[0], y])];
+  // 使う溝を x=0（ラム中心）へ寄せる。
+  // 反転＝ダイを180°回して置き直すこと。台（取付板・ホルダ・ベース）は機械側に付いた
+  // ままなので鏡にはしない。ダイの座は動かないので、台はダイの中心と同じだけ平行移動する。
+  // 取付板の15mmの凸はダイ中心にあるので、これでダイ側の凹とぴったり噛み合う。
+  const sxDie = flip ? (x) => -x + g[0] : (x) => x - g[0];
+  const sxMount = flip ? (x) => x + g[0] : (x) => x - g[0];
+  const block = [d.pts.map(([x, y]) => [sxDie(x), y])];
   const vh = grooveVHalf(block, g[2], g[1]);
   const mp = withBase ? mountParts(sel, machine) : null;
-  const polys = mp || block;
-  return { polys, mount: dieMountInfo(sel), vHalf: vh,
-           baseKind: mp ? 'measured' : 'none',
-           note: `${id} ${d.name}｜V幅${(vh * 2).toFixed(1)}・深さ${g[2]}${baseNote(mp, sel, machine, false)}`,
+  let polys = mp || block;
+  let baseKind = mp ? 'measured' : 'none';
+  const lm = !mp && withBase ? DIE_MOUNT_LIB[id] : null;
+  if (lm) {
+    const dy = flip ? (lm.flipDy || 0) : 0;   // 反転して置くとダイが少し浮く分
+    polys = [...block, ...lm.parts.map((p) => p.map(([x, y]) => [sxMount(x), y + dy]))];
+    baseKind = 'measured';
+  } else if (!mp && withBase) {
+    const gm = genericMount(Math.max(...d.pts.map(([, y]) => y)));
+    if (gm) { polys = [...block, ...gm]; baseKind = 'generic'; }
+  }
+  const bn = lm ? `＋台（${lm.note}）${flip ? '｜ダイ左右反転' : ''}`
+    : baseKind === 'measured' ? '＋台（図面実測）'
+      : baseKind === 'generic' ? '＋台（HD3504NTの実測ホルダ・ベースで代用・参考）'
+        : baseNote(mp, sel, machine, false);
+  // 2溝ダイは、いまの置き方でどちらの溝が左右どちらに来るかを返す（画面に出すため）
+  const grooveMap = d.grooves.map((gg) => ({ v: Math.round(gg[1] * 2), x: sxDie(gg[0]) }));
+  return { polys, mount: dieMountInfo(sel), vHalf: vh, baseKind, grooveMap,
+           note: `${id} ${d.name}｜V幅${(vh * 2).toFixed(1)}・深さ${g[2]}${bn}`,
            maxDepth: g[2] };
 }
 
@@ -765,6 +819,27 @@ function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, c
   return true;
 }
 
+// 曲げ順はいまのまま、工程ごとの突き当て（左右）と裏返しだけを探す。
+// 順番は現場で決まっていることが多く、変えられるのは板の入れ方だけ、という場面のため。
+function searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel) {
+  const n = seq.length;
+  if (n > 8) return null;                 // 2^n×2^n が効くので上限を切る
+  const order = seq.map((s) => s.bend);
+  for (let v = 0; v < (1 << n); v++) {
+    for (let m = 0; m < (1 << n); m++) {
+      const cand = order.map((b, k) => ({
+        bend: b, mirror: !!(m >> k & 1), valley: !!(v >> k & 1),
+      }));
+      let ok = true;
+      for (let i = 0; i < n && ok; i++) {
+        ok = stepFeasible(part, cand.slice(0, i), cand[i], vHalf, diePolys, punchType, punchFlip, chukanSel);
+      }
+      if (ok) return cand;
+    }
+  }
+  return null;
+}
+
 function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, limit = 6) {
   const B = part.bends.length;
   const sols = [];
@@ -1091,21 +1166,39 @@ function finishedOutline(segs, bends) {
 //  ・スピナー（0.1刻みプルタブ）を廃止。値の確定は入力ごと、範囲チェックはblur時
 // ============================================================================
 // 出来上がり形状のミニ断面。入力した山谷がそのまま出るので、指定の確認に使う。
-function FinishedPreview({ segs, bends }) {
+// 曲げ位置の丸をクリックすると、押した順に 1回目・2回目… と番号がつく。
+// order[i] = その曲げが何回目か（null なら未指定）。onPick を渡すとクリックできる。
+function FinishedPreview({ segs, bends, order = [], onPick }) {
   const pts = finishedOutline(segs, bends);
   const xs = pts.map((p) => p[0]);
   const ys = pts.map((p) => p[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   const y0 = Math.min(...ys), y1 = Math.max(...ys);
   const span = Math.max(x1 - x0, y1 - y0) || 1;
-  const m = span * 0.1;
+  const m = span * 0.16;   // 丸が端で欠けないよう余白を広めに取る
   const vb = `${x0 - m} ${y0 - m} ${x1 - x0 + 2 * m} ${y1 - y0 + 2 * m}`;
   const sw = span / 55;
+  const r = sw * 3.4;
   return (
-    <svg viewBox={vb} style={{ width: '100%', height: 108 }} preserveAspectRatio="xMidYMid meet">
+    <svg viewBox={vb} style={{ width: '100%', height: 140 }} preserveAspectRatio="xMidYMid meet">
       <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke="#38bdf8"
         strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={pts[0][0]} cy={pts[0][1]} r={sw * 1.7} fill="#f59e0b" />
+      {bends.map((_, i) => {
+        const [cx, cy] = pts[i + 1] || [0, 0];
+        const n = order[i];
+        return (
+          <g key={i} onClick={onPick ? () => onPick(i) : undefined}
+            style={{ cursor: onPick ? 'pointer' : 'default' }}>
+            <circle cx={cx} cy={cy} r={r * 1.6} fill="transparent" />
+            <circle cx={cx} cy={cy} r={r} fill={n ? '#0284c7' : '#1e293b'}
+              stroke={n ? '#7dd3fc' : '#64748b'} strokeWidth={sw * 0.6} />
+            <text x={cx} y={cy} fill={n ? '#ffffff' : '#94a3b8'} fontSize={r * 1.45}
+              textAnchor="middle" dominantBaseline="central" fontWeight="bold"
+              style={{ pointerEvents: 'none', userSelect: 'none' }}>{n || '?'}</text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -1157,22 +1250,24 @@ function NumField({ value, onChange, min, max, className }) {
 // メインコンポーネント
 // ============================================================================
 const BendingSimulator = () => {
-  // --- 板形状（初期値：図面の展開 86.3 = 30 + 16.3 + 40、t2.3、Z曲げ90°×2）---
-  const [t, setT] = useState(2.3);
-  const [segs, setSegs] = useState([30, 16.3, 40]);
+  // --- 板形状（初期値：実際に曲げた品物。展開 244 = 46+26+100+26+46、t6、90°×4）---
+  const [t, setT] = useState(6);
+  const [segs, setSegs] = useState([46, 26, 100, 26, 46]);
   const [inputMode, setInputMode] = useState('flat'); // 'flat'=展開値 / 'outer'=外寸法 / 'inner'=内寸法
-  const [outerSegs, setOuterSegs] = useState([32.3, 21.2, 42.3]);
-  const [innerSegs, setInnerSegs] = useState([27.7, 11.7, 37.7]); // 内寸法入力（展開＝内寸合計・伸び0）
+  const [outerSegs, setOuterSegs] = useState([50.5, 35, 109, 35, 50.5]); // 展開＋片伸び4.5（V20・t6 実績）
+  const [innerSegs, setInnerSegs] = useState([40, 14, 88, 14, 40]);    // 内寸法入力（展開＝内寸合計・伸び0）
   const [matType, setMatType] = useState('鉄');      // 鉄 / 縞（折り曲げ表が分かれている）
-  const [nobiV, setNobiV] = useState(12);            // 伸び計算に使うV幅（表の列）
-  const [nobiOverride, setNobiOverride] = useState(null); // 片伸びの手動上書き（null=表から自動）
+  const [nobiV, setNobiV] = useState(20);            // 伸び計算に使うV幅（表の列）
+  const [nobiOverride, setNobiOverride] = useState(4.5); // 片伸びの手動上書き（V20・t6 は表に無く、実績値）
   const [bends, setBends] = useState([
     { angle: 90, dir: 1 },
     { angle: 90, dir: -1 },
+    { angle: 90, dir: -1 },
+    { angle: 90, dir: 1 },
   ]);
   // --- 金型 ---
-  const [dieSel, setDieSel] = useState('v12stack');
-  const [vW, setVW] = useState(12);
+  const [dieSel, setDieSel] = useState('lib:30540:1');   // 30540 V20溝（V12と一体の2溝ダイ）
+  const [vW, setVW] = useState(20);
   const [dieHalf, setDieHalf] = useState(30);
   const [dieBase, setDieBase] = useState(true); // ダイの下の台（ホルダ・ベース）を干渉判定に含める
   const [punchType, setPunchType] = useState('904061');
@@ -1180,12 +1275,20 @@ const BendingSimulator = () => {
   const [machineSel, setMachineSel] = useState('hd3504nt');
   const [ohAdj, setOhAdj] = useState(0); // OH補正（クランプ・中間板取付形態の差分）
   const [punchFlip, setPunchFlip] = useState(false);
+  const [dieFlip, setDieFlip] = useState(false);   // ダイを左右反転（2溝ダイなど左右非対称の型で効く）
   const [chukanSel, setChukanSel] = useState('std');
   // --- 工程 ---
+  // 既定は実際に曲げた段取り。4工程目だけ板を反対側から入れる（突き当て反転）。
   const [seq, setSeq] = useState([
     { bend: 0, mirror: false, valley: false },
     { bend: 1, mirror: false, valley: true },
+    { bend: 2, mirror: false, valley: true },
+    { bend: 3, mirror: true, valley: false },
   ]);
+  const [records, setRecords] = useState(() => loadRecords());   // 曲げた／曲げられなかった実績
+  const [recNote, setRecNote] = useState('');
+  const [picking, setPicking] = useState([]);  // 断面をクリックして曲げ順を選んでいる途中
+  const pickingRef = useRef([]);
   const [step, setStep] = useState(0);
   const [prog, setProg] = useState(0); // 初期は開いた状態（ヤゲンとダイを離して表示）
   const [playing, setPlaying] = useState(false);
@@ -1193,8 +1296,8 @@ const BendingSimulator = () => {
   const [view, setView] = useState({ scale: 0.8, cx: 0, cy: -40 }); // 初期＝開き170を含む全景
   const [showGuide, setShowGuide] = useState(true);     // 曲げ開始前の板位置（ガイド線）
   const [showDim, setShowDim] = useState(true);         // 各フランジの寸法（長さ）表示
-  const [showDieDim, setShowDieDim] = useState(true);   // 下型（Vダイ）の寸法表示
-  const [showPunchDim, setShowPunchDim] = useState(true); // 上型（ヤゲン）の寸法表示
+  const [showDieDim, setShowDieDim] = useState(false);  // 下型（Vダイ）の寸法表示（既定OFF）
+  const [showPunchDim, setShowPunchDim] = useState(false); // 上型（ヤゲン）の寸法表示（既定OFF）
   const [seqResults, setSeqResults] = useState(null);   // 曲げ順探索結果
   const [toolResults, setToolResults] = useState(null); // 金型総当り結果
   const dragRef = useRef(null);
@@ -1245,12 +1348,11 @@ const BendingSimulator = () => {
   const part = useMemo(() => ({ t, segs: effSegs, bends, grow: growPerBend }), [t, effSegs, bends, growPerBend]);
   // 板厚・材質から基準金型（折り曲げ表の赤枠）を決め、変わったら金型を自動で切り替える。
   // 手で選び直したものは、板厚か材質を変えるまでそのまま残る。
+  // 基準金型は「折り曲げ表ならこれ」という目安。選んだ金型を勝手に差し替えない。
+  // 使いたいときは金型欄のボタンで切り替える。
   const baseDie = useMemo(() => pickDie(matType, t), [matType, t]);
-  useEffect(() => {
-    if (baseDie && baseDie.sel) setDieSel(baseDie.sel);
-  }, [baseDie && baseDie.sel]);
-  const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase, machineSel),
-    [dieSel, vW, dieHalf, dieBase, machineSel]);
+  const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase, machineSel, dieFlip),
+    [dieSel, vW, dieHalf, dieBase, machineSel, dieFlip]);
 
   // 板厚→金型→V幅→片伸び を繋ぐ。金型が変われば伸び値の引く列も変わるのが実務。
   // 手で入れた片伸びの上書きは、金型が変わった時点で解除する。
@@ -1259,8 +1361,14 @@ const BendingSimulator = () => {
     if (dieV == null) return;
     const col = NOBI_V_LIST.reduce((b, v) => (Math.abs(v - dieV) < Math.abs(b - dieV) ? v : b), NOBI_V_LIST[0]);
     setNobiV(col);
-    setNobiOverride(null);
   }, [dieV]);
+  // 2溝ダイのとき、いまどちらの溝が左右に来ているか
+  const grooveOrder = useMemo(() => {
+    const gm = dieInfo.grooveMap;
+    if (!gm || gm.length !== 2) return null;
+    const sorted = [...gm].sort((a, b) => a.x - b.x);
+    return { left: `V${sorted[0].v}`, right: `V${sorted[1].v}` };
+  }, [dieInfo]);
   const diePolys = dieInfo.polys;
   const vHalf = dieInfo.vHalf;
   // 最小フランジ（外寸）。折り曲げ表の値は実績なので、V肩に届くかの幾何より厳しいことが多い。
@@ -1356,6 +1464,33 @@ const BendingSimulator = () => {
   }, [dieInfo, nobiV, t, vHalf, part, seq, openGap]);
   const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG && !downWarn
     && minOutWarn.length === 0;
+
+  // --- 実績の記録と引き当て ---------------------------------------------
+  // いまの段取りを1件の「条件」にまとめる。記録の鍵もここから作る。
+  const nowCase = useMemo(() => ({
+    die: dieSel, dieFlip, punch: punchType, punchFlip, machine: machineSel,
+    mat: matType, t, nobi: baseNobi, segs: effSegs, bends, seq, simOK: allOK,
+  }), [dieSel, dieFlip, punchType, punchFlip, machineSel, matType, t, baseNobi,
+       effSegs, bends, seq, allOK]);
+  const recHit = useMemo(() => lookup(records, nowCase), [records, nowCase]);
+  const recMiss = useMemo(() => missRate(records, nowCase), [records, nowCase]);
+  const saveResult = (bent) => {
+    setRecords(addRecord(records, nowCase, bent, recNote));
+    setRecNote('');
+  };
+  const dumpRecords = () => {
+    const blob = new Blob([exportJSON(records)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `曲げ実績_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const readRecords = (file) => {
+    const fr = new FileReader();
+    fr.onload = () => { try { setRecords(importJSON(records, String(fr.result))); } catch (e) { alert('読み込めませんでした: ' + e.message); } };
+    fr.readAsText(file);
+  };
 
   // 捨て曲げが使えるか。効くのは上型（ヤゲン・中間板・ホルダ・柱）に当たって
   // いる場合だけで、フランジ不足やダイ側の干渉は捨て曲げでも解決しない。
@@ -1682,10 +1817,13 @@ const BendingSimulator = () => {
       const canvas = canvasRef.current;
       const r = canvas.getBoundingClientRect();
       const k = canvas.width / r.width;
+      // setView の中では非同期に評価されるので、開始点はここで取り出しておく
+      // （指を離した直後だと dragRef.current が null になって落ちる）
+      const d = dragRef.current;
       setView((v) => ({
         ...v,
-        cx: dragRef.current.cx - ((e.clientX - dragRef.current.x) * k) / v.scale,
-        cy: dragRef.current.cy - ((e.clientY - dragRef.current.y) * k) / v.scale,
+        cx: d.cx - ((e.clientX - d.x) * k) / v.scale,
+        cy: d.cy - ((e.clientY - d.y) * k) / v.scale,
       }));
     }
   };
@@ -1750,6 +1888,67 @@ const BendingSimulator = () => {
   };
   const setStepConf = (i, patch) => setSeq(seq.map((s, k) => (k === i ? { ...s, ...patch } : s)));
 
+  // 曲げ順の入れ替え。寸法を入れ直さずに、順番だけ後から変えられるようにする。
+  const moveStep = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= seq.length) return;
+    const next = seq.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    setSeq(next);
+    setStep(j); setProg(1); setPlaying(false);
+  };
+  // 断面の丸をクリックして曲げ順を決める。押した順に番号がつき、全部押した時点で確定。
+  const pickBend = (b) => {
+    // 連続で押されても取りこぼさないよう、途中経過は ref を正とする
+    const cur = pickingRef.current.filter((x) => x < bends.length);
+    const next = cur.includes(b) ? cur.filter((x) => x !== b) : [...cur, b];
+    pickingRef.current = next;
+    if (next.length < bends.length) { setPicking(next); return; }
+    pickingRef.current = [];
+    setSeq(next.map((bi) => {
+      const old = seq.find((s) => s.bend === bi);
+      return { bend: bi, mirror: old ? old.mirror : false,
+               valley: old ? old.valley : bends[bi].dir < 0 };
+    }));
+    setPicking([]);
+    setStep(0); setProg(1); setPlaying(false);
+  };
+  // 丸に出す番号。選んでいる途中はその途中経過、ふだんは今の工程順。
+  const bendOrder = useMemo(() => {
+    const o = bends.map(() => null);
+    if (picking.length) picking.forEach((b, k) => { o[b] = k + 1; });
+    else seq.forEach((s, k) => { if (o[s.bend] == null) o[s.bend] = k + 1; });
+    return o;
+  }, [picking, seq, bends]);
+
+  // 曲げ順はそのままで、通る突き当て（左右）と裏返しを探して当てはめる。
+  const findStops = () => {
+    const found = searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel);
+    if (!found) { alert('この曲げ順では、突き当てをどう変えても通りませんでした。順番を変えてみてください。'); return; }
+    setSeq(found);
+    setStep(0); setProg(1); setPlaying(false);
+  };
+  // 突き当てを左右逆にする＝板を反対側から入れる。全工程まとめて切り替える。
+  const flipAllStops = () => {
+    setSeq(seq.map((x) => ({ ...x, mirror: !x.mirror })));
+    setProg(1); setPlaying(false);
+  };
+  const reverseSeq = () => {
+    setSeq([...seq].reverse());
+    setStep(0); setProg(1); setPlaying(false);
+  };
+  const resetSeq = () => {
+    setSeq(bends.map((_, i) => ({ bend: i, mirror: false, valley: bends[i].dir < 0 })));
+    setStep(0); setProg(1); setPlaying(false);
+  };
+  // 同じ曲げが2回出ていないか、抜けている曲げが無いかを見る
+  const seqWarn = useMemo(() => {
+    const used = seq.map((s) => s.bend);
+    const dup = [...new Set(used.filter((b, k) => used.indexOf(b) !== k))];
+    const missing = bends.map((_, i) => i).filter((i) => !used.includes(i));
+    return { dup, missing };
+  }, [seq, bends]);
+
   const inp = 'w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-right text-slate-100 text-sm';
   const sel = 'bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-slate-100 text-sm';
   const lbl = 'text-slate-400 text-xs';
@@ -1762,6 +1961,31 @@ const BendingSimulator = () => {
           <h1 className="text-lg font-bold tracking-wide text-slate-100">曲げ加工シミュレーター</h1>
           <span className="text-xs text-slate-500">実測金型（V12ダイ＋実機ヤゲン）｜プレスブレーキ干渉判定</span>
         </div>
+
+        {/* 実績バー：同じ条件を実際に曲げた記録があれば、シミュレーションより前に出す */}
+        {recHit.exact && (
+          <div className={`rounded-md px-4 py-2 mb-2 border text-sm flex items-center gap-3 flex-wrap ${
+            recHit.exact.bent ? 'bg-emerald-950/40 border-emerald-600 text-emerald-200'
+                              : 'bg-amber-950/40 border-amber-600 text-amber-200'}`}>
+            <span className="font-bold">
+              実績 {recHit.exact.bent ? '曲がりました' : '曲がりませんでした'}
+            </span>
+            <span className="text-xs opacity-80">
+              {recHit.exact.at} 記録／{recHit.exact.n}回
+              {recHit.exact.note ? `　${recHit.exact.note}` : ''}
+            </span>
+            {recHit.exact.bent !== allOK && (
+              <span className="text-xs font-bold text-rose-300">
+                ⚠ シミュレーションは「{allOK ? '曲がる' : '曲がらない'}」と出しています。実績を優先してください
+              </span>
+            )}
+          </div>
+        )}
+        {!recHit.exact && recMiss && recMiss.miss > 0 && (
+          <div className="rounded-md px-4 py-2 mb-2 border border-amber-700 bg-amber-950/30 text-amber-200 text-xs">
+            この金型・板厚では、シミュレーションが実績と食い違った記録が {recMiss.n} 件中 {recMiss.miss} 件あります。数字を鵜呑みにしないでください
+          </div>
+        )}
 
         {/* 総合判定バー */}
         <div className={`rounded-md px-4 py-2.5 mb-3 border font-bold text-sm flex items-center gap-3 flex-wrap ${
@@ -1890,35 +2114,33 @@ const BendingSimulator = () => {
               <span className={lbl}>板厚 t</span>
               <NumField value={t} min={0.5} max={9} onChange={setT} className={inp} />
               <span className={`${lbl} ml-3`}>展開長 {effSegs.reduce((a, b) => a + b, 0).toFixed(1)} mm</span>
-              {inputMode === 'outer' && (
-                <>
-                  <span className={`${lbl} ml-3`}>材質</span>
-                  <div className="flex rounded overflow-hidden border border-slate-600 text-xs">
-                    <button onClick={() => { setMatType('鉄'); setNobiOverride(null); }}
-                      className={`px-2 py-0.5 ${matType === '鉄' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>鉄</button>
-                    <button onClick={() => { setMatType('縞'); setNobiOverride(null); }}
-                      className={`px-2 py-0.5 ${matType === '縞' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>縞</button>
-                  </div>
-                  <span className={`${lbl} ml-2`}>V</span>
-                  <select value={nobiV} onChange={(e) => { setNobiV(Number(e.target.value)); setNobiOverride(null); }} className={sel}>
-                    {NOBI_V_LIST.map((v) => <option key={v} value={v}>V{v}</option>)}
-                  </select>
-                  <span className={`${lbl} ml-2`}>片伸び</span>
-                  <NumField value={Number(baseNobi.toFixed(2))} min={0} onChange={setNobiOverride} className={inp} />
-                  {nobiOverride != null && (
-                    <button onClick={() => setNobiOverride(null)} className={vbtn}>自動に戻す</button>
-                  )}
-                </>
+              {/* 片伸びは外寸法モード以外でも使う（Z段差の外寸換算・最小フランジ）ので、常に出す */}
+              <span className={`${lbl} ml-3`}>材質</span>
+              <div className="flex rounded overflow-hidden border border-slate-600 text-xs">
+                <button onClick={() => { setMatType('鉄'); setNobiOverride(null); }}
+                  className={`px-2 py-0.5 ${matType === '鉄' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>鉄</button>
+                <button onClick={() => { setMatType('縞'); setNobiOverride(null); }}
+                  className={`px-2 py-0.5 ${matType === '縞' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>縞</button>
+              </div>
+              <span className={`${lbl} ml-2`}>V</span>
+              <select value={nobiV} onChange={(e) => { setNobiV(Number(e.target.value)); setNobiOverride(null); }} className={sel}>
+                {NOBI_V_LIST.map((v) => <option key={v} value={v}>V{v}</option>)}
+              </select>
+              <span className={`${lbl} ml-2`}>片伸び</span>
+              <NumField value={Number(baseNobi.toFixed(2))} min={0} onChange={setNobiOverride} className={inp} />
+              {nobiOverride != null && (
+                <button onClick={() => setNobiOverride(null)} className={vbtn}>自動に戻す</button>
               )}
+            </div>
+            <div className="text-[11px] text-slate-500 mb-2">
+              片伸び −{baseNobi.toFixed(2)}／片側
+              {nobiOverride != null ? '｜手動入力（実績値）'
+                : nobiLookup ? `｜表 ${matType}・V${nobiV}${nobiLookup.exact ? `・t${t}` : `（t${nobiLookup.tUsed}の行で代用）`}`
+                  : `｜⚠ 表に ${matType}・V${nobiV}・t${t} がありません。実績があれば手で入れてください`}
             </div>
             {inputMode === 'outer' && (
               <div className="text-[11px] font-mono mb-2 space-y-0.5">
-                <div className="text-slate-500">
-                  片伸び −{baseNobi.toFixed(2)}／片側（1曲げで両側 −{(baseNobi * 2).toFixed(2)}）
-                  {nobiOverride != null ? '｜手動入力'
-                    : nobiLookup ? `｜表 ${matType}・V${nobiV}${nobiLookup.exact ? `・t${t}` : `（t${nobiLookup.tUsed}の行で代用）`}`
-                      : `｜⚠ 表に ${matType}・V${nobiV} のデータなし（0扱い→片伸びを手入力してください）`}
-                </div>
+                <div className="text-slate-500">1曲げで両側 −{(baseNobi * 2).toFixed(2)}</div>
                 <div className="text-slate-500">展開値: {effSegs.map((L) => L.toFixed(1)).join(' / ')}</div>
                 {zSteps.map((z) => {
                   const sim = zSim && zSim.seg === z.seg ? zSim.outer : null;
@@ -1984,8 +2206,19 @@ const BendingSimulator = () => {
 
             {/* 工程の断面図はプレス上での姿勢なので、山谷の指定はこちらで確認する */}
             <div className="mt-3 rounded border border-slate-800 bg-slate-950/60 px-2 py-1.5">
-              <div className="text-[11px] text-slate-500 mb-0.5">出来上がり形状（山谷の指定どおり）</div>
-              <FinishedPreview segs={effSegs} bends={bends} />
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="text-[11px] text-slate-500">出来上がり形状（山谷の指定どおり）</div>
+                {picking.length > 0 && (
+                  <button onClick={() => { pickingRef.current = []; setPicking([]); }}
+                    className={vbtn}>選び直しをやめる</button>
+                )}
+              </div>
+              <FinishedPreview segs={effSegs} bends={bends} order={bendOrder} onPick={pickBend} />
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                {picking.length > 0
+                  ? `曲げる順番を選んでいます — ${picking.length}/${bends.length} 決定。あと ${bends.length - picking.length} か所クリックしてください。`
+                  : '丸の数字が曲げる順番です。丸をクリックすると、押した順に 1回目・2回目… と番号を付け直せます。'}
+              </div>
             </div>
           </div>
 
@@ -2120,7 +2353,11 @@ const BendingSimulator = () => {
               )}
               <label className="flex items-center gap-1.5 text-xs text-slate-400">
                 <input type="checkbox" checked={punchFlip} onChange={(e) => setPunchFlip(e.target.checked)} />
-                向き反転
+                ヤゲン反転
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                <input type="checkbox" checked={dieFlip} onChange={(e) => setDieFlip(e.target.checked)} />
+                ダイ反転{grooveOrder ? `（いま 左${grooveOrder.left} / 右${grooveOrder.right}）` : '（左右）'}
               </label>
               <label className="flex items-center gap-1.5 text-xs text-slate-400">
                 <input type="checkbox" checked={showGuide} onChange={(e) => setShowGuide(e.target.checked)} />
@@ -2216,12 +2453,40 @@ const BendingSimulator = () => {
               </div>
             )}
 
-            <h2 className="text-sm font-bold text-slate-100 mb-2">加工手順（工程ごとのセット向き）</h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-bold text-slate-100">加工手順（曲げる順番・セット向き）</h2>
+              <div className="flex gap-2">
+                <button onClick={findStops} className={vbtn}>突き当てを探す</button>
+                <button onClick={flipAllStops} className={vbtn}>突き当て左右反転</button>
+                <button onClick={reverseSeq} className={vbtn}>逆順</button>
+                <button onClick={resetSeq} className={vbtn}>入力順に戻す</button>
+              </div>
+            </div>
+            <div className="text-xs mb-2">
+              <div className="text-slate-300">
+                曲げる順番　<b className="text-slate-100">{seq.map((s) => `曲げ${s.bend + 1}`).join(' → ')}</b>
+              </div>
+              <div className="text-slate-500">▲▼ で順番を入れ替えられます。寸法は入れ直さなくて大丈夫です。</div>
+            </div>
+            {(seqWarn.dup.length > 0 || seqWarn.missing.length > 0) && (
+              <div className="text-xs text-amber-400 mb-2">
+                ⚠{seqWarn.dup.length > 0 && ` 曲げ${seqWarn.dup.map((b) => b + 1).join('・')}が2回出ています。`}
+                {seqWarn.missing.length > 0 && ` 曲げ${seqWarn.missing.map((b) => b + 1).join('・')}が工程にありません。`}
+              </div>
+            )}
             <div className="space-y-1.5">
               {seq.map((s, i) => (
                 <div key={i} className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded px-2 py-1.5 border ${
                   step === i ? 'border-sky-700 bg-sky-950/30' : 'border-slate-800'}`}>
                   <span className="text-xs font-mono text-slate-400 w-12">工程{i + 1}</span>
+                  <div className="flex gap-0.5">
+                    <button onClick={() => moveStep(i, -1)} disabled={i === 0}
+                      title="ひとつ前にする"
+                      className="px-1.5 py-0.5 text-xs rounded border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent">▲</button>
+                    <button onClick={() => moveStep(i, 1)} disabled={i === seq.length - 1}
+                      title="ひとつ後にする"
+                      className="px-1.5 py-0.5 text-xs rounded border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent">▼</button>
+                  </div>
                   <select value={s.bend} onChange={(e) => setStepConf(i, { bend: Number(e.target.value) })} className={sel}>
                     {bends.map((_, bi) => (
                       <option key={bi} value={bi}>曲げ{bi + 1}</option>
@@ -2230,7 +2495,7 @@ const BendingSimulator = () => {
                   <label className="flex items-center gap-1 text-xs text-slate-400">
                     <input type="checkbox" checked={s.mirror}
                       onChange={(e) => setStepConf(i, { mirror: e.target.checked })} />
-                    左右反転
+                    突き当て反転
                   </label>
                   <label className="flex items-center gap-1 text-xs text-slate-400">
                     <input type="checkbox" checked={s.valley}
@@ -2241,6 +2506,57 @@ const BendingSimulator = () => {
               ))}
             </div>
           </div>
+
+            {/* 実績の記録：曲げた／曲げられなかったを残し、次に同じ条件が来たら先に出す */}
+            <div className="mt-3 rounded border border-slate-700 bg-slate-950/60 px-3 py-2">
+              <div className="text-xs font-bold text-slate-200 mb-1">実際はどうでしたか</div>
+              <div className="text-[11px] text-slate-500 mb-2">
+                記録すると、次に同じ段取りを開いたときに判定より先に出ます。この端末に保存されます。
+              </div>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <button onClick={() => saveResult(true)}
+                  className="px-3 py-1 text-xs rounded border border-emerald-600 text-emerald-300 hover:bg-emerald-900/40">
+                  曲がった
+                </button>
+                <button onClick={() => saveResult(false)}
+                  className="px-3 py-1 text-xs rounded border border-rose-600 text-rose-300 hover:bg-rose-900/40">
+                  曲がらなかった
+                </button>
+                <input value={recNote} onChange={(e) => setRecNote(e.target.value)}
+                  placeholder="ひとこと（当たった場所など）"
+                  className="flex-1 min-w-40 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+              </div>
+              {recHit.similar.length > 0 && (
+                <div className="text-[11px] text-slate-400 mb-1">
+                  同じ金型・板厚の記録 {recHit.similar.length}件 —
+                  曲がった {recHit.similar.filter((r) => r.bent).length}／
+                  曲がらなかった {recHit.similar.filter((r) => !r.bent).length}
+                </div>
+              )}
+              {records.length > 0 && (
+                <div className="max-h-32 overflow-auto text-[11px] font-mono space-y-0.5">
+                  {records.slice(0, 12).map((r) => (
+                    <div key={r.key} className="flex items-center gap-2">
+                      <span className={r.bent ? 'text-emerald-400' : 'text-rose-400'}>{r.bent ? '○' : '✕'}</span>
+                      <span className="text-slate-500">{r.at}</span>
+                      <span className="text-slate-300 truncate">{r.mat}t{r.t}／{r.segs.join('/')}</span>
+                      {r.sim != null && r.sim !== r.bent && <span className="text-amber-400">判定と相違</span>}
+                      <button onClick={() => setRecords(removeRecord(records, r.key))}
+                        className="ml-auto text-slate-600 hover:text-rose-400">消す</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={dumpRecords} className={vbtn}>書き出し</button>
+                <label className={`${vbtn} cursor-pointer`}>
+                  読み込み
+                  <input type="file" accept="application/json" className="hidden"
+                    onChange={(e) => { if (e.target.files[0]) readRecords(e.target.files[0]); e.target.value = ''; }} />
+                </label>
+                <span className="text-[11px] text-slate-500">記録 {records.length}件</span>
+              </div>
+            </div>
         </div>
 
         {/* モデルの前提 */}
@@ -2249,7 +2565,7 @@ const BendingSimulator = () => {
           00300のみ先端R6を12分割近似、他は図面どおり全直線。中間板は全ヤゲンに自動取付、Vインサートは
           単体／スタック取付を選択可。特殊ダイ（凸・段曲げ・フラット）はV支点を手動V幅で近似します。
           干渉判定はヤゲン・中間板・ダイ（スタック含む）の全てに対して行います。
-          板は中立軸で表現し、展開寸法（図面値 30 / 16.3 / 40、展開長86.3）で入力します。
+          板は中立軸で表現し、展開寸法で入力します（初期値は実際に曲げた 46 / 26 / 100 / 26 / 46、t6、展開長244）。
           エアベンディングの肩支点近似で内Rとスプリングバックは無視、曲げ角度は90°まで。
           判定は全ストロークを走査し、板厚の半分未満まで接近／侵入した点を干渉として橙色で表示します
           （V肩・刃先の正規接触部は除外）。

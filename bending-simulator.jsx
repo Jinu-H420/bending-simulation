@@ -389,7 +389,7 @@ function mountParts(sel, machine) {
 // 出典：ダイ.dxf（2026-09-11 受領）。ダイ本体は DIE_LIB 側にあるのでここには入れない。
 const DIE_MOUNT_LIB = {
   // 出典：ダイV20-2.dxf（2026-09-11 受領）。DIE_LIB と同じ向き・同じ原点で持つ。
-  '30540': { note: 'ダイV20-2.dxf 実測（取付板・ホルダ・ベース・ベッド）', flipDy: -1, parts: [
+  '30540': { note: 'HD3504NT・ダイV20-2.dxf 実測（取付板・ホルダ・ベース・ベッド）', flipDy: -1, parts: [
       [[-25, 57], [25, 57], [25, 47], [7.5, 47], [7.5, 41], [-7.5, 41], [-7.5, 47], [-25, 47]],
       [[22, 132], [-38, 132], [-38, 112.5], [-21, 112.5], [-21, 57], [21, 57], [21, 112.5], [22, 112.5]],
       [[22, 187], [-38, 187], [-38, 167], [-45, 167], [-55, 150], [-55, 134], [-45, 117], [-38, 117],
@@ -415,6 +415,27 @@ function genericMount(dieBottom) {
 }
 
 const dieMountInfo = (sel) => DIE_MOUNT[sel] || null;
+const HG_BASE_PARTS = () => DIE_MOUNT['ins:974061:stack'].parts.slice(0, 2).map((p) => p.map(([x, y]) => [x, y]));
+
+// 機械ごとに使う下型（V.dxf より）。HG はインサート、HD は 05500 ホルダに載る型。
+// 図面に無い型は出さない（ありえない型が選ばれるのを防ぐ）。
+const MACHINE_DIES = {
+  hg2203: { main: ['ins:971561:stack', 'ins:974061:stack', 'ins:977061:stack', 'ins:979061:stack', 'ins:982061:stack'],
+            extra: [] },
+  hd3504nt: { main: ['lib:03500:0', 'lib:03600:0', 'lib:03700:0', 'lib:03800:0', 'lib:01360:0', 'lib:01860:0',
+                     'lib:03900:0', 'lib:01400:0', 'lib:30540:0', 'lib:30540:1'],
+              extra: [] },   // 図面（V.dxf・ダイV20-2.dxf）で確認した型だけ。それ以外は出さない
+};
+function dieLabel(sel) {
+  if (sel === 'v12stack') return '実機 V12 段付きスタック（bending.dxf）';
+  if (sel === 'flat') return '汎用フラット（手動V幅）';
+  const [mode, id, sub] = sel.split(':');
+  const d = DIE_LIB[id];
+  if (!d) return sel;
+  if (mode === 'ins') return `${id}　${d.name}${sub === 'stack' ? '' : '（単体）'}`;
+  if (d.kind === 'v2') return `${id}　${d.name}（V${(d.grooves[Number(sub)][1] * 2).toFixed(0)}溝）`;
+  return `${id}　${d.name}`;
+}
 
 // ダイ選択の解決：{ polys:[...], vHalf, note } を返す
 // sel: 'v12stack' | 'flat' | 'lib:ID:溝index' | 'ins:ID:solo' | 'ins:ID:stack'
@@ -446,14 +467,17 @@ function resolveDie(sel, vW, dieHalf, withBase = true, machine = null, flip = fa
   const d = DIE_LIB[id];
   if (mode === 'ins') {
     const stack = sub === 'stack';
-    const mp = withBase ? mountParts(sel, machine) : null;
+    // HG2203 はホルダと段付きベッドが共通で、上のインサートを差し替えるだけ（V.dxf で5型とも確認）。
+    // 974061 の取付図から取った台を、どのインサートにも使う。
+    const hg = stack && withBase && machine === 'hg2203' ? HG_BASE_PARTS() : null;
+    const mp = hg ? [d.pts, ...hg] : (withBase ? mountParts(sel, machine) : null);
     // 実測の台が無いときは、bending.dxf のホルダ・ベースを一般化した形で代用する。
     // 何も描かないとインサートが宙に浮き、下に当たる相手がいない判定になってしまう。
     const polys = mp || (stack ? [d.pts, mirrorClose(INSERT_STACK_RIGHT)] : [d.pts]);
     const vh = grooveVHalf([d.pts], d.grooves[0][2], d.grooves[0][1]);
     return { polys, mount: dieMountInfo(sel), vHalf: vh, maxDepth: d.grooves[0][2],
              baseKind: mp ? 'measured' : stack ? 'generic' : 'none',
-             note: `${id} ${d.name}${baseNote(mp, sel, machine, stack)}` };
+             note: `${id} ${d.name}${hg ? '＋HG2203 ホルダ＋段付きベッド（実測・V.dxf で確認）' : baseNote(mp, sel, machine, stack)}` };
   }
   // lib:ID:gi
   const gi = Number(sub) || 0;
@@ -483,7 +507,10 @@ function resolveDie(sel, vW, dieHalf, withBase = true, machine = null, flip = fa
   }
   const bn = lm ? `＋台（${lm.note}）${flip ? '｜ダイ左右反転' : ''}`
     : baseKind === 'measured' ? '＋台（図面実測）'
-      : baseKind === 'generic' ? '＋台（HD3504NTの実測ホルダ・ベースで代用・参考）'
+      : baseKind === 'generic'
+        ? (MACHINE_DIES.hd3504nt.main.includes(sel)
+          ? '＋HD3504NT 05500ホルダ＋ベース＋ベッド（実測・V.dxf で確認）'
+          : '＋台（HD3504NTの実測ホルダ・ベースで代用・参考）')
         : baseNote(mp, sel, machine, false);
   // 2溝ダイは、いまの置き方でどちらの溝が左右どちらに来るかを返す（画面に出すため）
   const grooveMap = d.grooves.map((gg) => ({ v: Math.round(gg[1] * 2), x: sxDie(gg[0]) }));
@@ -581,16 +608,17 @@ function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
              polys: [...diePolys, tool, ram],
              names: [...Array(diePolys.length).fill('ダイ・台'), 'ヤゲン（中低）', 'ラム（機械上部）'] };
   }
+  // ヤゲンの上に付くのは中間板だけ（V.dxf の上型で確認：幅78.3・高さ122.7 の1部品）。
+  // 以前はホルダ.dxf のホルダも重ねて描いていたが、中間板と同じ場所の二重描きだったので外した。
   const punchPolys = buildPunch(punchType, punchFlip, tipY, chukanSel);
-  const holder = placeHolder(punchType, punchFlip, tipY);
   const ram = placeRam(punchType, punchFlip, tipY);
   return {
-    punchPolys, holder, ram,
-    polys: [...diePolys, ...punchPolys, holder, ram],
+    punchPolys, holder: null, ram,
+    polys: [...diePolys, ...punchPolys, ram],
     names: [
       ...Array(diePolys.length).fill('ダイ・台'),
       ...(punchPolys.length > 1 ? ['ヤゲン', '中間板'] : ['ヤゲン']),
-      'ホルダ', '柱（機械上部）',
+      '柱（機械上部）',
     ],
   };
 }
@@ -804,16 +832,19 @@ function reachCheck(part, seq, stepIdx, vHalf) {
 // 自動段取り探索（Dr.ABE_Bend相当の簡易版）
 // 曲げ順×姿勢（左右反転・表裏）をDFSで総当りし、粗ストローク走査で干渉チェック
 // ============================================================================
-function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel) {
+function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap = 0) {
   const seq = [...prefix, st];
   const idx = prefix.length;
   // アクティブ曲げの左右のフランジがV肩に届かなければ不可
   if (!reachCheck(part, seq, idx, vHalf).ok) return false;
   const exArc = shoulderReach(vHalf, part.t, 90) + part.t;
-  for (let p = 0; p <= 1.0001; p += 0.1) {
-    const ch = computeChain(part, seq, idx, p, vHalf);
+  // 画面の判定と同じストローク（開き・持ち上がり込み）で見る。
+  // ここが違うと「探索では通るのに判定は✕」というちぐはぐが起きる。
+  for (let p = 0; p <= 1.0001; p += 0.05) {
+    const { bendProg, lift } = strokeState(p, openGap);
+    const ch = computeChain(part, seq, idx, bendProg, vHalf);
     if (!ch.activeDirOK) return false;
-    const tools = toolsFor(punchType, punchFlip, ch.innerY, chukanSel, diePolys);
+    const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
     if (minGap(ch, tools.polys, part.t, vHalf, exArc).gap < -0.05) return false;
   }
   return true;
@@ -821,7 +852,7 @@ function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, c
 
 // 曲げ順はいまのまま、工程ごとの突き当て（左右）と裏返しだけを探す。
 // 順番は現場で決まっていることが多く、変えられるのは板の入れ方だけ、という場面のため。
-function searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel) {
+function searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap = 0) {
   const n = seq.length;
   if (n > 8) return null;                 // 2^n×2^n が効くので上限を切る
   const order = seq.map((s) => s.bend);
@@ -832,7 +863,7 @@ function searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel
       }));
       let ok = true;
       for (let i = 0; i < n && ok; i++) {
-        ok = stepFeasible(part, cand.slice(0, i), cand[i], vHalf, diePolys, punchType, punchFlip, chukanSel);
+        ok = stepFeasible(part, cand.slice(0, i), cand[i], vHalf, diePolys, punchType, punchFlip, chukanSel, openGap);
       }
       if (ok) return cand;
     }
@@ -840,7 +871,7 @@ function searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel
   return null;
 }
 
-function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, limit = 6) {
+function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, limit = 6, openGap = 0) {
   const B = part.bends.length;
   const sols = [];
   let tried = 0;
@@ -853,7 +884,7 @@ function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel,
           if (sols.length >= limit) return;
           tried++;
           const st = { bend: b, mirror, valley };
-          if (stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel)) {
+          if (stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap)) {
             dfs([...prefix, st], remaining.filter((x) => x !== b));
           }
         }
@@ -882,7 +913,8 @@ function dieCandidates(t, minFlange) {
 
 function searchTools(part, vW, dieHalf, chukanSel, maxCombos = 8, withBase = true, machine = null) {
   const minFlange = Math.min(...part.segs);
-  const dies = dieCandidates(part.t, minFlange);
+  const allowed = MACHINE_DIES[machine] ? [...MACHINE_DIES[machine].main, ...MACHINE_DIES[machine].extra] : null;
+  const dies = dieCandidates(part.t, minFlange).filter((dc) => !allowed || allowed.includes(dc.sel));
   const found = [];
   for (const dc of dies) {
     const info = resolveDie(dc.sel, vW, dieHalf, withBase, machine);
@@ -1127,7 +1159,8 @@ const BASEV = {
 };
 // 基準金型名 → このライブラリでの選択値。断面の実測がある型を優先する。
 const BASEV_SEL = {
-  V12: 'ins:974061:stack', V20: 'ins:979061:stack', V25: 'ins:982061:stack',
+  V8: 'ins:971561:stack', V12: 'ins:974061:stack', V16: 'ins:977061:stack',
+  V20: 'ins:979061:stack', V25: 'ins:982061:stack',
   V32: 'lib:03500:0', V40: 'lib:03600:0', V50: 'lib:03700:0', V63: 'lib:03800:0',
   V80: 'lib:01360:0', V100: 'lib:01860:0', V125: 'lib:03900:0', V160: 'lib:01400:0',
 };
@@ -1287,6 +1320,7 @@ const BendingSimulator = () => {
   ]);
   const [records, setRecords] = useState(() => loadRecords());   // 曲げた／曲げられなかった実績
   const [recNote, setRecNote] = useState('');
+  const [autoMsg, setAutoMsg] = useState('');   // 自動で段取りを決めたときの説明
   const [picking, setPicking] = useState([]);  // 断面をクリックして曲げ順を選んでいる途中
   const pickingRef = useRef([]);
   const [step, setStep] = useState(0);
@@ -1351,6 +1385,21 @@ const BendingSimulator = () => {
   // 基準金型は「折り曲げ表ならこれ」という目安。選んだ金型を勝手に差し替えない。
   // 使いたいときは金型欄のボタンで切り替える。
   const baseDie = useMemo(() => pickDie(matType, t), [matType, t]);
+  // 板厚・材質を入力したら、折り曲げ表の基準金型（その板厚に合うV）を選ぶ。
+  // その型を使う機械が違えば機械も切り替える。手で選び直した金型は、次に板厚か材質を変えるまで残る。
+  const applyBaseDie = (mat, tt) => {
+    const b = pickDie(mat, tt);
+    if (!b || !b.sel) return;
+    const m = Object.keys(MACHINE_DIES).find((k) => MACHINE_DIES[k].main.includes(b.sel));
+    if (m && m !== machineSel) setMachineSel(m);
+    setDieSel(b.sel);
+    setDieFlip(false);
+    setNobiOverride(null);   // 片伸びの手入力は前の板厚の値なので、表の値に戻す
+  };
+  useEffect(() => {
+    const md = MACHINE_DIES[machineSel];
+    if (md && ![...md.main, ...md.extra].includes(dieSel)) setDieSel(md.main[0]);
+  }, [machineSel, dieSel]);
   const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase, machineSel, dieFlip),
     [dieSel, vW, dieHalf, dieBase, machineSel, dieFlip]);
 
@@ -1923,10 +1972,27 @@ const BendingSimulator = () => {
 
   // 曲げ順はそのままで、通る突き当て（左右）と裏返しを探して当てはめる。
   const findStops = () => {
-    const found = searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel);
-    if (!found) { alert('この曲げ順では、突き当てをどう変えても通りませんでした。順番を変えてみてください。'); return; }
-    setSeq(found);
+    const found = searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap);
+    if (!found) { setAutoMsg('この曲げ順では、突き当てをどう変えても通りませんでした。順番も変える「自動で段取りを決める」を試してください。'); return; }
+    applySeq(found, '突き当てだけ変えて通りました');
+  };
+  const applySeq = (next, why) => {
+    setSeq(next);
     setStep(0); setProg(1); setPlaying(false);
+    setAutoMsg(`${why} — ${next.map((x) => `曲げ${x.bend + 1}${x.mirror ? '（突き当て反転）' : ''}${x.valley ? '（裏返し）' : ''}`).join(' → ')}`);
+  };
+  // 曲げ順も突き当ても、通る組合せを自分で探して当てはめる。
+  // 現場の手を変えずに済む順に試す：いまの順のまま → 逆順 → 順番も総当り。
+  const autoSetup = () => {
+    const order = seq.map((x) => x.bend);
+    const asIs = searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap);
+    if (asIs) { applySeq(asIs, 'いまの曲げ順のまま通りました'); return; }
+    const revSeq = [...seq].reverse();
+    const rev = searchStops(part, revSeq, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap);
+    if (rev) { applySeq(rev, '曲げ順を逆にすると通りました'); return; }
+    const r = searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, 1, openGap);
+    if (r.sols.length) { applySeq(r.sols[0], '曲げ順を変えると通りました'); return; }
+    setAutoMsg(`この金型では、順番も突き当ても全部試して通りませんでした（${r.tried}通り検査）。金型を変えるか、寸法を見直してください。`);
   };
   // 突き当てを左右逆にする＝板を反対側から入れる。全工程まとめて切り替える。
   const flipAllStops = () => {
@@ -2112,14 +2178,14 @@ const BendingSimulator = () => {
             </div>
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className={lbl}>板厚 t</span>
-              <NumField value={t} min={0.5} max={9} onChange={setT} className={inp} />
+              <NumField value={t} min={0.5} max={22} onChange={(v) => { setT(v); applyBaseDie(matType, v); }} className={inp} />
               <span className={`${lbl} ml-3`}>展開長 {effSegs.reduce((a, b) => a + b, 0).toFixed(1)} mm</span>
               {/* 片伸びは外寸法モード以外でも使う（Z段差の外寸換算・最小フランジ）ので、常に出す */}
               <span className={`${lbl} ml-3`}>材質</span>
               <div className="flex rounded overflow-hidden border border-slate-600 text-xs">
-                <button onClick={() => { setMatType('鉄'); setNobiOverride(null); }}
+                <button onClick={() => { setMatType('鉄'); applyBaseDie('鉄', t); }}
                   className={`px-2 py-0.5 ${matType === '鉄' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>鉄</button>
-                <button onClick={() => { setMatType('縞'); setNobiOverride(null); }}
+                <button onClick={() => { setMatType('縞'); applyBaseDie('縞', t); }}
                   className={`px-2 py-0.5 ${matType === '縞' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>縞</button>
               </div>
               <span className={`${lbl} ml-2`}>V</span>
@@ -2266,7 +2332,11 @@ const BendingSimulator = () => {
                     基準金型 {baseDie.v}（{matType}・t{baseDie.exact ? t : `${t}→表のt${baseDie.tUsed}で代用`}／折り曲げ表 2022-04-01）
                     {dieSel === baseDie.sel ? ' — 選択中' : ' — いまは別の金型を選んでいます'}
                     {dieSel !== baseDie.sel && baseDie.sel && (
-                      <button onClick={() => setDieSel(baseDie.sel)}
+                      <button onClick={() => {
+                        const m = Object.keys(MACHINE_DIES).find((k) => MACHINE_DIES[k].main.includes(baseDie.sel));
+                        if (m && m !== machineSel) setMachineSel(m);
+                        setDieSel(baseDie.sel);
+                      }}
                         className="ml-2 px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">
                         基準金型に戻す
                       </button>
@@ -2278,31 +2348,46 @@ const BendingSimulator = () => {
               <label className="flex items-center gap-1.5">
                 <span className={lbl}>ダイ</span>
                 <select value={dieSel} onChange={(e) => setDieSel(e.target.value)} className={sel}>
-                  <option value="v12stack">実機 V12 段付きスタック（bending.dxf）</option>
-                  <optgroup label="Vダイ（単体）">
-                    {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'v').map(([id, d]) => (
-                      <option key={id} value={`lib:${id}:0`}>{id}　{d.name}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="2溝ダイ（溝を選択）">
-                    {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'v2').flatMap(([id, d]) =>
-                      d.grooves.map((g, gi) => (
-                        <option key={`${id}-${gi}`} value={`lib:${id}:${gi}`}>{id}　V{(g[1] * 2).toFixed(0)}溝</option>
-                      ))
-                    )}
-                  </optgroup>
-                  <optgroup label="Vインサート">
-                    {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'ins').flatMap(([id, d]) => [
-                      <option key={`${id}-st`} value={`ins:${id}:stack`}>{id}　{d.name}＋スタック</option>,
-                      <option key={`${id}-so`} value={`ins:${id}:solo`}>{id}　{d.name}（単体）</option>,
-                    ])}
-                  </optgroup>
-                  <optgroup label="特殊ダイ">
-                    {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'u' || d.kind === 'manual').map(([id, d]) => (
-                      <option key={id} value={`lib:${id}:0`}>{id}　{d.name}</option>
-                    ))}
-                  </optgroup>
-                  <option value="flat">汎用フラット（手動V幅）</option>
+                  {MACHINE_DIES[machineSel] ? (
+                    <>
+                      <optgroup label={`${MACHINE_LIB[machineSel].name} の下型`}>
+                        {MACHINE_DIES[machineSel].main.map((v) => <option key={v} value={v}>{dieLabel(v)}</option>)}
+                      </optgroup>
+                      {MACHINE_DIES[machineSel].extra.length > 0 && (
+                        <optgroup label="取付未確認（この機械の台で代用）">
+                          {MACHINE_DIES[machineSel].extra.map((v) => <option key={v} value={v}>{dieLabel(v)}</option>)}
+                        </optgroup>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <option value="v12stack">実機 V12 段付きスタック（bending.dxf）</option>
+                      <optgroup label="Vダイ（単体）">
+                        {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'v').map(([id, d]) => (
+                          <option key={id} value={`lib:${id}:0`}>{id}　{d.name}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="2溝ダイ（溝を選択）">
+                        {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'v2').flatMap(([id, d]) =>
+                          d.grooves.map((g, gi) => (
+                            <option key={`${id}-${gi}`} value={`lib:${id}:${gi}`}>{id}　V{(g[1] * 2).toFixed(0)}溝</option>
+                          ))
+                        )}
+                      </optgroup>
+                      <optgroup label="Vインサート">
+                        {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'ins').flatMap(([id, d]) => [
+                          <option key={`${id}-st`} value={`ins:${id}:stack`}>{id}　{d.name}＋スタック</option>,
+                          <option key={`${id}-so`} value={`ins:${id}:solo`}>{id}　{d.name}（単体）</option>,
+                        ])}
+                      </optgroup>
+                      <optgroup label="特殊ダイ">
+                        {Object.entries(DIE_LIB).filter(([, d]) => d.kind === 'u' || d.kind === 'manual').map(([id, d]) => (
+                          <option key={id} value={`lib:${id}:0`}>{id}　{d.name}</option>
+                        ))}
+                      </optgroup>
+                      <option value="flat">汎用フラット（手動V幅）</option>
+                    </>
+                  )}
                 </select>
               </label>
               <label className="flex items-center gap-1 text-xs text-slate-400" title="ダイ本体の下のホルダ・中間ベース・ベースを干渉判定に含めます。下がるフランジが当たるかはここで決まります。">
@@ -2456,12 +2541,21 @@ const BendingSimulator = () => {
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-bold text-slate-100">加工手順（曲げる順番・セット向き）</h2>
               <div className="flex gap-2">
-                <button onClick={findStops} className={vbtn}>突き当てを探す</button>
+                <button onClick={autoSetup}
+                  className="px-3 py-0.5 text-xs rounded border border-emerald-500 bg-emerald-900/40 text-emerald-200 font-bold hover:bg-emerald-800/60">
+                  自動で段取りを決める
+                </button>
+                <button onClick={findStops} className={vbtn}>突き当てだけ探す</button>
                 <button onClick={flipAllStops} className={vbtn}>突き当て左右反転</button>
                 <button onClick={reverseSeq} className={vbtn}>逆順</button>
                 <button onClick={resetSeq} className={vbtn}>入力順に戻す</button>
               </div>
             </div>
+            {autoMsg && (
+              <div className="text-xs mb-2 rounded border border-sky-800 bg-sky-950/50 text-sky-200 px-2 py-1">
+                {autoMsg}
+              </div>
+            )}
             <div className="text-xs mb-2">
               <div className="text-slate-300">
                 曲げる順番　<b className="text-slate-100">{seq.map((s) => `曲げ${s.bend + 1}`).join(' → ')}</b>

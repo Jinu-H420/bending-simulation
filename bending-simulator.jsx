@@ -2066,6 +2066,13 @@ const BendingSimulator = () => {
             : downWarn ? `下がりがダイ・台に当たります — 曲げ線から ${downWarn.w.toFixed(0)}mm で ${downWarn.depth.toFixed(0)}mm 下がっています`
             : minOutWarn.length ? `最小フランジ ${minFlange.tbl}mm（折り曲げ表）を下回る辺があります`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
+          {!allOK && (
+            // 曲がらないときは、ここから一押しで曲げ順・突き当て・裏返しを直せるようにする
+            <button onClick={autoSetup}
+              className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">
+              曲がる段取りに自動で直す
+            </button>
+          )}
           <div className="ml-auto flex gap-2 flex-wrap">
             {verdicts.map((v, i) => (
               <button key={i}
@@ -2079,6 +2086,11 @@ const BendingSimulator = () => {
           </div>
         </div>
 
+        {autoMsg && (
+          <div className="rounded-md px-4 py-2 mb-3 border border-emerald-700 bg-emerald-950/40 text-emerald-200 text-sm">
+            {autoMsg}
+          </div>
+        )}
         {/* 下逃げ（台の実測が無い金型のときだけ表で見ている） */}
         {downWarn && (
           <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-red-950/40 border-red-800 text-red-200">

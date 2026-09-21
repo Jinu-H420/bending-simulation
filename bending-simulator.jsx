@@ -503,7 +503,8 @@ function resolveDie(sel, vW, dieHalf, withBase = true, machine = null, flip = fa
     baseKind = 'measured';
   } else if (!mp && withBase) {
     const gm = genericMount(Math.max(...d.pts.map(([, y]) => y)));
-    if (gm) { polys = [...block, ...gm]; baseKind = 'generic'; }
+    // HD の 05500ホルダに載る型は、V.dxf と重ねて形が一致することを確かめてある（実測扱い）。
+    if (gm) { polys = [...block, ...gm]; baseKind = MACHINE_DIES.hd3504nt.main.includes(sel) ? 'measured' : 'generic'; }
   }
   const bn = lm ? `＋台（${lm.note}）${flip ? '｜ダイ左右反転' : ''}`
     : baseKind === 'measured' ? '＋台（図面実測）'

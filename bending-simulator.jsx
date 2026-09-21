@@ -2670,3 +2670,10 @@ const BendingSimulator = () => {
 };
 
 export default BendingSimulator;
+
+// かんたん判定ページ（check.html）から同じ判定エンジンを使うための公開。
+// 判定の式を書き写すと本体とずれるので、必ずここから取り込む。
+export {
+  pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
+  computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
+};

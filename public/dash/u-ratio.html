@@ -1,0 +1,235 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コの字曲げ 底の幅と立上りの関係</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834;
+  --band: rgba(42,120,214,0.14); --plate: #d03b3b; --tool: #52514e; --tool-fill: rgba(82,81,78,0.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark; --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --band: rgba(57,135,229,0.20);
+    --tool: #c3c2b7; --tool-fill: rgba(195,194,183,0.10);
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark; --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --band: rgba(57,135,229,0.20);
+  --tool: #c3c2b7; --tool-fill: rgba(195,194,183,0.10);
+}
+html, body { margin: 0; }
+.viz-root { background: var(--page); color: var(--text-primary);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", sans-serif; min-height: 100vh; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 22px 20px 56px; }
+h1 { font-size: 22px; margin: 0 0 4px; font-weight: 700; }
+.lead { font-size: 16.5px; margin: 0 0 18px; }
+.lead b { font-weight: 700; }
+h2 { font-size: 17px; margin: 28px 0 4px; font-weight: 700; }
+.note { color: var(--text-secondary); font-size: 14px; margin: 0 0 12px; }
+.rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 760px) { .rules { grid-template-columns: 1fr; } .two { grid-template-columns: 1fr !important; } }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.rule .range { font-size: 14px; color: var(--text-secondary); }
+.rule .big { font-size: 28px; font-weight: 700; line-height: 1.25; margin: 4px 0; }
+.rule .ex { font-size: 13.5px; color: var(--text-secondary); }
+.rule svg { display: block; margin: 8px 0 2px; }
+.two { display: grid; grid-template-columns: 1.45fr 1fr; gap: 12px; align-items: start; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.legend .k { display: inline-flex; align-items: center; gap: 6px; }
+.tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12); z-index: 10; min-width: 190px; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; }
+.tip .k { color: var(--text-secondary); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th { text-align: right; font-weight: 600; color: var(--muted); font-size: 12.5px; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; }
+td.big { font-weight: 700; font-size: 15px; }
+td.l, th.l { text-align: left; }
+.caveat { font-size: 13.5px; color: var(--text-secondary); margin-top: 10px; }
+</style>
+
+<div class="viz-root">
+ <div class="wrap">
+  <h1>コの字曲げ：底の幅と立上りの関係</h1>
+  <p class="lead"><b>決まった比率はありません。</b>底の幅によって、立上りの上限の決まり方が3段階に変わります。全型で安全側（いちばん低い型）に合わせた目安です。</p>
+
+  <div class="rules" id="rules"></div>
+
+  <h2>底の幅ごとの立上りの上限</h2>
+  <p class="note">グラフにマウスを乗せると、その幅での数字が出ます。</p>
+  <div class="two">
+   <div class="card">
+    <div class="legend">
+     <span class="k"><svg width="18" height="10"><rect width="18" height="10" rx="2" fill="var(--band)"/></svg>全型の上限の範囲（高い型〜低い型）</span>
+     <span class="k"><svg width="18" height="10"><line x1="0" y1="5" x2="18" y2="5" stroke="var(--series-2)" stroke-width="2.5"/></svg>目安（安全側）</span>
+     <span class="k"><svg width="18" height="10"><line x1="0" y1="5" x2="18" y2="5" stroke="var(--muted)" stroke-width="1"/></svg>立上り＝底</span>
+    </div>
+    <div id="chart"></div>
+   </div>
+   <div class="card">
+    <div style="font-weight:700;margin-bottom:2px">なぜ頭打ちになるのか</div>
+    <div class="note" id="illusNote" style="margin-bottom:6px"></div>
+    <div id="illus"></div>
+   </div>
+  </div>
+
+  <h2>早見表</h2>
+  <p class="note">「目安」は全型でいちばん低い上限に合わせた値。「使えない型」は、その底の幅が狭すぎて曲げられない型です。</p>
+  <div class="card"><table id="tbl"></table></div>
+
+  <p class="caveat">※ シミュレーションの値です（上型ヤゲン904061・中間板標準、立上りは左右同じ高さ、2か所とも90°）。実測ではありません。<br>
+  ※ 底100〜180mm の頭打ちは、上型の中間板と機械上部の形で決まっています。機械上部の形は推測なので、この区間は実物で必ず確かめてください。<br>
+  ※ Z曲げの突き合わせでは V12・V16・V20・V25 がシミュより厳しい実績でした。</p>
+ </div>
+ <div class="tip" id="tip" hidden></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const css = (v) => getComputedStyle($('.viz-root')).getPropertyValue(v).trim();
+const f = (v) => (Math.round(v * 10) / 10).toString();
+
+// 目安（安全側）：3段階のルール。境目は計算結果から決めた（下の derive で確認）。
+const RULE = [
+  { from: 0, to: 100, text: '底の 3/4 まで', h: (W) => W * 0.75 },
+  { from: 100, to: 180, text: '70mm まで（頭打ち）', h: () => 70 },
+  { from: 180, to: 999, text: '底 − 105mm まで', h: (W) => W - 105 },
+];
+const ruleAt = (W) => RULE.find((r) => W >= r.from && W < r.to) || RULE[RULE.length - 1];
+
+fetch('u_ratio.json').then((r) => r.json()).then((J) => {
+  const grid = J.grid;
+  const env = grid.map((W) => {
+    const hs = J.curves.map((c) => ({ c, h: c.pts.find((p) => p.W === W).H })).filter((x) => x.h != null);
+    const no = J.curves.filter((c) => c.pts.find((p) => p.W === W).H == null);
+    const low = hs.reduce((a, b) => (b.h < a.h ? b : a));
+    const high = hs.reduce((a, b) => (b.h > a.h ? b : a));
+    return { W, min: low.h, max: high.h, lowName: `V${low.c.V} t${low.c.t}`, highName: `V${high.c.V} t${high.c.t}`,
+             noV: [...new Set(no.map((c) => c.V))].sort((a, b) => a - b) };
+  });
+
+  // --- ルールのカード（小さな図つき）
+  const mini = (W, H, capped) => {
+    const s = 0.42, w = 130, h = 76, x0 = (w - W * s) / 2, y0 = h - 6;
+    const top = y0 - H * s;
+    return `<svg width="${w}" height="${h}" aria-hidden="true">
+      <polyline points="${x0},${top} ${x0},${y0} ${x0 + W * s},${y0} ${x0 + W * s},${top}" fill="none" stroke="var(--plate)" stroke-width="3" stroke-linejoin="round"/>
+      ${capped ? `<line x1="${x0 - 8}" x2="${x0 + W * s + 8}" y1="${top}" y2="${top}" stroke="var(--muted)" stroke-width="1"/>` : ''}
+    </svg>`;
+  };
+  $('#rules').innerHTML = [
+    { r: RULE[0], range: '底の幅 〜100mm', ex: '例：底80 → 立上り60まで', svg: mini(80, 60) },
+    { r: RULE[1], range: '底の幅 100〜180mm', ex: '底を広げても高くできない。例：底150 → 70まで', svg: mini(150, 70, true) },
+    { r: RULE[2], range: '底の幅 180mm〜', ex: '例：底250 → 立上り145まで', svg: mini(250, 145) },
+  ].map((x) => `<div class="card rule"><div class="range">${x.range}</div>${x.svg}<div class="big">${x.r.text}</div><div class="ex">${x.ex}</div></div>`).join('');
+
+  // --- グラフ：全型の範囲（帯）＋目安（線）＋ 立上り＝底（参考線）
+  const el = $('#chart');
+  const W = 640, H = 380, L = 50, R = 16, T = 14, B = 36;
+  const xmax = 300, ymax = 240;
+  const x = (v) => L + (v / xmax) * (W - L - R);
+  const y = (v) => T + (1 - v / ymax) * (H - T - B);
+  let g = '';
+  for (let v = 0; v <= ymax; v += 40) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${v}</text>`;
+  for (let v = 0; v <= xmax; v += 50) g += `<text x="${x(v)}" y="${H - 14}" text-anchor="middle" font-size="11" fill="var(--muted)">${v}</text>`;
+  g += `<text x="${W - R}" y="${H - 2}" text-anchor="end" font-size="11.5" fill="var(--text-secondary)">底の幅 W（mm）</text>`;
+  g += `<text x="${L}" y="${T - 2}" font-size="11.5" fill="var(--text-secondary)" dy="-0" text-anchor="start"> </text>`;
+  g += `<text transform="translate(12 ${T + (H - T - B) / 2}) rotate(-90)" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">立上り H の上限（mm）</text>`;
+  // 区間の境目
+  for (const b of [100, 180]) g += `<line x1="${x(b)}" x2="${x(b)}" y1="${T}" y2="${H - B}" stroke="var(--axis)"/>`;
+  // 立上り＝底
+  g += `<line x1="${x(0)}" y1="${y(0)}" x2="${x(ymax)}" y2="${y(ymax)}" stroke="var(--muted)" stroke-width="1"/>`;
+  g += `<text x="${x(205)}" y="${y(214)}" font-size="11" fill="var(--muted)">立上り＝底</text>`;
+  // 帯
+  const band = env.map((e) => `${x(e.W)},${y(e.max)}`).join(' ') + ' ' + [...env].reverse().map((e) => `${x(e.W)},${y(e.min)}`).join(' ');
+  g += `<polygon points="${band}" fill="var(--band)"/>`;
+  // 目安
+  const rulePts = [];
+  for (let w = 20; w <= 300; w += 1) rulePts.push(`${x(w)},${y(Math.max(0, ruleAt(w).h(w)))}`);
+  g += `<polyline points="${rulePts.join(' ')}" fill="none" stroke="var(--series-2)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  g += `<text x="${x(58)}" y="${y(ruleAt(58).h(58)) + 18}" font-size="12" fill="var(--text-primary)">目安 3/4</text>`;
+  g += `<text x="${x(118)}" y="${y(70) + 18}" font-size="12" fill="var(--text-primary)">70mm で頭打ち</text>`;
+  g += `<text x="${x(232)}" y="${y(ruleAt(232).h(232)) + 20}" font-size="12" fill="var(--text-primary)">底 − 105</text>`;
+  g += `<line id="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--text-secondary)" stroke-width="1" visibility="hidden"/>`;
+  g += `<rect id="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="底の幅と立上りの上限">${g}</svg>`;
+  const tip = $('#tip'), xh = el.querySelector('#xh');
+  el.querySelector('#hit').addEventListener('mousemove', (ev) => {
+    const box = el.querySelector('svg').getBoundingClientRect();
+    const k = box.width / W;
+    const wv = ((ev.clientX - box.left) / k - L) / (W - L - R) * xmax;
+    const e = env.reduce((a, b) => (Math.abs(b.W - wv) < Math.abs(a.W - wv) ? b : a));
+    xh.setAttribute('x1', x(e.W)); xh.setAttribute('x2', x(e.W)); xh.setAttribute('visibility', 'visible');
+    const rv = ruleAt(e.W).h(e.W);
+    tip.innerHTML = `<div style="font-weight:700;margin-bottom:4px">底の幅 ${e.W}mm</div>
+      <div class="r"><span class="k">目安（安全側）</span><b>${f(rv)}mm</b></div>
+      <div class="r"><span class="k">いちばん低い型</span><span>${f(e.min)}（${e.lowName}）</span></div>
+      <div class="r"><span class="k">いちばん高い型</span><span>${f(e.max)}（${e.highName}）</span></div>
+      ${e.noV.length ? `<div style="color:var(--muted);margin-top:4px">曲げられない型：${e.noV.map((v) => 'V' + v).join('・')}</div>` : ''}`;
+    tip.hidden = false;
+    let lx = ev.clientX + 14, ly = ev.clientY + 14; const tr = tip.getBoundingClientRect();
+    if (lx + tr.width > innerWidth) lx = ev.clientX - tr.width - 14;
+    if (ly + tr.height > innerHeight) ly = ev.clientY - tr.height - 14;
+    tip.style.left = lx + 'px'; tip.style.top = ly + 'px';
+  });
+  el.querySelector('#hit').addEventListener('mouseleave', () => { tip.hidden = true; xh.setAttribute('visibility', 'hidden'); });
+
+  // --- 説明図：上限ぎりぎりのコの字と上型
+  const I = J.illus;
+  $('#illusNote').textContent = `例：V${I.V}・t${I.t}、底${I.W}mm で立上り${f(I.H)}mm（上限）。2か所目を曲げ終わる瞬間、先に立てた立上りの先が上型に届きます。`;
+  const toolsUp = I.tools.filter((t) => t.name !== 'ダイ・台');
+  const dies = I.tools.filter((t) => t.name === 'ダイ・台');
+  const all = [...I.plate, ...toolsUp.flatMap((t) => t.pts)];
+  const xs = I.plate.map((p) => p[0]);
+  const bx0 = Math.min(...xs) - 70, bx1 = Math.max(...xs) + 70;
+  const by0 = Math.min(...I.plate.map((p) => p[1])) - 140, by1 = 70;
+  const iw = el.parentElement.nextElementSibling ? 360 : 360, ih = iw * (by1 - by0) / (bx1 - bx0);
+  const sx = (v) => ((v - bx0) / (bx1 - bx0)) * iw, sy = (v) => ((v - by0) / (by1 - by0)) * ih;
+  const poly = (pts, fill, stroke, sw) => `<polygon points="${pts.map((p) => `${sx(p[0])},${sy(p[1])}`).join(' ')}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+  let s = '';
+  for (const d of dies) s += poly(d.pts, 'var(--tool-fill)', 'var(--axis)', 1);
+  for (const t of toolsUp) s += poly(t.pts, 'var(--tool-fill)', 'var(--tool)', 1.2);
+  s += `<polyline points="${I.plate.map((p) => `${sx(p[0])},${sy(p[1])}`).join(' ')}" fill="none" stroke="var(--plate)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>`;
+  // 辺の名前（プレス上では曲げ中なので斜めに見える）
+  const segLabel = (a, b, text, dx, dy) => {
+    const mx = sx((a[0] + b[0]) / 2) + dx, my = sy((a[1] + b[1]) / 2) + dy;
+    return `<text x="${mx}" y="${my}" font-size="12" fill="var(--text-primary)" text-anchor="middle">${text}</text>`;
+  };
+  if (I.plate.length >= 4) {
+    s += segLabel(I.plate[0], I.plate[1], `先に立てた立上り ${f(I.H)}`, -58, 0);
+    s += segLabel(I.plate[1], I.plate[2], `底 ${I.W}`, -30, 16);
+    s += segLabel(I.plate[2], I.plate[3], 'いま曲げている立上り', 58, 14);
+  }
+  // 立上りの先（上型に近いほう）に印
+  const tipPt = I.plate.reduce((a, b) => (b[1] < a[1] ? b : a));
+  s += `<circle cx="${sx(tipPt[0])}" cy="${sy(tipPt[1])}" r="7" fill="none" stroke="var(--text-primary)" stroke-width="1.5"/>`;
+  s += `<text x="${sx(tipPt[0]) + 12}" y="${sy(tipPt[1]) - 8}" font-size="12.5" fill="var(--text-primary)">ここが上型に当たる</text>`;
+  const label = (name, t) => { const c = t.pts.reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]).map((v) => v / t.pts.length);
+    const yy = Math.min(Math.max(sy(c[1]), 14), ih - 6); return `<text x="${Math.min(Math.max(sx(c[0]), 10), iw - 60)}" y="${yy}" font-size="11.5" fill="var(--text-secondary)" text-anchor="middle">${name}</text>`; };
+  for (const t of toolsUp) if (t.name !== '柱（機械上部）') s += label(t.name, t);
+  $('#illus').innerHTML = `<svg width="${iw}" height="${ih}" viewBox="0 0 ${iw} ${ih}" style="max-width:100%;height:auto" role="img" aria-label="上限ぎりぎりのコの字と上型">${s}</svg>`;
+
+  // --- 早見表
+  const rowsW = [30, 50, 80, 100, 120, 150, 180, 200, 250, 300];
+  $('#tbl').innerHTML = `<tr><th class="l">底の幅 W</th><th>立上り H 目安</th><th>底に対して</th><th>全型の範囲</th><th class="l">曲げられない型</th></tr>` +
+    rowsW.map((w) => { const e = env.find((z) => z.W === w); const rv = ruleAt(w).h(w);
+      return `<tr><td>${w}mm</td><td class="big">${f(rv)}mm</td><td>${Math.round((rv / w) * 100)}%</td>
+        <td>${f(e.min)}〜${f(e.max)}mm</td><td class="l" style="color:var(--text-secondary)">${e.noV.length ? e.noV.map((v) => 'V' + v).join('・') : '—'}</td></tr>`; }).join('');
+
+  // 目安が全型の最小を超えていないか確かめる（超えていたらコンソールに出す）
+  const bad = env.filter((e) => ruleAt(e.W).h(e.W) > e.min + 1e-6);
+  if (bad.length) console.warn('目安が一部の型より高い:', bad.map((e) => e.W));
+});
+</script>

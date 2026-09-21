@@ -1,0 +1,165 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Z曲げ シミュレーションは信用できるか</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --border: rgba(11,11,11,0.10);
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --good-wash: rgba(12,163,12,0.08); --critical-wash: rgba(208,59,59,0.07); --none-wash: rgba(137,135,129,0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark; --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+    --good-wash: rgba(12,163,12,0.14); --critical-wash: rgba(208,59,59,0.16); --none-wash: rgba(137,135,129,0.14);
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark; --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+  --good-wash: rgba(12,163,12,0.14); --critical-wash: rgba(208,59,59,0.16); --none-wash: rgba(137,135,129,0.14);
+}
+html, body { margin: 0; }
+.viz-root { background: var(--page); color: var(--text-primary);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", sans-serif; min-height: 100vh; }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 22px 20px 56px; }
+h1 { font-size: 22px; margin: 0 0 6px; font-weight: 700; }
+.answer { font-size: 16px; margin: 0 0 18px; color: var(--text-primary); }
+.answer b { font-weight: 700; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 26px; }
+@media (max-width: 700px) { .tiles { grid-template-columns: 1fr; } }
+.tile { border-radius: 12px; padding: 14px 16px; border: 1px solid var(--border); }
+.tile.good { background: var(--good-wash); } .tile.bad { background: var(--critical-wash); } .tile.none { background: var(--none-wash); }
+.tile .label { font-size: 14px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.tile .value { font-size: 48px; font-weight: 700; line-height: 1.1; margin: 4px 0 2px; }
+.tile .dies { font-size: 14px; color: var(--text-secondary); }
+h2 { font-size: 17px; margin: 26px 0 4px; font-weight: 700; }
+.h2note { color: var(--text-secondary); font-size: 14px; margin: 0 0 12px; }
+.icon { font-size: 13px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.card .die { font-size: 22px; font-weight: 700; }
+.card .part { font-size: 12.5px; color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+.card .say { margin: 8px 0 10px; font-size: 14.5px; }
+.card.bad { border-left: 4px solid var(--critical); }
+.card.good { border-left: 4px solid var(--good); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 3px 4px; border-bottom: 1px solid var(--grid); }
+td { padding: 4px 4px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+td.n { white-space: nowrap; }
+.pair { white-space: nowrap; }
+.pair .a { font-weight: 700; }
+.pair .s { color: var(--text-secondary); }
+.mark { font-size: 12.5px; white-space: nowrap; }
+.simtbl th, .simtbl td { text-align: right; }
+.simtbl th:first-child, .simtbl td:first-child, .simtbl th:nth-child(2), .simtbl td:nth-child(2) { text-align: left; }
+.legend { font-size: 13px; color: var(--text-secondary); margin: 0 0 10px; display: flex; gap: 16px; flex-wrap: wrap; }
+</style>
+
+<div class="viz-root">
+ <div class="wrap">
+  <h1>Z曲げ：シミュレーションは信用できるか</h1>
+  <p class="answer" id="answer">読み込み中…</p>
+  <div class="tiles" id="tiles"></div>
+
+  <h2>実績がある型</h2>
+  <p class="h2note">曲げた実績と、シミュレーションの答えを比べました。差が5mm以内なら「合っている」としています。</p>
+  <div class="legend">
+   <span><b style="color:var(--good)">●</b> 信用できる</span>
+   <span><b style="color:var(--critical)">▲</b> 信用しない（シミュが甘い＝曲がると言いすぎ）</span>
+   <span>表の数字は <b>太字＝実績</b>、細字＝シミュ</span>
+  </div>
+  <div class="cards" id="cards"></div>
+
+  <h2>実績がまだ無い型（シミュの値だけ）</h2>
+  <p class="h2note">曲げた実績が無いので、合っているかは分かりません。目安として見てください。</p>
+  <div class="card"><table class="simtbl" id="simonly"></table></div>
+ </div>
+</div>
+
+<script>
+const TOL = 5;
+const $ = (s) => document.querySelector(s);
+const f = (v) => (typeof v === 'number' ? (Math.round(v * 10) / 10).toString() : (v ?? '—'));
+const ORDER = [8, 12, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160];
+
+// 段差S：シミュが実績より小さい＝甘い。フランジA上限：シミュが実績より大きい＝甘い。
+const lenS = (d) => (typeof d.actK === 'number' && typeof d.simK === 'number') ? d.actK - d.simK : null;
+const lenA = (d) => (typeof d.actI === 'number' && typeof d.simI === 'number') ? d.simI - d.actI : null;
+
+function mark(len) {
+  if (len == null) return '';
+  if (len > TOL) return `<span class="mark" style="color:var(--critical)">▲ ${f(len)}mm甘い</span>`;
+  if (len < -TOL) return `<span class="mark" style="color:var(--text-secondary)">安全側</span>`;
+  return `<span class="mark" style="color:var(--good)">● 合う</span>`;
+}
+
+fetch('z_dashboard_data.json').then((r) => r.json()).then((rows) => {
+  // 型×材質でまとめる
+  const groups = new Map();
+  for (const d of rows) {
+    const k = `${d.machine}|${d.V}|${d.mat}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(d);
+  }
+  const withAct = [], simOnly = [];
+  for (const [k, list] of groups) {
+    const has = list.some((d) => typeof d.actI === 'number' || typeof d.actK === 'number');
+    (has ? withAct : simOnly).push(list);
+  }
+  const sortKey = (l) => ORDER.indexOf(l[0].V) + (l[0].mat === '縞' ? 100 : 0);
+  withAct.sort((a, b) => sortKey(a) - sortKey(b));
+  simOnly.sort((a, b) => sortKey(a) - sortKey(b));
+
+  const verdict = (list) => {
+    const aBad = list.map(lenA).filter((x) => x != null && x > TOL);
+    const sBad = list.map(lenS).filter((x) => x != null && x > TOL);
+    return { bad: aBad.length + sBad.length > 0, aMax: aBad.length ? Math.max(...aBad) : 0, sMax: sBad.length ? Math.max(...sBad) : 0 };
+  };
+
+  const good = withAct.filter((l) => !verdict(l).bad), bad = withAct.filter((l) => verdict(l).bad);
+  const names = (ls) => ls.map((l) => `V${l[0].V}${l[0].mat === '縞' ? '（縞）' : ''}`).join('・');
+
+  $('#answer').innerHTML = `<b>${names(bad)} は、シミュレーションを信用しないでください。</b>実際はシミュより手前で当たります。${names(good)} は実績と合っています。`;
+  $('#tiles').innerHTML = `
+    <div class="tile good"><div class="label"><span style="color:var(--good)">●</span>信用できる型</div>
+      <div class="value">${good.length}</div><div class="dies">${names(good)}</div></div>
+    <div class="tile bad"><div class="label"><span style="color:var(--critical)">▲</span>信用しない型</div>
+      <div class="value">${bad.length}</div><div class="dies">${names(bad)}</div></div>
+    <div class="tile none"><div class="label"><span style="color:var(--muted)">―</span>実績がまだ無い型</div>
+      <div class="value">${simOnly.length}</div><div class="dies">V40 以上と縞板</div></div>`;
+
+  $('#cards').innerHTML = withAct.map((list) => {
+    const d0 = list[0], v = verdict(list);
+    const part = (d0.dieName || '').split(/[\s＋｜]/)[0];   // 型番だけ（長い名前は折り返して読みにくい）
+    const says = [];
+    if (v.aMax) says.push(`フランジAを <b>最大 ${f(v.aMax)}mm 長く</b> 見積もっています（実際はもっと短い長さで台に当たる）。`);
+    if (v.sMax) says.push(`段差Sを <b>最大 ${f(v.sMax)}mm 小さく</b> 見積もっています（実際はそこまで詰められない）。`);
+    const strictS = list.map(lenS).some((x) => x != null && x < -TOL);
+    if (!says.length) says.push(strictS ? '実績と合っています。段差Sはシミュのほうが大きめ（安全側）です。' : '実績と合っています。');
+    const rowsHtml = list.map((d) => `<tr>
+        <td class="n">t${d.t}</td>
+        <td><span class="pair"><span class="a">${f(d.actK)}</span> <span class="s">/ ${f(d.simK)}</span></span><br>${mark(lenS(d))}</td>
+        <td><span class="pair"><span class="a">${f(d.actI)}</span> <span class="s">/ ${f(d.simI)}</span></span><br>${mark(lenA(d))}</td></tr>`).join('');
+    return `<div class="card ${v.bad ? 'bad' : 'good'}">
+      <div class="top"><div><span class="die">V${d0.V}</span> <span class="part">${d0.mat}・${d0.machine}・${part}</span></div>
+        ${v.bad ? `<span class="pill" style="color:var(--critical)">▲ 信用しない</span>` : `<span class="pill" style="color:var(--good)">● 信用できる</span>`}</div>
+      <div class="say">${says.join('<br>')}</div>
+      <table><tr><th>板厚</th><th>段差S最小（mm）</th><th>フランジA上限（mm）</th></tr>${rowsHtml}</table>
+    </div>`;
+  }).join('');
+
+  $('#simonly').innerHTML = `<tr><th>型</th><th>機械・材質</th><th>板厚</th><th>段差S最小</th><th>フランジA上限</th><th>フランジB最小</th></tr>` +
+    simOnly.flatMap((list) => list.map((d, i) => `<tr>
+      <td>${i === 0 ? `<b>V${d.V}</b>` : ''}</td><td>${i === 0 ? `${d.machine}・${d.mat}` : ''}</td>
+      <td>t${d.t}</td><td>${f(d.simK)}</td><td>${f(d.simI)}</td><td>${f(d.simL)}</td></tr>`)).join('');
+});
+</script>

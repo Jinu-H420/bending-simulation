@@ -42,7 +42,7 @@ for (const b of baseOnly) {
   });
 }
 cells.push({
-  kind: 'baseonly', machine: '-', title: 'HD3504NT 30540 用の台（ダイV20-2.dxf 実測）',
+  kind: 'baseonly', machine: '-', title: 'HD3504NT 2溝ダイ（30540・30640 共通）の台（ダイV20-2.dxf 実測）',
   base: E.DIE_MOUNT_LIB['30540'].parts.map(round), die: [], baseKind: 'measured',
 });
 
@@ -53,7 +53,8 @@ for (const machine of MACHINES) {
   const list = [...md.main.map((v) => ({ sel: v, name: nameOf[v] || v })),
                 ...md.extra.map((v) => ({ sel: v, name: (nameOf[v] || v) + '（取付未確認）' }))];
   for (const s of list) {
-    const flips = s.sel.startsWith('lib:30540') ? [false, true] : [false];
+    // 2溝ダイ（30540・30640）は左右反転して置けるので、反転も出す
+    const flips = /^lib:30[56]40:/.test(s.sel) ? [false, true] : [false];
     for (const flip of flips) {
       const withBase = E.resolveDie(s.sel, 20, 30, true, machine, flip);
       // ダイ本体だけの形。インサートの「＋スタック」は台なしでも一般化スタックが付いてくるので、

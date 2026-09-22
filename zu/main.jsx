@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
-import { judgeAll, zLimitA, uLimitH, seqText, RANK, exactLimit, actLimit } from './judge.js';
+import { judgeAll, zLimitA, uLimitH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH } from './judge.js';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import './zu.css';
 
@@ -256,11 +256,46 @@ function LimitDetail({ shape, row, x, y, other }) {
         <div className="ld-q">{yN} <b>{y}mm</b> で曲げるには</div>
         <div className="ld-a">{need.txt}<span className="tag">{need.src}</span></div>
       </div>
-      {!Z && (
-        <div className="ld-naka">
-          中押しなら：上型に当たる形でも、底W <b>{Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上</b>（内-内 {SUTE_MIN_INNER}mm 以上）で曲げられます
-        </div>
-      )}
+      {!Z && (() => {
+        // 中押しで押し切ったとき、いまの立上りの高さに上型が入る内-内
+        const n = nakaOshi(PUNCH, false, 'std', 0, other - row.t);
+        const wCalc = Math.ceil(n.needW + 2 * row.t), wRule = Math.ceil(SUTE_MIN_INNER + 2 * row.t);
+        return (
+          <div className="ld-naka">
+            中押しなら（上型に当たる形でも）：立上り {other}mm なら 底W <b>{wCalc}mm 以上</b> で上型が入る（計算）。
+            現場の決まりの内-内 {SUTE_MIN_INNER}mm なら 底W <b>{wRule}mm 以上</b>。{wCalc < wRule ? `${wCalc}〜${wRule - 1}mm は計算のみで未確認。` : ''}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// 中押しで押し切った瞬間の断面。上型がコの字の内側に入るかを見せる
+function NakaFigure({ t, W, H1, H2, naka }) {
+  const { tools, plate } = nakaPose(t, W, H1, H2);
+  const top = Math.max(H1, H2) + 60;          // 立上りより少し上まで見せる
+  const half = Math.max(W / 2 + 20, 80);
+  const vb = `${-half} ${-top} ${half * 2} ${top + t + 20}`;
+  const clip = (pts) => pts.map(([x, y]) => [x, Math.max(y, -top - 5)]);
+  const hit = !naka.ok;
+  return (
+    <div className="naka-fig">
+      <svg viewBox={vb} className="chart" style={{ maxHeight: 320 }} role="img" aria-label="中押しで押し切ったときの断面">
+        {tools.map((tl, i) => (
+          <polygon key={i} points={clip(tl.pts).map((q) => q.join(',')).join(' ')}
+            fill={tl.name === 'ヤゲン' ? 'var(--s1)' : 'none'} fillOpacity=".15" stroke="var(--s1)" strokeWidth={Math.max(1, half / 150)} />
+        ))}
+        <polygon points={plate.map((q) => q.join(',')).join(' ')} fill="var(--ink)" fillOpacity=".75" />
+        {naka.at != null && (
+          <line x1={-half} x2={half} y1={-naka.at} y2={-naka.at} stroke={hit ? 'var(--ng)' : 'var(--ok)'} strokeDasharray="6 4" strokeWidth={Math.max(1, half / 200)} />
+        )}
+      </svg>
+      <div className="hint">
+        中押しで押し切った瞬間（底は平ら・立上りは垂直・刃先は底の中央）。青がヤゲン・中間板・ホルダ、黒が板。
+        点線がいちばん狭い高さ（刃先から {naka.at}mm）：{hit ? '上型が立上りに当たる' : `片側 ${naka.clear}mm あく`}。
+        {Number.isFinite(naka.maxH) ? `この内-内なら、立上りの内側 ${naka.maxH}mm まで上型が入る。` : ''}
+      </div>
     </div>
   );
 }
@@ -440,6 +475,12 @@ function App() {
           <LimitDetail shape={shape} row={shown.row} x={x} y={y} other={Math.max(dims[0], dims[2])} />
           <LimitChart shape={shape} row={shown.row} x={x} y={y} grade={shown.grade} />
           <QuickTable shape={shape} row={shown.row} x={x} />
+          {shape === 'U' && shown.naka && (
+            <>
+              <h2 style={{ marginTop: 14 }}>中押しで押し切ったとき（{shown.die}・ヤゲン904061）</h2>
+              <NakaFigure t={t} W={dims[1]} H1={dims[0]} H2={dims[2]} naka={{ ...shown.naka, ok: shown.naka.clear > 0 }} />
+            </>
+          )}
           <div className="hint">
             {shape === 'Z'
               ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'

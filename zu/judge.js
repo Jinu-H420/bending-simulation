@@ -12,7 +12,7 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
-  SUTE_MIN_INNER, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck,
+  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck,
 } from '../bending-simulator.jsx';
 
 const PUNCH = '904061';
@@ -144,21 +144,31 @@ export function judgeU(row, H1, W, H2) {
   const geo = geoCheck(row, [H1, W, H2], [1, 1]);
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（コの字の実績はまだありません）', geo };
 
-  // 中押し（捨て曲げ）：底をへの字に曲げ → 両サイドを90° → 底を中押しで戻す。
-  // 上型に当たるときだけ効き、底の内-内（W − 板厚×2）が120mm以上要る（現場の実測・経緯まとめ第17章）
+  // 中押し（捨て曲げ）：底をへの字に曲げ → 両サイドを90° → 底を中押しで戻す。上型に当たるときだけ効く。
+  // 押し切った瞬間に上型がコの字の内側に入るかを計算で見る。現場の決まりは内-内120mm以上
+  // （経緯まとめ第17章）なので、それより狭くて計算では入るものは △ にする。
   const where = firstHitWhere(row, [H1, W, H2], [1, 1]);
   if (where && UPPER.includes(where)) {
+    // 押し切った瞬間に、上型（904061・中間板・ホルダ・柱）がコの字の内側に入るか（本体の nakaOshi）
     const inner = +(W - 2 * row.t).toFixed(1);
-    const needW = Math.ceil(SUTE_MIN_INNER + 2 * row.t);
-    if (inner >= SUTE_MIN_INNER) {
-      return { ...base, grade: 'naka', src: '中押し', geo,
-        why: `普通の曲げ方では${where}に当たります。底の内-内 ${inner}mm（${SUTE_MIN_INNER}mm以上）なので、中押しなら曲げられます` };
+    const n = nakaOshi(PUNCH, false, 'std', inner, Math.max(H1, H2) - row.t);
+    const naka = { inner, clear: +n.clear.toFixed(1), at: n.at, maxH: n.maxH };
+    if (n.ok && inner >= SUTE_MIN_INNER) {
+      return { ...base, grade: 'naka', src: '中押し', geo, naka,
+        why: `普通の曲げ方では${where}に当たります。中押しなら曲げられます（内-内 ${inner}mm、押し切ったとき片側 ${naka.clear}mm あく）` };
+    }
+    if (n.ok) {
+      // 計算では入るが、現場の決まり（内-内120mm）より狭い。確かめてから
+      return { ...base, grade: 'check', src: '中押し', geo, naka,
+        why: `普通の曲げ方では${where}に当たります。中押しは計算では入ります（押し切ったとき片側 ${naka.clear}mm あく）が、内-内 ${inner}mm は現場の決まり ${SUTE_MIN_INNER}mm より狭く、まだ確かめていません`,
+        fix: `底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に` };
     }
     const lim = uLimitH(row, W);
-    const hFix = lim != null && Number.isFinite(lim) && short > lim ? `低いほうの立上りを ${Math.floor(lim)}mm 以下に` : null;
-    return { ...base, grade: 'ng', src: '計算', geo,
-      why: `${where}に当たります。中押しにも底の内-内 ${SUTE_MIN_INNER}mm が要りますが、いま ${inner}mm です`,
-      fix: hFix ? `${hFix}（普通に曲げる）か、底Wを ${needW}mm 以上に（中押し）` : `底Wを ${needW}mm 以上に（中押し）` };
+    const hFix = lim != null && Number.isFinite(lim) && short > lim ? `低いほうの立上りを ${Math.floor(lim)}mm 以下に（普通に曲げる）` : null;
+    const mFix = Number.isFinite(n.maxH) ? `高いほうの立上りを ${Math.floor(n.maxH + row.t)}mm 以下に（中押し）` : null;
+    return { ...base, grade: 'ng', src: '計算', geo, naka,
+      why: `${where}に当たります。中押しでも、押し切ったとき刃先から ${n.at}mm の高さで上型が立上りに当たります（そこには内-内 ${n.needW}mm 要る。いま ${inner}mm）`,
+      fix: [hFix, mFix, `底Wを ${Math.ceil(n.needW + 2 * row.t)}mm 以上に（中押し）`].filter(Boolean).join('、または') };
   }
   const wMin = uSimMinW(row);
   if (wMin != null && W < wMin) return { ...base, grade: 'ng', src: '計算', why: `底 ${W}mm が狭すぎます（計算で約 ${wMin}mm 以上）`, fix: `底を ${wMin}mm 以上に`, geo };
@@ -194,6 +204,15 @@ export function actLimit(row, S) {
   if (act.far && S >= act.far.S) return { A: act.far.A };
   return { A: act.A };
 }
+
+// 中押しで押し切った瞬間の絵に使う形。刃先＝底の内面の中央＝(0,0)、y は負が上。
+export function nakaPose(t, W, H1, H2) {
+  const T = toolsFor(PUNCH, false, 0, 'std', []);
+  const hw = W / 2;   // 外寸の半分
+  const plate = [[-hw, -(H1 - t)], [-hw, t], [hw, t], [hw, -(H2 - t)], [hw - t, -(H2 - t)], [hw - t, 0], [-hw + t, 0], [-hw + t, -(H1 - t)]];
+  return { tools: T.polys.map((p, i) => ({ name: T.names[i], pts: p })), plate };
+}
+export { nakaOshi, PUNCH };
 
 // 一度に曲げられる長さ。ダイの所有台数（1台835mm）と機械の長さの短いほう
 export function lenLimit(row) {

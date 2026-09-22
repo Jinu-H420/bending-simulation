@@ -982,6 +982,38 @@ const ZMIN = {
 // 曲げ戻すときに底がダイの上で開ける必要があるため、この寸法が要る（経緯まとめ 第17章）。
 const SUTE_MIN_INNER = 120;
 
+// 中押し（捨て曲げの最後に底を平らに戻す工程）で、上型がコの字の内側に入れるか。
+// いちばん苦しいのは押し切った瞬間：底は平ら、両側の立上りは垂直、刃先は底の内面の中央。
+// 立上りの内面（x＝±内-内/2）の高さまで、上型（ヤゲン・中間板・ホルダ・柱）がその内側に収まればよい。
+// への字の途中は立上りが外へ開いているので、押し切った瞬間より楽になる。
+// 904061 のように根元まで細いヤゲンなら、立上りが低いうちは内-内120mm未満でも入る
+// （120mm はホルダ幅115mmに当たらない条件とほぼ同じ）。
+//   innerW：底の内-内（W − 板厚×2）  innerH：立上りの内側の高さ（高いほうの立上り − 板厚）
+// 返り値 { ok, clear：いちばん狭い所のすきま（片側）, at：その高さ, needW：この高さに要る内-内, maxH：この内-内で入れる立上りの高さ }
+function nakaOshi(punchType, punchFlip, chukanSel, innerW, innerH) {
+  const T = toolsFor(punchType, punchFlip, 0, chukanSel, []);
+  // 刃先から高さ h での、中心から左右いちばん外までの距離
+  const half = (h) => {
+    let m = 0;
+    for (const poly of T.polys) {
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        const y = -h;
+        if ((a[1] - y) * (b[1] - y) > 0 || a[1] === b[1]) continue;
+        const x = a[0] + ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]);
+        m = Math.max(m, Math.abs(x));
+      }
+    }
+    return m;
+  };
+  let need = 0, at = 0;
+  for (let h = 0; h <= innerH; h += 1) { const v = half(h); if (v > need) { need = v; at = h; } }
+  // この内-内なら、立上りをどこまで高くできるか（1mm刻み、400mmで打ち切り）
+  let maxH = 0;
+  while (maxH < 400 && half(maxH + 1) < innerW / 2) maxH += 1;
+  return { ok: need < innerW / 2, clear: innerW / 2 - need, at, needW: Math.ceil(need * 2), maxH: maxH >= 400 ? Infinity : maxH };
+}
+
 // 金型の所有（ベンダー折り曲げ金型寸法表）。ダイは1台835mmなので、
 // 何台持っているかで一度に曲げられる長さの上限が決まる。
 // V63 は1台しかないので835mmまで、V32 は2台で1670mmまで。
@@ -1704,15 +1736,19 @@ const BendingSimulator = () => {
     const upperHit = verdicts.some((v) => v.firstHit &&
       ['ヤゲン', '中間板', 'ホルダ', '柱（機械上部）', 'ヤゲン（中低）'].includes(v.firstHit.where));
     if (!upperHit) return null;
+    // 辺 i の曲げ上がりの実寸（シャープコーナー）
+    const sharp = (i) => effSegs[i] + (i > 0 ? growPerBend[i - 1] || 0 : 0) + (i < bends.length ? growPerBend[i] || 0 : 0);
     let best = null;
     for (let k = 1; k < effSegs.length - 1; k++) {
       if (bends[k - 1].dir !== bends[k].dir) continue;   // 逆向きなら底ではない
-      // 曲げ上がりの実寸（シャープコーナー）から板厚を引くと内-内になる
-      const inner = effSegs[k] + (growPerBend[k - 1] || 0) + (growPerBend[k] || 0) - t;
-      if (!best || inner > best.inner) best = { seg: k + 1, inner };
+      // 実寸から板厚を引くと内-内・立上りの内側の高さになる
+      const inner = sharp(k) - t;
+      const innerH = Math.max(sharp(k - 1), sharp(k + 1)) - t;
+      const n = nakaOshi(punchType, punchFlip, chukanSel, inner, innerH);
+      if (!best || n.clear > best.clear) best = { seg: k + 1, inner, innerH, ...n };
     }
-    return best ? { ...best, ok: best.inner >= SUTE_MIN_INNER } : null;
-  }, [allOK, verdicts, effSegs, bends, growPerBend, t]);
+    return best;
+  }, [allOK, verdicts, effSegs, bends, growPerBend, t, punchType, punchFlip, chukanSel]);
 
   // --- 現在フレーム ---
   const frame = useMemo(() => {
@@ -2330,8 +2366,8 @@ const BendingSimulator = () => {
             suteHint.ok ? 'bg-amber-950/50 border-amber-700 text-amber-200'
                         : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
             {suteHint.ok
-              ? `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。中押し（捨て曲げ）なら作れます — 底を一旦への字に曲げ、両サイドを90°にしてから底を中押しで戻す`
-              : `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。中押し（捨て曲げ）にも内-内 ${SUTE_MIN_INNER}mm 要るので、この形では逃げ道がありません`}
+              ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）`
+              : `◇ 中押し（捨て曲げ）も不可 — 押し切ったとき、刃先から ${suteHint.at}mm の高さで上型が立上りに当たります（内-内 ${suteHint.inner.toFixed(1)}mm、この高さの立上りには ${suteHint.needW}mm 要る。この内-内なら立上りの内側 ${suteHint.maxH}mm まで）`}
           </div>
         )}
 
@@ -2913,5 +2949,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi,
 };

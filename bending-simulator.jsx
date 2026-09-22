@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { loadRecords, addRecord, removeRecord, lookup, missRate, exportJSON, importJSON } from './src/records.js';
+import { folderSupported, loadFolder, pickFolder, forgetFolder, permission, pull as cloudPull, push as cloudPush } from './src/cloud.js';
 
 // ============================================================================
 // 金型実測データ（bending.dxf のベクタ座標をそのまま採用・寸法照合済み）
@@ -1322,6 +1323,19 @@ const BendingSimulator = () => {
   const [records, setRecords] = useState(() => loadRecords());   // 曲げた／曲げられなかった実績
   const [recNote, setRecNote] = useState('');
   const [autoMsg, setAutoMsg] = useState('');   // 自動で段取りを決めたときの説明
+  // サーバー保存（GitHub）。接続先とトークンはこの端末のブラウザにだけ置く
+  const [cloudConf, setCloudConf] = useState(null);      // つながっている共有フォルダ
+  const cloudConfRef = useRef(null);
+  const [pendingDir, setPendingDir] = useState(null);    // 覚えているが、許可を押してもらう前のフォルダ
+  const [who, setWho] = useState(() => { try { return localStorage.getItem('bendsim.who') || ''; } catch { return ''; } });
+  const [cloudOpenPanel, setCloudOpenPanel] = useState(false);
+  const [cloudMsg, setCloudMsg] = useState('');
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudSaves, setCloudSaves] = useState([]);
+  const [saveName, setSaveName] = useState('');
+  const dirtyRef = useRef(false);
+  const skipDirtyRef = useRef(false);
+  const firstParamsRef = useRef(false);
   const [picking, setPicking] = useState([]);  // 断面をクリックして曲げ順を選んでいる途中
   const pickingRef = useRef([]);
   const [step, setStep] = useState(0);
@@ -1525,9 +1539,110 @@ const BendingSimulator = () => {
   const recHit = useMemo(() => lookup(records, nowCase), [records, nowCase]);
   const recMiss = useMemo(() => missRate(records, nowCase), [records, nowCase]);
   const saveResult = (bent) => {
-    setRecords(addRecord(records, nowCase, bent, recNote));
+    const next = addRecord(records, nowCase, bent, recNote);
+    setRecords(next);
     setRecNote('');
+    cloudSend({ records: next });   // 実績はすぐ共有フォルダにも残す
   };
+  const dropRecord = (key) => {
+    setRecords(removeRecord(records, key));
+    cloudSend({ removeKeys: [key] });
+  };
+
+  // --- サーバー（GitHub）保存 -------------------------------------------
+  // 入力した数値一式。ここに入れたものが保存され、別の端末で開くと戻る。
+  const params = useMemo(() => ({
+    t, segs, inputMode, outerSegs, innerSegs, matType, nobiOverride, bends,
+    dieSel, vW, dieHalf, dieBase, punchType, bendLen, machineSel, ohAdj,
+    punchFlip, dieFlip, chukanSel, seq,
+  }), [t, segs, inputMode, outerSegs, innerSegs, matType, nobiOverride, bends,
+       dieSel, vW, dieHalf, dieBase, punchType, bendLen, machineSel, ohAdj,
+       punchFlip, dieFlip, chukanSel, seq]);
+  const applyParams = (p) => {
+    if (!p) return;
+    const set = { t: setT, segs: setSegs, inputMode: setInputMode, outerSegs: setOuterSegs,
+      innerSegs: setInnerSegs, matType: setMatType, nobiOverride: setNobiOverride, bends: setBends,
+      dieSel: setDieSel, vW: setVW, dieHalf: setDieHalf, dieBase: setDieBase, punchType: setPunchType,
+      bendLen: setBendLen, machineSel: setMachineSel, ohAdj: setOhAdj, punchFlip: setPunchFlip,
+      dieFlip: setDieFlip, chukanSel: setChukanSel, seq: setSeq };
+    for (const k of Object.keys(set)) if (p[k] !== undefined) set[k](p[k]);
+    setStep(0); setProg(0); setPlaying(false); setAutoMsg('');
+  };
+  const fmtAt = (iso) => new Date(iso).toLocaleString('ja-JP',
+    { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const cloudSend = async (change) => {
+    const dir = cloudConfRef.current;
+    if (!dir) return;
+    setCloudBusy(true);
+    try {
+      const d = await cloudPush(dir, change, who);
+      setCloudSaves(d.saves || []);
+      if (change.current) dirtyRef.current = false;
+      setCloudMsg(`保存しました ${fmtAt(d.savedAt)}${change.saveAs ? `「${change.saveAs}」` : ''}`);
+    } catch (e) {
+      setCloudMsg(`保存できませんでした：${e.message}`);
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+  // つないだとき：共有フォルダの実績を混ぜ、最後の段取りを開く（＝続きから）
+  const cloudOpen = async (dir) => {
+    setCloudBusy(true);
+    try {
+      const { data } = await cloudPull(dir);
+      setRecords((cur) => importJSON(cur, JSON.stringify(data.records || [])));
+      setCloudSaves(data.saves || []);
+      cloudConfRef.current = dir; setCloudConf(dir); setPendingDir(null);
+      if (data.current && data.current.params) {
+        skipDirtyRef.current = true;
+        applyParams(data.current.params);
+        setCloudMsg(`前回の続きを開きました（${fmtAt(data.current.at)} 保存${data.savedBy ? `・${data.savedBy}` : ''}）`);
+      } else {
+        setCloudMsg('つながりました。まだ保存はありません');
+      }
+      return true;
+    } catch (e) {
+      setCloudMsg(`つながりませんでした：${e.message}`);
+      return false;
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+  // 開いたとき：前に選んだフォルダがあり、許可も残っていればそのまま続きから
+  useEffect(() => {
+    if (!folderSupported()) return;
+    (async () => {
+      const dir = await loadFolder();
+      if (!dir) return;
+      if (await permission(dir, false) === 'granted') cloudOpen(dir);
+      else { setPendingDir(dir); setCloudMsg('右上の「共有フォルダにつなぐ」を押すと前回の続きを開きます'); }
+    })();
+  }, []);
+  // 数値を変えたら、手を止めて15秒後に自動で保存する
+  useEffect(() => {
+    if (skipDirtyRef.current) { skipDirtyRef.current = false; return; }
+    if (!cloudConfRef.current || !firstParamsRef.current) { firstParamsRef.current = true; return; }
+    dirtyRef.current = true;
+    const id = setTimeout(() => cloudSend({ current: params }), 15000);
+    return () => clearTimeout(id);
+  }, [params]);
+  // つなぐ：覚えているフォルダは許可だけ聞く。無ければフォルダを選んでもらう
+  const cloudConnect = async (choose) => {
+    try {
+      let dir = choose ? null : pendingDir;
+      if (!dir) dir = await pickFolder();
+      if (await permission(dir, true) !== 'granted') { setCloudMsg('許可されなかったので、つないでいません'); return; }
+      if (await cloudOpen(dir)) setCloudOpenPanel(false);
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;   // フォルダ選びを閉じただけ
+      setCloudMsg(`つながりませんでした：${e.message || e}`);
+    }
+  };
+  const cloudDisconnect = () => {
+    forgetFolder(); setCloudConf(null); cloudConfRef.current = null; setPendingDir(null);
+    setCloudSaves([]); setCloudMsg('このPCの接続を外しました（共有フォルダのデータは残っています）');
+  };
+
   const dumpRecords = () => {
     const blob = new Blob([exportJSON(records)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -2027,7 +2142,71 @@ const BendingSimulator = () => {
         <div className="flex items-baseline gap-3 mb-3 flex-wrap">
           <h1 className="text-lg font-bold tracking-wide text-slate-100">曲げ加工シミュレーター</h1>
           <span className="text-xs text-slate-500">実測金型（V12ダイ＋実機ヤゲン）｜プレスブレーキ干渉判定</span>
+          {folderSupported() ? (
+            <button onClick={() => (pendingDir && !cloudConf ? cloudConnect(false) : setCloudOpenPanel(!cloudOpenPanel))}
+              className={`ml-auto px-2 py-0.5 text-xs rounded border ${cloudConf
+                ? 'border-emerald-700 text-emerald-300 hover:bg-emerald-950/40'
+                : pendingDir ? 'border-sky-600 text-sky-300 hover:bg-sky-950/40'
+                : 'border-slate-600 text-slate-400 hover:bg-slate-800'}`}>
+              {cloudConf ? `● 共有フォルダに保存中${cloudBusy ? '…' : ''}` : pendingDir ? '共有フォルダにつなぐ' : '共有フォルダ保存 未設定'}
+            </button>
+          ) : (
+            <span className="ml-auto text-[11px] text-slate-500">保存は会社PCのChrome・Edgeで（ここでは見るだけ）</span>
+          )}
         </div>
+        {cloudMsg && !cloudOpenPanel && (
+          <div className="text-[11px] text-slate-400 -mt-2 mb-2 text-right">{cloudMsg}</div>
+        )}
+        {cloudOpenPanel && (
+          <div className="mb-3 rounded border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs">
+            {cloudConf ? (
+              <>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <span className="text-slate-300">保存先 <b>{cloudConf.name}</b> フォルダ</span>
+                  <span className="text-slate-500">数値を変えると15秒後に自動で保存。実績は記録したときに保存。</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <button disabled={cloudBusy} onClick={() => cloudSend({ current: params })} className={vbtn}>今すぐ保存</button>
+                  <input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="名前（例：ハット t6 V20）"
+                    className="bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-xs text-slate-100 w-48" />
+                  <button disabled={cloudBusy || !saveName.trim()}
+                    onClick={() => { cloudSend({ current: params, saveAs: saveName.trim() }); setSaveName(''); }}
+                    className={`${vbtn} disabled:opacity-40`}>名前を付けて保存</button>
+                  <button disabled={cloudBusy} onClick={() => cloudOpen(cloudConf)} className={vbtn}>読み直す</button>
+                  <input value={who} onChange={(e) => { setWho(e.target.value); try { localStorage.setItem('bendsim.who', e.target.value); } catch { /* 無視 */ } }}
+                    placeholder="このPCの名前（例：事務所PC）" className="bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-xs text-slate-100 w-40" />
+                  <button onClick={cloudDisconnect} className="ml-auto text-slate-500 hover:text-rose-400">このPCの接続を外す</button>
+                </div>
+                {cloudSaves.length > 0 && (
+                  <div className="max-h-32 overflow-auto space-y-0.5">
+                    {cloudSaves.map((sv) => (
+                      <div key={sv.name} className="flex items-center gap-2">
+                        <button onClick={() => { applyParams(sv.params); setCloudMsg(`「${sv.name}」を開きました`); }}
+                          className="text-sky-300 hover:underline">{sv.name}</button>
+                        <span className="text-slate-500">{fmtAt(sv.at)}</span>
+                        <button onClick={() => cloudSend({ removeSave: sv.name })}
+                          className="ml-auto text-slate-600 hover:text-rose-400">消す</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="text-slate-300 mb-1">社内の共有フォルダに保存すると、別のPC・別のアカウントでも続きから開けます。</div>
+                <div className="text-slate-400 mb-2">
+                  「フォルダを選ぶ」→ 上の場所の欄に次を貼り付けて Enter →「フォルダーの選択」→「編集を許可」
+                  <div className="mt-1 font-mono text-slate-200 select-all bg-slate-950 rounded px-2 py-1 inline-block">
+                    {'\\\\srv02\\共有\\データフォルダ\\ユーザー共有用\\地主\\claudecode\\曲げシミュレーション'}
+                  </div>
+                </div>
+                <button disabled={cloudBusy} onClick={() => cloudConnect(true)}
+                  className="px-3 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold">フォルダを選ぶ</button>
+              </>
+            )}
+            {cloudMsg && <div className="mt-2 text-slate-400">{cloudMsg}</div>}
+          </div>
+        )}
 
         {/* 実績バー：同じ条件を実際に曲げた記録があれば、シミュレーションより前に出す */}
         {recHit.exact && (
@@ -2618,7 +2797,7 @@ const BendingSimulator = () => {
             <div className="mt-3 rounded border border-slate-700 bg-slate-950/60 px-3 py-2">
               <div className="text-xs font-bold text-slate-200 mb-1">実際はどうでしたか</div>
               <div className="text-[11px] text-slate-500 mb-2">
-                記録すると、次に同じ段取りを開いたときに判定より先に出ます。この端末に保存されます。
+                記録すると、次に同じ段取りを開いたときに判定より先に出ます。{cloudConf ? '共有フォルダにも保存されます。' : 'このPCに保存されます（右上で共有フォルダにつなぐと、ほかのPCでも見られます）。'}
               </div>
               <div className="flex items-center gap-2 flex-wrap mb-2">
                 <button onClick={() => saveResult(true)}
@@ -2648,7 +2827,7 @@ const BendingSimulator = () => {
                       <span className="text-slate-500">{r.at}</span>
                       <span className="text-slate-300 truncate">{r.mat}t{r.t}／{r.segs.join('/')}</span>
                       {r.sim != null && r.sim !== r.bent && <span className="text-amber-400">判定と相違</span>}
-                      <button onClick={() => setRecords(removeRecord(records, r.key))}
+                      <button onClick={() => dropRecord(r.key)}
                         className="ml-auto text-slate-600 hover:text-rose-400">消す</button>
                     </div>
                   ))}

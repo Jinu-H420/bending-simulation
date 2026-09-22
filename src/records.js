@@ -6,6 +6,7 @@
 // シミュレーションの答えより実績を優先して出す。
 //
 // 保存先はブラウザの localStorage。書き出し／読み込みでファイルにもできる。
+// サーバー保存（src/cloud.js）をつなぐと GitHub にも同じものが残る。
 
 const KEY = 'bendsim.records.v2';
 
@@ -50,7 +51,9 @@ function save(list) {
 // 1件足す。同じ鍵の記録が既にあれば、件数を足して最新の結果で上書きする。
 export function addRecord(list, c, bent, note) {
   const key = caseKey(c);
-  const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const d = new Date();   // 記録の日時は日本時間（端末の時刻）で残す
+  const p2 = (n) => String(n).padStart(2, '0');
+  const now = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
   const next = list.slice();
   const i = next.findIndex((r) => r.key === key);
   const one = {

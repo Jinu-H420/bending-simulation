@@ -60,7 +60,9 @@ const altShort = (r) => (r.special ? '○ くの字' : '○ ヤゲン替え');
 function look(r) {
   if (isNaka(r)) return { cls: 'naka', mark: '○', word: GRADE.naka.word, ask: r.grade === 'check' };
   const g = GRADE[r.grade];
-  return { cls: g.cls, mark: g.mark, word: isAlt(r) ? altWord(r) : g.word, ask: r.grade === 'check' };
+  // くの字＝グラフのくの字と同じオレンジ、ほかのヤゲンに替えるとき＝青。普通の○（緑）と分ける
+  const cls = isAlt(r) ? (r.special ? 'kuno' : 'punch') : g.cls;
+  return { cls, mark: g.mark, word: isAlt(r) ? altWord(r) : g.word, ask: r.grade === 'check' };
 }
 
 // 曲げ方の順番（普通 → くの字 → 中押し）ごとに ○✕ を並べ、どれでしか曲がらないかを一目で見せる
@@ -783,7 +785,7 @@ function App() {
                   {fixList(res.list).map((f) => <div key={f.dies}>・{f.dies}：{f.fix}</div>)}
                 </div>
               )}
-              <a className={`simbtn ${best.grade === 'ng' ? 'strong' : best.src === '中押し' ? 'naka' : ''}`} href={simLink(shape, best, dims, mat, Lnum)} target="_blank" rel="noreferrer">
+              <a className={`simbtn ${best.grade === 'ng' ? 'strong' : best.src === '中押し' ? 'naka' : isAlt(best) ? look(best).cls : ''}`} href={simLink(shape, best, dims, mat, Lnum)} target="_blank" rel="noreferrer">
                 {best.grade === 'ng' ? `▶ どこが当たるか、シミュレーションで見る（${best.die}）`
                   : best.src === '中押し' ? `▶ 中押しの工程をシミュレーションで見る（${best.die}）` : `▶ シミュレーションで見る（${best.die}）`}
               </a>
@@ -800,7 +802,7 @@ function App() {
                     <tr key={r.row.id} className={shown && shown.row.id === r.row.id ? 'sel' : ''} onClick={() => setPickV(r.row.id)}>
                       <td><b>{r.die}</b>{r.row.V === res.baseV && <span className="tag">基準</span>}</td>
                       <td>{r.machine}</td>
-                      <td className={`g ${isNaka(r) ? 'naka' : r.grade}`}>{isNaka(r) ? (r.grade === 'check' ? '中押しのみ △' : '中押しのみ') : isAlt(r) ? altShort(r) : GRADE[r.grade].short}</td>
+                      <td className={`g ${isNaka(r) ? 'naka' : isAlt(r) ? (r.special ? 'kuno' : 'punch') : r.grade}`}>{isNaka(r) ? (r.grade === 'check' ? '中押しのみ △' : '中押しのみ') : isAlt(r) ? altShort(r) : GRADE[r.grade].short}</td>
                       <td>{r.why}{kunoText(r.kuno, Lnum) && <div className="kuno-s">くの字なら：{kunoText(r.kuno, Lnum)}</div>}</td>
                       <td><a className="see" href={simLink(shape, r, dims, mat, Lnum)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>見る</a></td>
                     </tr>

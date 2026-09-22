@@ -174,3 +174,17 @@ button.del:hover { color: var(--ng); }
 .ml-cell.skip .ml-mark { color: var(--muted); }
 .v-word.long { font-size: 23px; }
 @media (max-width: 480px) { .v-word.long { font-size: 20px; } }
+
+/* くの字特殊ヤゲンで曲がる＝③のグラフのくの字と同じオレンジ。ほかのヤゲンに替えるとき＝青 */
+.verdict.kuno { background: color-mix(in srgb, var(--s2) 9%, var(--card)); border-color: var(--s2); }
+.verdict.kuno .v-mark, .verdict.kuno .v-word { color: var(--s2); }
+.verdict.kuno .ml-cell.yes { border-color: var(--s2); background: color-mix(in srgb, var(--s2) 14%, var(--card)); }
+.verdict.kuno .ml-cell.yes .ml-mark { color: var(--s2); }
+.simbtn.kuno { color: var(--s2); border-color: var(--s2); }
+.g.kuno { color: var(--s2); }
+.verdict.punch { background: color-mix(in srgb, var(--s1) 9%, var(--card)); border-color: var(--s1); }
+.verdict.punch .v-mark, .verdict.punch .v-word { color: var(--s1); }
+.verdict.punch .ml-cell.yes { border-color: var(--s1); background: color-mix(in srgb, var(--s1) 14%, var(--card)); }
+.verdict.punch .ml-cell.yes .ml-mark { color: var(--s1); }
+.simbtn.punch { color: var(--s1); border-color: var(--s1); }
+.g.punch { color: var(--s1); }

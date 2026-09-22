@@ -1052,6 +1052,8 @@ function downCheck(chain, V, t, vHalf) {
 }
 
 const DIE_UNIT_LEN = 835;
+// 金型寸法表の注記：PL22（t22）は一度に曲げられる長さが1500mmまで
+const PL22_MAX_LEN = 1500;
 const DIE_STOCK = { 8: 5, 12: 5, 16: 5, 20: 5, 25: 5, 32: 2, 40: 5, 50: 5, 63: 1, 80: 5, 100: 5, 125: 5, 160: 5 };
 // シミュレーターの幾何だけで、その段差をどこまで小さくできるかを探す。
 // 実績と並べて見せるためのもの。判定そのものは実績（ZMIN）と干渉判定の
@@ -1518,8 +1520,10 @@ const BendingSimulator = () => {
     const c = [];
     if (n) c.push({ v: DIE_UNIT_LEN * n, why: `V${nobiV} ${n}台×${DIE_UNIT_LEN}mm` });
     if (m && m.len) c.push({ v: m.len, why: m.name.replace('AMADA ', '') });
+    // 金型寸法表の注記「PL22は長さ1500mmまで」
+    if (t >= 22) c.push({ v: PL22_MAX_LEN, why: 'PL22は1500mmまで（金型寸法表の注記）' });
     return c.length ? c.reduce((a, b) => (a.v <= b.v ? a : b)) : null;
-  }, [nobiV, machineSel]);
+  }, [nobiV, machineSel, t]);
   const lenNG = lenLimit && bendLen > lenLimit.v ? lenLimit : null;
 
   // 台の実測が使えていない金型のときだけ、下逃げの表で当たりを見る
@@ -2909,5 +2913,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
 };

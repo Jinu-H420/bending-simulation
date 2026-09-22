@@ -11,7 +11,7 @@
 //   check   △ 確かめが必要（実績の範囲外で、計算では通る など）
 //   ng      ✕ 曲がらない
 import {
-  resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN,
+  resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
 } from '../bending-simulator.jsx';
 
 const PUNCH = '904061';
@@ -132,6 +132,7 @@ export function lenLimit(row) {
   const n = DIE_STOCK[row.V];
   const c = [{ v: m.len, why: `${row.machine}の長さ` }];
   if (n) c.push({ v: n * DIE_UNIT_LEN, why: `V${row.V}のダイ ${n}台×${DIE_UNIT_LEN}mm` });
+  if (row.t >= 22) c.push({ v: PL22_MAX_LEN, why: 'PL22（金型寸法表の注記）' });
   return c.reduce((a, b) => (a.v <= b.v ? a : b));
 }
 function withLength(res, L) {

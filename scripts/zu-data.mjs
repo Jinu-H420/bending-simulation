@@ -3,6 +3,7 @@
 //   ・Z曲げの実績（段差S最小、そのときのフランジA上限、備考の「S35の場合 A95」）
 //   ・Z曲げの計算カーブ：段差Sごとの、フランジA上限（本体と同じ干渉判定）
 //   ・コの字の計算カーブ：底Wごとの、立上りH上限（u_ratio.json をそのまま使う）
+//   ・コの字をくの字ヤゲン（特殊 くの字165）で曲げたときの、底Wごとの立上りH上限
 //
 // 金型や判定の式を直したら、これを流し直して zu/data/zu-data.json を作り直す。
 // 使い方: node scripts/zu-data.mjs
@@ -38,6 +39,35 @@ const memoPoint = (memo) => {
   const S2 = s ? +s[1] : (/〃/.test(memo) ? lastS2 : null);
   return S2 != null ? { S: S2, A: +a[1] } : null;
 };
+
+// コの字（左右同じ高さ H・底 W）が、ヤゲン punch で通るか。突き当ては4通り試す（u-ratio.mjs と同じ）
+function uOk(nobi, t, info, punch, H, W) {
+  const vHalf = info.vHalf;
+  const segs = [H - nobi, W - 2 * nobi, H - nobi];
+  if (segs.some((x) => x <= 0.5)) return false;
+  const grow = nobi - t / 2, openGap = Math.max(0, 170 - t);
+  const exArc = E.shoulderReach(vHalf, t, 90) + t;
+  const part = { t, segs, bends: [{ angle: 90, dir: 1 }, { angle: 90, dir: 1 }], grow: [grow, grow] };
+  for (let m = 0; m < 4; m++) {
+    const seq = [{ bend: 0, mirror: !!(m & 1), valley: false }, { bend: 1, mirror: !!(m & 2), valley: false }];
+    let pass = true;
+    for (let si = 0; si < 2 && pass; si++) {
+      if (!E.reachCheck(part, seq, si, vHalf).ok) { pass = false; break; }
+      for (let p = 0; p <= 1.0001; p += 0.05) {
+        const { bendProg, lift } = E.strokeState(p, openGap);
+        const ch = E.computeChain(part, seq, si, bendProg, vHalf);
+        if (!ch.activeDirOK) { pass = false; break; }
+        const tools = E.toolsFor(punch, false, ch.innerY - lift, 'std', info.polys);
+        if (E.minGap(ch, tools.polys, t, vHalf, exArc).gap < -0.05) { pass = false; break; }
+      }
+    }
+    if (pass) return true;
+  }
+  return false;
+}
+const W_GRID = [];
+for (let w = 20; w <= 300; w += 10) W_GRID.push(w);
+const KUNO = '特殊 くの字165';
 
 const S_GRID = [];
 for (let s = 10; s <= 250; s += 5) S_GRID.push(s);
@@ -98,6 +128,18 @@ for (const r of zRows) {
   }
 
   const u = uData.curves.find((c) => c.V === r.V && c.t === r.t && c.mat === r.mat);
+  // くの字で曲げたときの立上り上限（底Wごと）
+  let uKuno = null;
+  if (nobi != null) {
+    const hLo = Math.max(minOut, reach);
+    uKuno = W_GRID.map((W) => {
+      if (!uOk(nobi, r.t, info, KUNO, hLo, W)) return { W, H: null };
+      if (uOk(nobi, r.t, info, KUNO, HI, W)) return { W, H: HI };
+      let a = hLo, b = HI;
+      for (let i = 0; i < 11; i++) { const m = (a + b) / 2; if (uOk(nobi, r.t, info, KUNO, m, W)) a = m; else b = m; }
+      return { W, H: +a.toFixed(1) };
+    });
+  }
   rows.push({
     V: r.V, mat: r.mat, t: r.t, machine: r.machine, die: r.dieName || info.note.split('｜')[0].trim(),
     sel, minOut, nobi,
@@ -107,6 +149,7 @@ for (const r of zRows) {
     zCurve,
     uLo: u ? u.lo : null,
     uCurve: u ? u.pts : null,
+    uKuno,
   });
   process.stderr.write(`V${r.V} ${r.mat} t${r.t}\n`);
 }

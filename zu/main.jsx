@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
-import { judgeAll, zLimitA, uLimitH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH } from './judge.js';
+import { judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH } from './judge.js';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import './zu.css';
 
@@ -123,14 +123,25 @@ function Figure({ shape, dims, L }) {
 }
 
 // 限界のグラフ。Z：段差S（横）と短いほうのフランジ上限（縦）／コの字：底W（横）と立上り上限（縦）
+// コの字の3つの曲げ方の上限カーブ（底Wごと）。中押しは押し切った瞬間に上型が入る高さ
+const W_GRID = []; for (let w = 20; w <= 300; w += 10) W_GRID.push(w);
+const toY = (v) => (v == null ? null : v === Infinity ? 400 : v);
+function uCurves(row) {
+  return {
+    kuno: (row.uKuno || []).map((p) => ({ x: p.W, y: p.H })),
+    naka: W_GRID.map((w) => ({ x: w, y: toY(uNakaH(row, w)) })),
+  };
+}
 function LimitChart({ shape, row, x, y, grade }) {
   const wrap = useRef(null);
   const [hov, setHov] = useState(null);
+  const extra = useMemo(() => (shape === 'U' ? uCurves(row) : null), [shape, row]);
   const W = 600, H = 300, L = 52, R = 16, T = 16, B = 40;
   const pts = shape === 'Z' ? (row.zCurve || []).map((p) => ({ x: p.S, y: p.A })) : (row.uCurve || []).map((p) => ({ x: p.W, y: p.H }));
   const xMax = shape === 'Z' ? Math.max(150, Math.ceil((x + 20) / 50) * 50) : Math.max(300, Math.ceil((x + 20) / 50) * 50);
   // 縦の目盛りは、いまの寸法と、見えている範囲の上限カーブが入る高さ（300まで。上限なしは上端に張り付く）
-  const curveTop = Math.max(0, ...pts.filter((p) => p.x <= xMax && p.y != null && p.y < 399).map((p) => p.y));
+  const allPts = extra ? [...pts, ...extra.kuno, ...extra.naka] : pts;
+  const curveTop = Math.max(0, ...allPts.filter((p) => p.x <= xMax && p.y != null && p.y < 399).map((p) => p.y));
   const yMax = Math.min(300, Math.max(150, Math.ceil((Math.max(y, curveTop) + 20) / 50) * 50));
   const sx = (v) => L + (v / xMax) * (W - L - R);
   const sy = (v) => T + (1 - Math.min(v, yMax) / yMax) * (H - T - B);
@@ -144,6 +155,19 @@ function LimitChart({ shape, row, x, y, grade }) {
     cur.push([sx(p.x), sy(Math.min(p.y, yMax))]);
   }
   if (cur.length) segs.push(cur);
+  // 線を途切れ（曲げられない所）で分けて描く
+  const lineSegs = (ps) => {
+    const out = []; let c = [];
+    for (const p of ps) {
+      if (p.x > xMax) break;
+      if (p.y == null) { if (c.length) out.push(c); c = []; continue; }
+      c.push([sx(p.x), sy(Math.min(p.y, yMax))]);
+    }
+    if (c.length) out.push(c);
+    return out;
+  };
+  const kunoSegs = extra ? lineSegs(extra.kuno) : [];
+  const nakaSegs = extra ? lineSegs(extra.naka) : [];
   const zone = segs.map((s) => `M${s[0][0]},${sy(0)} ` + s.map((q) => `L${q[0]},${q[1]}`).join(' ') + ` L${s[s.length - 1][0]},${sy(0)} Z`);
   const actZone = act ? (() => {
     const s1 = act.S, a1 = act.A, far = act.far;
@@ -161,7 +185,7 @@ function LimitChart({ shape, row, x, y, grade }) {
     const xv = ((px - L) / (W - L - R)) * xMax;
     if (xv < 0 || xv > xMax) { setHov(null); return; }
     const yv = shape === 'Z' ? zLimitA(row, xv) : uLimitH(row, xv);
-    setHov({ px: (px / W) * r.width, xv, yv });
+    setHov({ px: (px / W) * r.width, xv, yv, kv: shape === 'U' ? uKunoH(row, xv) : null, nv: shape === 'U' ? uNakaH(row, xv) : null });
   };
   const xName = shape === 'Z' ? '段差S' : '底W', yName = shape === 'Z' ? '短いほうのフランジ' : '低いほうの立上り';
   return (
@@ -174,7 +198,34 @@ function LimitChart({ shape, row, x, y, grade }) {
         <text className="tt" x={W - R} y={H - 4} textAnchor="end">{xName}（mm）→</text>
         <text className="tt" x={L} y={T - 2} textAnchor="start" dy="10" dx="6">↑ {yName}（mm）</text>
         {actZone ? <path d={actZone} fill="var(--okzone)" /> : zone.map((d, i) => <path key={i} d={d} fill="var(--okzone)" />)}
-        {segs.map((s, i) => <polyline key={i} points={s.map((q) => q.join(',')).join(' ')} fill="none" stroke="var(--s1)" strokeWidth="2" strokeLinejoin="round" />)}
+        {nakaSegs.map((s, i) => <polyline key={'n' + i} points={s.map((q) => q.join(',')).join(' ')} fill="none" stroke="var(--s3)" strokeWidth="2" strokeDasharray="7 4" strokeLinejoin="round" />)}
+        {kunoSegs.map((s, i) => <polyline key={'k' + i} points={s.map((q) => q.join(',')).join(' ')} fill="none" stroke="var(--s2)" strokeWidth="2" strokeLinejoin="round" />)}
+        {segs.map((s, i) => <polyline key={i} points={s.map((q) => q.join(',')).join(' ')} fill="none" stroke="var(--s1)" strokeWidth="2.5" strokeLinejoin="round" />)}
+        {/* 線の名前を右端に（色だけに頼らない） */}
+        {/* 線の名前は、その線のいちばん高い所に付ける（線が重なる右端だと名前も重なるため） */}
+        {(() => {
+          // 普通は右端に。くの字・中押しは「普通の線からいちばん上に離れた所」に付ける（右で線が重なっても名前が重ならない）
+          const labs = [];
+          const lastSeg = segs.length ? segs[segs.length - 1] : null;
+          if (lastSeg) { const q = lastSeg[lastSeg.length - 1]; labs.push({ name: '普通', x: q[0], y: q[1] }); }
+          if (extra) {
+            [[extra.kuno, 'くの字（L200まで）'], [extra.naka, '中押し']].forEach(([ps, name]) => {
+              let best = null;
+              for (const p of ps) {
+                if (p.y == null || p.x > xMax) continue;
+                const nv = uLimitH(row, p.x);
+                const base = nv == null ? 0 : Math.min(Number.isFinite(nv) ? nv : 400, yMax);
+                const d = Math.min(p.y, yMax) - base;
+                if (!best || d > best.d + 0.5) best = { d, x: sx(p.x), y: sy(Math.min(p.y, yMax)) };
+              }
+              if (best) labs.push({ name, x: best.x, y: best.y });
+            });
+          }
+          return labs.map((lb) => {
+            const anchor = lb.x > W * 0.6 ? 'end' : 'start';
+            return <text key={lb.name} x={lb.x + (anchor === 'end' ? -4 : 6)} y={lb.y - 7} textAnchor={anchor} style={{ fill: 'var(--sub)', fontWeight: 700 }}>{lb.name}</text>;
+          });
+        })()}
         {act && (
           <>
             {[{ x: act.S, y: act.A }, ...(act.far ? [act.far] : [])].map((p, i) => (
@@ -198,10 +249,13 @@ function LimitChart({ shape, row, x, y, grade }) {
       {hov && (
         <div className="tip" style={{ left: Math.min(hov.px + 10, (wrap.current?.clientWidth || 300) - 170), top: 8 }}>
           {xName} {hov.xv.toFixed(0)} → {yName} {hov.yv == null ? '曲げられない' : Number.isFinite(hov.yv) ? `${hov.yv.toFixed(0)}mm まで（計算）` : '上限なし（計算）'}
+          {shape === 'U' && <><br />くの字 {limTxt(hov.kv == null ? null : Number.isFinite(hov.kv) && hov.kv < 399 ? Math.floor(hov.kv) : Infinity)}　／　中押し {limTxt(hov.nv == null ? null : Number.isFinite(hov.nv) ? Math.floor(hov.nv) : Infinity)}</>}
         </div>
       )}
       <div className="legend">
-        <span><i style={{ background: 'var(--s1)' }} />計算の上限（これより下なら当たらない）</span>
+        <span><i style={{ background: 'var(--s1)' }} />{shape === 'U' ? '普通に曲げる' : '計算の上限'}（これより下なら当たらない）</span>
+        {shape === 'U' && <span><i style={{ background: 'var(--s2)' }} />くの字ヤゲン（L 200mm まで）</span>}
+        {shape === 'U' && <span><i style={{ background: 'var(--s3)' }} />中押し（最終手段）</span>}
         {act && <span><i className="dot" style={{ background: 'var(--s2)' }} />実績（ここまで曲げた）</span>}
         <span><i style={{ background: 'var(--okzone)', height: 10 }} />曲がる範囲{act ? '（実績）' : ''}</span>
       </div>
@@ -267,14 +321,33 @@ function LimitDetail({ shape, row, x, y, other }) {
         <div className="ld-a">{need.txt}<span className="tag">{need.src}</span></div>
       </div>
       {!Z && (() => {
-        // 中押しで押し切ったとき、いまの立上りの高さに上型が入る内-内
-        const n = nakaOshi(PUNCH, false, 'std', 0, other - row.t);
-        // 底の半分ずつが最小フランジ以上いる（への字を曲げるため）
-        const wCalc = Math.max(Math.ceil(n.needW + 2 * row.t), Math.ceil(2 * row.minOut)), wRule = Math.max(Math.ceil(SUTE_MIN_INNER + 2 * row.t), Math.ceil(2 * row.minOut));
+        // 曲げ方ごとの、いまの底Wでの立上り上限。現場の順番：普通 → くの字 → 中押し（最終手段）
+        const k = uKunoH(row, x), n = uNakaH(row, x);
+        const kv = k == null ? null : k >= 399 ? Infinity : Math.floor(k);
+        const nv = n == null ? null : Number.isFinite(n) ? Math.floor(n) : Infinity;
+        const ok = (v) => v != null && (v === Infinity || y <= v);
+        const inner = x - 2 * row.t;
+        const rowsT = [
+          ['普通に曲げる', ex === undefined ? undefined : ex, '904061'],
+          ['くの字ヤゲン', kv, 'L 200mm まで（くの字165）・70mm まで（くの字100）'],
+          ['中押し（最終手段）', nv, inner < SUTE_MIN_INNER ? `内-内 ${inner}mm。${SUTE_MIN_INNER}mm 未満は現場で未確認` : `内-内 ${inner}mm`],
+        ];
         return (
           <div className="ld-naka">
-            中押しなら（上型に当たる形でも）：立上り {other}mm なら 底W <b>{wCalc}mm 以上</b> で上型が入る（計算）。
-            現場の決まりの内-内 {SUTE_MIN_INNER}mm なら 底W <b>{wRule}mm 以上</b>。{wCalc < wRule ? `${wCalc}〜${wRule - 1}mm は計算のみで未確認。` : ''}
+            <b>曲げ方ごとの立上り上限（底W {x}mm）</b>
+            <table className="kt">
+              <thead><tr><th>曲げ方</th><th>立上り</th><th>いまの {y}mm</th><th>条件</th></tr></thead>
+              <tbody>
+                {rowsT.map(([name, v, cond]) => (
+                  <tr key={name}>
+                    <td>{name}</td>
+                    <td><b>{v === undefined ? '…' : limTxt(v)}</b></td>
+                    <td className={v === undefined ? '' : ok(v) ? 'g ok-sim' : 'g ng'}>{v === undefined ? '' : ok(v) ? '○' : '✕'}</td>
+                    <td className="cond">{cond}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         );
       })()}
@@ -330,7 +403,9 @@ function QuickTable({ shape, row, x }) {
           {Z && row.zAct && (
             <tr><th>実績の上限</th>{cols.map((p) => { const a = actLimit(row, p.x); return <td key={p.x} className={p === near ? 'now' : ''}>{a.A == null ? '✕' : a.A}</td>; })}</tr>
           )}
-          <tr><th>{Z ? '計算の上限' : '立上りの上限'}</th>{cols.map((p) => <td key={p.x} className={p === near ? 'now' : ''}>{v(p.y)}</td>)}</tr>
+          <tr><th>{Z ? '計算の上限' : '普通に曲げる'}</th>{cols.map((p) => <td key={p.x} className={p === near ? 'now' : ''}>{v(p.y)}</td>)}</tr>
+          {!Z && <tr><th>くの字（L200まで）</th>{cols.map((p) => <td key={p.x} className={p === near ? 'now' : ''}>{v(uKunoH(row, p.x))}</td>)}</tr>}
+          {!Z && <tr><th>中押し</th>{cols.map((p) => { const n = uNakaH(row, p.x); return <td key={p.x} className={p === near ? 'now' : ''}>{n == null ? '✕' : Number.isFinite(n) ? Math.floor(n) : 'なし'}</td>; })}</tr>}
         </tbody>
       </table>
       <div className="hint">早見表（mm）。✕＝最短でも曲げられない、なし＝上限なし。{Z ? '' : '左右の立上りが同じ高さのときの値。'}</div>
@@ -529,7 +604,7 @@ function App() {
           <div className="hint">
             {shape === 'Z'
               ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'
-              : '低いほうの立上りを先に曲げる想定（先に立てた側が上型に当たる）。コの字は実績がまだ無く、計算の値です。'}
+              : '低いほうの立上りを先に曲げる想定（先に立てた側が上型に当たる）。オレンジ＝くの字ヤゲン（曲げ長さ L が窓以内のときだけ）、緑の点線＝中押しで押し切ったとき上型が入る高さ（への字の角度は判定で確かめている）。現場の順番は 普通 → くの字 → 中押し。コの字は実績がまだ無く、計算の値です。'}
           </div>
         </section>
       )}

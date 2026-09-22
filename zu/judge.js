@@ -60,6 +60,14 @@ function interp(p, x, kx, ky) {
   const y = p[p.length - 1][ky];
   return y == null ? null : top(y);
 }
+// コの字をくの字ヤゲンで曲げたときの立上り上限（底Wごとの計算カーブ）
+export const uKunoH = (row, W) => (row.uKuno ? interp(row.uKuno, W, 'W', 'H') : null);
+// 中押しで押し切ったとき上型が入る立上り（外寸）の上限。底の半分が最小フランジ未満なら null（への字が曲がらない）
+export function uNakaH(row, W) {
+  if (W / 2 < row.minOut) return null;
+  const n = nakaOshi(PUNCH, false, 'std', W - 2 * row.t, 0);
+  return Number.isFinite(n.maxH) ? n.maxH + row.t : Infinity;
+}
 export const zLimitA = (row, S) => (row.zCurve ? interp(row.zCurve, S, 'S', 'A') : null);
 export const uLimitH = (row, W) => (row.uCurve ? interp(row.uCurve, W, 'W', 'H') : null);
 // 計算上の段差S最小：カーブで A が出始める S

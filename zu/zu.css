@@ -1,0 +1,95 @@
+:root {
+  color-scheme: light;
+  --page: #f5f5f2; --card: #ffffff; --ink: #111; --sub: #52514e; --muted: #8a8882;
+  --line: #e2e0d8; --grid: #ecebe6; --accent: #2a78d6;
+  --s1: #2a78d6; --s2: #eb6834;            /* 計算カーブ・実績の点 */
+  --ok: #0a7d0a; --ok-bg: #eaf6ea; --chk: #9a6400; --chk-bg: #fdf3dc; --ng: #c62f2f; --ng-bg: #fbeaea;
+  --okzone: rgba(10, 125, 10, .08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark; --page: #0d0d0d; --card: #1a1a19; --ink: #fff; --sub: #c3c2b7; --muted: #898781;
+    --line: #2c2c2a; --grid: #262624; --accent: #3987e5; --s1: #3987e5; --s2: #d95926;
+    --ok: #3cc43c; --ok-bg: #12261a; --chk: #f0b340; --chk-bg: #2b2210; --ng: #ee6b6b; --ng-bg: #2e1616;
+    --okzone: rgba(60, 196, 60, .10);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark; --page: #0d0d0d; --card: #1a1a19; --ink: #fff; --sub: #c3c2b7; --muted: #898781;
+  --line: #2c2c2a; --grid: #262624; --accent: #3987e5; --s1: #3987e5; --s2: #d95926;
+  --ok: #3cc43c; --ok-bg: #12261a; --chk: #f0b340; --chk-bg: #2b2210; --ng: #ee6b6b; --ng-bg: #2e1616;
+  --okzone: rgba(60, 196, 60, .10);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", sans-serif; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 18px 16px 48px; }
+header h1 { font-size: 22px; margin: 0; }
+header p { margin: 2px 0 14px; color: var(--sub); font-size: 14.5px; }
+
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.tab { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px; border-radius: 12px;
+  border: 2px solid var(--line); background: var(--card); color: var(--sub); font: inherit; font-size: 19px; cursor: pointer; }
+.tab.on { border-color: var(--accent); color: var(--ink); font-weight: 700; }
+
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.card h2 { font-size: 15px; margin: 0 0 8px; color: var(--sub); font-weight: 700; }
+
+.fig { width: 100%; height: auto; max-height: 190px; display: block; margin: 0 auto; color: var(--ink); }
+.fig .plate { stroke: var(--ink); }
+.fig .dim { stroke: var(--muted); }
+.fig text { fill: var(--ink); font-size: 15px; font-weight: 700; }
+.fig .lab { fill: var(--sub); font-weight: 600; font-size: 13px; }
+
+.dims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+label.f { display: flex; flex-direction: column; font-size: 13px; color: var(--sub); }
+input, select { font: inherit; font-size: 20px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--page); color: var(--ink); width: 100%; }
+.row { display: flex; gap: 10px; align-items: end; margin-top: 10px; flex-wrap: wrap; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; padding: 9px 18px; border: 0; background: transparent; color: var(--sub); cursor: pointer; }
+.seg button.on { background: var(--accent); color: #fff; font-weight: 700; }
+.hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+.verdict { border-radius: 14px; padding: 14px 16px; border: 2px solid; }
+.verdict.ok { background: var(--ok-bg); border-color: var(--ok); }
+.verdict.check { background: var(--chk-bg); border-color: var(--chk); }
+.verdict.ng { background: var(--ng-bg); border-color: var(--ng); }
+.v-head { display: flex; align-items: center; gap: 12px; }
+.v-mark { font-size: 46px; font-weight: 800; line-height: 1; }
+.v-word { font-size: 28px; font-weight: 800; }
+.verdict.ok .v-mark, .verdict.ok .v-word { color: var(--ok); }
+.verdict.check .v-mark, .verdict.check .v-word { color: var(--chk); }
+.verdict.ng .v-mark, .verdict.ng .v-word { color: var(--ng); }
+.v-body { margin-top: 6px; font-size: 15.5px; }
+.v-body b { font-size: 17px; }
+.v-fix { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--card); font-weight: 700; }
+.tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--sub); margin-left: 6px; font-weight: 600; }
+
+table.dies { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.dies th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12.5px; border-bottom: 1px solid var(--line); padding: 4px 6px; }
+table.dies td { border-bottom: 1px solid var(--grid); padding: 6px; vertical-align: top; }
+table.dies tr { cursor: pointer; }
+table.dies tr.sel td { background: var(--page); }
+.g { font-weight: 800; white-space: nowrap; }
+.g.ok-act, .g.ok-sim { color: var(--ok); } .g.check { color: var(--chk); } .g.ng { color: var(--ng); }
+
+.chart { width: 100%; height: auto; display: block; }
+.chart .ax { stroke: var(--line); }
+.chart .gl { stroke: var(--grid); }
+.chart text { fill: var(--muted); font-size: 12px; }
+.chart .tt { fill: var(--sub); font-size: 13px; font-weight: 600; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--sub); margin-top: 4px; }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.legend i.dot { width: 9px; height: 9px; border-radius: 50%; }
+.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px 8px; font-size: 12.5px; color: var(--ink); white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+
+.answer { width: 100%; min-height: 70px; font-size: 15px; resize: vertical; }
+.copy { margin-top: 6px; padding: 8px 16px; font: inherit; font-weight: 700; border-radius: 8px; cursor: pointer;
+  background: var(--accent); color: #fff; border: 0; }
+footer { margin-top: 22px; font-size: 13px; color: var(--muted); }
+footer a { color: var(--accent); margin-right: 14px; }
+section + section { margin-top: 12px; }

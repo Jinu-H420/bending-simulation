@@ -2,10 +2,18 @@
 
 ## 「続きをお願い」と言われたら
 
+このリポジトリには**別々のアプリが2つ**ある。引き継ぎも別。混ぜない。
+
+| アプリ | 場所 | 引き継ぎ |
+|---|---|---|
+| 曲げシミュレーター（本体） | `bending-simulator.jsx` ほか | `\\srv02\共有\データフォルダ\ユーザー共有用\地主\claudecode\曲げシミュレーション\引き継ぎ.md` |
+| Z曲げ・コの字 判定（問い合わせ用） | `zu/` | `\\srv02\共有\データフォルダ\ユーザー共有用\地主\claudecode\Z・コの字判定\引き継ぎ.md` |
+
 1. `git pull`（別の端末・GitHub直アップで更新されていることがある）
-2. 共有フォルダの `引き継ぎ.md` を読む。「いまの状態」と「残っている作業」から再開する
-   `\\srv02\共有\データフォルダ\ユーザー共有用\地主\claudecode\曲げシミュレーション\引き継ぎ.md`
+2. 両方の引き継ぎ.md を開き、**更新日時が新しいほう**から再開する（どちらか言われたらそちら）
 3. 何から再開するかを **1〜2行で** ユーザーに伝えてから作業する
+
+`zu/` は判定の計算だけ本体の関数を import している。本体の判定を直したら `node scripts/zu-data.mjs` でデータを作り直す。
 
 ## 何か進めたら（2026-09-22 ユーザー指示）
 
@@ -67,6 +75,7 @@
 
 - 公開URL：https://jinu-h420.github.io/bending-simulation/ （main に push すると約40秒で反映、`.github/workflows/deploy.yml`）
 - かんたん判定：https://jinu-h420.github.io/bending-simulation/check.html
+- Z曲げ・コの字 判定（別アプリ）：https://jinu-h420.github.io/bending-simulation/zu/
 - 確認資料：https://jinu-h420.github.io/bending-simulation/dash/
 - 起動：`npm install` → `npm run dev` → http://localhost:5173/
 - Node スクリプトは jsx から判定エンジンを切り出して使う（先頭の import 行を除いて評価）

@@ -327,12 +327,26 @@ function QuickTable({ shape, row, x }) {
   );
 }
 
+const INPUT_KEY = 'zu.inputs.v1';
+function loadInputs() {
+  try {
+    const v = JSON.parse(localStorage.getItem(INPUT_KEY) || 'null');
+    return v && typeof v === 'object' ? v : {};
+  } catch { return {}; }
+}
+function saveInputs(v) {
+  try { localStorage.setItem(INPUT_KEY, JSON.stringify(v)); } catch { /* 覚えられない環境でも動く */ }
+}
+
 function App() {
-  const [shape, setShape] = useState(() => (location.hash === '#u' ? 'U' : 'Z'));
-  const [dimsBy, setDimsBy] = useState({ Z: SHAPE.Z.def.map(String), U: SHAPE.U.def.map(String) });
-  const [mat, setMat] = useState('鉄');
-  const [t, setT] = useState(4.5);
-  const [Ltxt, setLtxt] = useState('1000');   // 曲げ長さ L（曲げ線に沿った製品の長さ）
+  // 入力はこの端末のブラウザに覚えておく。シミュレーターを見て戻っても、入れた数字のまま
+  const saved = useMemo(() => loadInputs(), []);
+  const [shape, setShape] = useState(() => (location.hash === '#u' ? 'U' : location.hash === '#z' ? 'Z' : saved.shape || 'Z'));
+  const [dimsBy, setDimsBy] = useState(() => saved.dimsBy || { Z: SHAPE.Z.def.map(String), U: SHAPE.U.def.map(String) });
+  const [mat, setMat] = useState(saved.mat || '鉄');
+  const [t, setT] = useState(saved.t || 4.5);
+  const [Ltxt, setLtxt] = useState(saved.Ltxt || '1000');   // 曲げ長さ L（曲げ線に沿った製品の長さ）
+  useEffect(() => { saveInputs({ shape, dimsBy, mat, t, Ltxt }); }, [shape, dimsBy, mat, t, Ltxt]);
   const Lnum = Number(Ltxt);
   const [pickV, setPickV] = useState(null);
   const [copied, setCopied] = useState(false);

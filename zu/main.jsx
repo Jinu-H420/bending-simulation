@@ -18,6 +18,29 @@ const GRADE = {
   ng: { cls: 'ng', mark: '✕', word: '曲がりません', short: '✕' },
 };
 
+// シミュレーター本体で、この形・この型を開くリンク。当たる工程・瞬間で止まって開く。
+function simLink(shape, r, dims, mat) {
+  const row = r.row;
+  const dirs = shape === 'Z' ? [1, -1] : [1, 1];
+  const seq = r.geo && r.geo.ok ? r.geo.seq
+    : dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 }));
+  const S = SHAPE[shape];
+  const lines = [`Z・コの字判定から開きました：${S.name}　${mat} t${row.t}　${S.keys.map((k, i) => `${k}=${dims[i]}`).join('・')}（外寸）　${r.die}`];
+  if (r.grade === 'ng' && r.geo && r.geo.ok) {
+    lines.push(`判定：${r.why}。`);
+    lines.push('※ この型は計算が実績より甘く出るため、絵では当たらなくても実績を優先しています。');
+  } else if (r.grade === 'ng') {
+    lines.push(`判定：${r.why}。当たる瞬間で止めています（橙の丸が当たる所）。「▶ 全工程再生」で動きも見られます。`);
+  }
+  const params = {
+    t: row.t, matType: mat, inputMode: 'outer', outerSegs: dims, nobiOverride: null,
+    bends: dirs.map((d) => ({ angle: 90, dir: d })),
+    dieSel: row.sel, machineSel: row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt', dieFlip: false,
+    punchType: '904061', punchFlip: false, chukanSel: 'std', dieBase: true, seq,
+  };
+  return `../#open=${encodeURIComponent(JSON.stringify({ params, note: lines.join('\n') }))}`;
+}
+
 // 直し方を型ごとに出す。同じ直し方の型はまとめる（「V25・V20：段差Sを46mm以上に」）
 function fixList(list) {
   const m = new Map();
@@ -263,6 +286,9 @@ function App() {
                   {fixList(res.list).map((f) => <div key={f.dies}>・{f.dies}：{f.fix}</div>)}
                 </div>
               )}
+              <a className={`simbtn ${best.grade === 'ng' ? 'strong' : ''}`} href={simLink(shape, best, dims, mat)} target="_blank" rel="noreferrer">
+                {best.grade === 'ng' ? `▶ どこが当たるか、シミュレーションで見る（${best.die}）` : `▶ シミュレーションで見る（${best.die}）`}
+              </a>
             </div>
           )}
 
@@ -270,7 +296,7 @@ function App() {
             <div className="card" style={{ marginTop: 12 }}>
               <h2>② 型ごとの結果（{mat} t{t}）</h2>
               <table className="dies">
-                <thead><tr><th>型</th><th>機械</th><th>判定</th><th>理由</th></tr></thead>
+                <thead><tr><th>型</th><th>機械</th><th>判定</th><th>理由</th><th></th></tr></thead>
                 <tbody>
                   {res.list.map((r) => (
                     <tr key={r.row.V} className={shown && shown.row.V === r.row.V ? 'sel' : ''} onClick={() => setPickV(r.row.V)}>
@@ -278,6 +304,7 @@ function App() {
                       <td>{r.machine}</td>
                       <td className={`g ${r.grade}`}>{GRADE[r.grade].short}</td>
                       <td>{r.why}</td>
+                      <td><a className="see" href={simLink(shape, r, dims, mat)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>見る</a></td>
                     </tr>
                   ))}
                 </tbody>

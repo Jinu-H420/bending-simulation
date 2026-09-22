@@ -93,3 +93,7 @@ table.dies tr.sel td { background: var(--page); }
 footer { margin-top: 22px; font-size: 13px; color: var(--muted); }
 footer a { color: var(--accent); margin-right: 14px; }
 section + section { margin-top: 12px; }
+.simbtn { display: block; margin-top: 10px; padding: 10px 12px; border-radius: 10px; text-align: center; font-weight: 700;
+  text-decoration: none; color: var(--accent); border: 2px solid var(--accent); background: var(--card); }
+.simbtn.strong { background: var(--accent); color: #fff; font-size: 17px; }
+a.see { color: var(--accent); white-space: nowrap; font-weight: 600; }

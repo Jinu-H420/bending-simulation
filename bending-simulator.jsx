@@ -1336,6 +1336,16 @@ const BendingSimulator = () => {
   const dirtyRef = useRef(false);
   const skipDirtyRef = useRef(false);
   const firstParamsRef = useRef(false);
+  // ほかのページ（Z・コの字判定）からリンクで開いたときの形。#open=<JSON>
+  // 共有フォルダの「前回の続き」より、こちらを優先する。
+  const linkRef = useRef((() => {
+    try {
+      const m = location.hash.match(/^#open=(.+)$/);
+      return m ? JSON.parse(decodeURIComponent(m[1])) : null;
+    } catch { return null; }
+  })());
+  const [linkNote, setLinkNote] = useState('');
+  const goFailRef = useRef(false);   // 開いたら、最初に当たる工程・瞬間を出す
   const [picking, setPicking] = useState([]);  // 断面をクリックして曲げ順を選んでいる途中
   const pickingRef = useRef([]);
   const [step, setStep] = useState(0);
@@ -1593,7 +1603,9 @@ const BendingSimulator = () => {
       setRecords((cur) => importJSON(cur, JSON.stringify(data.records || [])));
       setCloudSaves(data.saves || []);
       cloudConfRef.current = dir; setCloudConf(dir); setPendingDir(null);
-      if (data.current && data.current.params) {
+      if (linkRef.current) {
+        setCloudMsg('共有フォルダにつながりました（いまはリンクの形を表示中）');
+      } else if (data.current && data.current.params) {
         skipDirtyRef.current = true;
         applyParams(data.current.params);
         setCloudMsg(`前回の続きを開きました（${fmtAt(data.current.at)} 保存${data.savedBy ? `・${data.savedBy}` : ''}）`);
@@ -1608,6 +1620,29 @@ const BendingSimulator = () => {
       setCloudBusy(false);
     }
   };
+  // リンクで開いたとき：その形を入れ、当たる所を出す。リンクの形は自動保存しない
+  useEffect(() => {
+    const L = linkRef.current;
+    if (!L || !L.params) return;
+    skipDirtyRef.current = true;
+    applyParams(L.params);
+    setLinkNote(L.note || '');
+    goFailRef.current = true;
+    history.replaceState(null, '', location.pathname + location.search);
+  }, []);
+  // 形が入って判定が落ち着いたら、最初に当たる工程の、当たる瞬間で止める
+  useEffect(() => {
+    if (!goFailRef.current) return;
+    const id = setTimeout(() => {
+      goFailRef.current = false;
+      const i = verdicts.findIndex((v) => v.firstHit || v.reachNG || v.orientationNG);
+      if (i < 0) { setStep(seq.length - 1); setProg(1); return; }
+      setStep(i);
+      setProg(verdicts[i].firstHit ? Math.min(1, verdicts[i].firstHit.prog + 0.04) : 1);
+      setPlaying(false);
+    }, 400);
+    return () => clearTimeout(id);
+  }, [verdicts]);
   // 開いたとき：前に選んだフォルダがあり、許可も残っていればそのまま続きから
   useEffect(() => {
     if (!folderSupported()) return;
@@ -2268,6 +2303,12 @@ const BendingSimulator = () => {
         {autoMsg && (
           <div className="rounded-md px-4 py-2 mb-3 border border-emerald-700 bg-emerald-950/40 text-emerald-200 text-sm">
             {autoMsg}
+          </div>
+        )}
+        {linkNote && (
+          <div className="rounded-md px-4 py-2 mb-3 border border-sky-700 bg-sky-950/40 text-sky-100 text-sm flex items-start gap-3">
+            <div className="whitespace-pre-line">{linkNote}</div>
+            <button onClick={() => setLinkNote('')} className="ml-auto text-sky-300 hover:text-white text-xs shrink-0">閉じる</button>
           </div>
         )}
         {/* 下逃げ（台の実測が無い金型のときだけ表で見ている） */}

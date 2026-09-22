@@ -2,21 +2,21 @@
   color-scheme: light;
   --page: #f5f5f2; --card: #ffffff; --ink: #111; --sub: #52514e; --muted: #8a8882;
   --line: #e2e0d8; --grid: #ecebe6; --accent: #2a78d6;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;   /* 普通・くの字（Zは実績の点）・中押し */
+  --s1: #2a78d6; --s2: #eb6834; --s3: #7b4fd0;   /* 普通・くの字（Zは実績の点）・中押し */
   --ok: #0a7d0a; --ok-bg: #eaf6ea; --chk: #9a6400; --chk-bg: #fdf3dc; --ng: #c62f2f; --ng-bg: #fbeaea;
   --okzone: rgba(10, 125, 10, .08);
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark; --page: #0d0d0d; --card: #1a1a19; --ink: #fff; --sub: #c3c2b7; --muted: #898781;
-    --line: #2c2c2a; --grid: #262624; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --line: #2c2c2a; --grid: #262624; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #a98ae8;
     --ok: #3cc43c; --ok-bg: #12261a; --chk: #f0b340; --chk-bg: #2b2210; --ng: #ee6b6b; --ng-bg: #2e1616;
     --okzone: rgba(60, 196, 60, .10);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark; --page: #0d0d0d; --card: #1a1a19; --ink: #fff; --sub: #c3c2b7; --muted: #898781;
-  --line: #2c2c2a; --grid: #262624; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --line: #2c2c2a; --grid: #262624; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #a98ae8;
   --ok: #3cc43c; --ok-bg: #12261a; --chk: #f0b340; --chk-bg: #2b2210; --ng: #ee6b6b; --ng-bg: #2e1616;
   --okzone: rgba(60, 196, 60, .10);
 }

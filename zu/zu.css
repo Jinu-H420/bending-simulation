@@ -130,3 +130,25 @@ table.kt td.cond { color: var(--sub); font-size: 12.5px; }
 .rec-list { width: 100%; margin-top: 10px; }
 button.del { font: inherit; font-size: 12px; background: none; border: 0; color: var(--muted); cursor: pointer; }
 button.del:hover { color: var(--ng); }
+
+/* 中押しで曲がる：緑（普通の○）と分けて、グラフの中押しの線と同じ色で見せる */
+.verdict.naka { background: color-mix(in srgb, var(--s3) 9%, var(--card)); border-color: var(--s3); }
+.verdict.naka .v-mark, .verdict.naka .v-word { color: var(--s3); }
+.g.naka { color: var(--s3); } .g.alt { color: var(--ok); }
+.naka-box { margin-top: 10px; padding: 10px 10px 8px; border-radius: 10px; background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--s3) 45%, transparent); }
+.ns-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.ns-step { position: relative; text-align: center; }
+.ns-step svg { width: 100%; max-width: 120px; height: auto; display: block; margin: 0 auto 2px; }
+.ns-step polyline { fill: none; stroke: var(--s3); stroke-width: 5; stroke-linejoin: round; stroke-linecap: round; }
+.ns-step .ns-punch { fill: none; stroke: var(--muted); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.ns-head { font-weight: 800; font-size: 14.5px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.ns-no { display: inline-grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: var(--s3);
+  color: #fff; font-size: 12px; font-weight: 800; flex: none; }
+.ns-sub { font-size: 12.5px; color: var(--sub); margin-top: 1px; }
+.ns-arrow { position: absolute; right: -12px; top: 22px; color: var(--muted); font-weight: 700; }
+.ns-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ns-chips span { font-size: 12.5px; padding: 3px 10px; border-radius: 99px; background: color-mix(in srgb, var(--s3) 10%, var(--card)); color: var(--sub); }
+.ns-chips b { color: var(--ink); }
+.simbtn.naka { color: var(--s3); border-color: var(--s3); }
+@media (max-width: 480px) { .ns-row { gap: 10px; } .ns-head { font-size: 13px; flex-direction: column; gap: 3px; } .ns-sub { display: none; } .ns-arrow { right: -9px; } }

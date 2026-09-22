@@ -17,7 +17,7 @@ const GRADE = {
   'ok-act': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 実績' },
   'ok-sim': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 計算' },
   alt: { cls: 'ok', mark: '○', word: 'ヤゲンを替えれば曲がります', short: '○ ヤゲン替え' },
-  naka: { cls: 'ok', mark: '○', word: '中押しなら曲がります', short: '○ 中押し' },
+  naka: { cls: 'naka', mark: '○', word: '中押しなら曲がります', short: '○ 中押し' },
   check: { cls: 'check', mark: '△', word: '確かめが必要', short: '△ 要確認' },
   ng: { cls: 'ng', mark: '✕', word: '曲がりません', short: '✕' },
 };
@@ -47,6 +47,42 @@ function simLink(shape, r, dims, mat, L) {
     nakaAngle: (r.naka && r.naka.angle) || 20,
   };
   return `../#open=${encodeURIComponent(JSON.stringify({ params, note: lines.join('\n') }))}`;
+}
+
+// 中押しの3工程を小さな絵で並べる。普通の曲げ（2回）より1回多いことも見せる
+function NakaSteps({ angle, inner, pending }) {
+  const pic = {
+    1: <polyline points="12,50 60,36 108,50" />,
+    2: <polyline points="20,10 20,52 60,40 100,52 100,10" />,
+    3: (<>
+      <polyline points="20,10 20,52 100,52 100,10" />
+      <path className="ns-punch" d="M60 6 V30 M52 22 L60 32 L68 22" />
+    </>),
+  };
+  const steps = [
+    [1, `への字 ${angle}°${angle ? '以上' : ''}`, '底の真ん中を軽く曲げる'],
+    [2, '両サイドを90°', '立上りを2か所'],
+    [3, '中押しで平らに', '底の山を押して戻す'],
+  ];
+  return (
+    <div className="naka-box">
+      <div className="ns-row">
+        {steps.map(([k, head, sub], i) => (
+          <div key={k} className="ns-step">
+            <svg viewBox="0 0 120 62" aria-hidden="true">{pic[k]}</svg>
+            <div className="ns-head"><span className="ns-no">{k}</span>{head}</div>
+            <div className="ns-sub">{sub}</div>
+            {i < steps.length - 1 && <span className="ns-arrow" aria-hidden="true">→</span>}
+          </div>
+        ))}
+      </div>
+      <div className="ns-chips">
+        <span>曲げ回数 <b>4回</b>（普通は2回）</span>
+        {inner != null && <span>底の内-内 <b>{inner}mm</b>{pending ? '（120mm未満は現場で未確認）' : ''}</span>}
+        <span>最終手段：くの字が使えるならそちら</span>
+      </div>
+    </div>
+  );
 }
 
 // くの字ヤゲンの L 上限を1行で。「くの字165：L 200mm 以内 ○（いま L=250 ✕）」
@@ -671,8 +707,11 @@ function App() {
               <div className="v-body">
                 {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.recs && best.recs.length > 0 && best.src !== '実績' && <span className="tag">この型の実績 {best.recs.length}件</span>}{best.punch && <span className="tag">ヤゲン {best.punch}</span>}</div>}
                 <div>{best.why}</div>
-                {best.grade !== 'ng' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
+                {best.grade !== 'ng' && best.src !== '中押し' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
               </div>
+              {best.src === '中押し' && best.naka && best.grade !== 'ng' && (
+                <NakaSteps angle={best.naka.angle} inner={best.naka.inner} pending={best.grade === 'check'} />
+              )}
               {kunoText(best.kuno, Lnum) && (
                 <div className="v-kuno">
                   <b>くの字ヤゲンなら曲がる長さ</b>
@@ -698,8 +737,9 @@ function App() {
                   {fixList(res.list).map((f) => <div key={f.dies}>・{f.dies}：{f.fix}</div>)}
                 </div>
               )}
-              <a className={`simbtn ${best.grade === 'ng' ? 'strong' : ''}`} href={simLink(shape, best, dims, mat, Lnum)} target="_blank" rel="noreferrer">
-                {best.grade === 'ng' ? `▶ どこが当たるか、シミュレーションで見る（${best.die}）` : `▶ シミュレーションで見る（${best.die}）`}
+              <a className={`simbtn ${best.grade === 'ng' ? 'strong' : best.src === '中押し' ? 'naka' : ''}`} href={simLink(shape, best, dims, mat, Lnum)} target="_blank" rel="noreferrer">
+                {best.grade === 'ng' ? `▶ どこが当たるか、シミュレーションで見る（${best.die}）`
+                  : best.src === '中押し' ? `▶ 中押しの工程をシミュレーションで見る（${best.die}）` : `▶ シミュレーションで見る（${best.die}）`}
               </a>
             </div>
           )}

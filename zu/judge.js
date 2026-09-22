@@ -159,14 +159,23 @@ export function judgeU(row, H1, W, H2) {
     }
     const n = nakaOshi(PUNCH, false, 'std', inner, Math.max(H1, H2) - row.t);
     const naka = { inner, clear: +n.clear.toFixed(1), at: n.at, maxH: n.maxH };
-    if (n.ok && inner >= SUTE_MIN_INNER) {
-      return { ...base, grade: 'naka', src: '中押し', geo, naka,
-        why: `普通の曲げ方では${where}に当たります。中押しなら曲げられます（内-内 ${inner}mm、押し切ったとき片側 ${naka.clear}mm あく）` };
-    }
     if (n.ok) {
-      // 計算では入るが、現場の決まり（内-内120mm）より狭い。確かめてから
+      // 押し切った瞬間は入る。への字 → 両サイド → 中押し を工程ごとに動かして、通る への字の角度を探す
+      const a = nakaMinAngle(row, H1, W, H2);
+      if (a.angle == null) {
+        const f = a.fail || {};
+        return { ...base, grade: 'ng', src: '計算', geo, naka,
+          why: `${where}に当たります。中押しでも、への字を${NAKA_ANGLES[NAKA_ANGLES.length - 1]}°にしても ${STEP_NAME[f.step] || ''}で${f.where || '工具'}に当たります`,
+          fix: `底Wを広くするか、立上りを低く` };
+      }
+      naka.angle = a.angle;
+      if (inner >= SUTE_MIN_INNER) {
+        return { ...base, grade: 'naka', src: '中押し', geo, naka,
+          why: `普通の曲げ方では${where}に当たります。中押しなら曲げられます（への字 ${a.angle}°以上、内-内 ${inner}mm）` };
+      }
+      // 計算では通るが、現場の決まり（内-内120mm）より狭い。確かめてから
       return { ...base, grade: 'check', src: '中押し', geo, naka,
-        why: `普通の曲げ方では${where}に当たります。中押しは計算では入ります（押し切ったとき片側 ${naka.clear}mm あく）が、内-内 ${inner}mm は現場の決まり ${SUTE_MIN_INNER}mm より狭く、まだ確かめていません`,
+        why: `普通の曲げ方では${where}に当たります。中押しは計算では通ります（への字 ${a.angle}°以上）が、内-内 ${inner}mm は現場の決まり ${SUTE_MIN_INNER}mm より狭く、まだ確かめていません`,
         fix: `底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に` };
     }
     const lim = uLimitH(row, W);
@@ -210,6 +219,60 @@ export function actLimit(row, S) {
   if (act.far && S >= act.far.S) return { A: act.far.A };
   return { A: act.A };
 }
+
+// 中押しを工程ごとに動かして当たりを見る（本体の「中押しで曲げる」と同じ組み立て）。
+//   ① 底の真ん中を への字（angle°）→ ② 両サイド90°（突き当ては4通り試す）→ ③ 中押しで平らに戻す
+// 返り値 { ok, step（当たった工程 1〜4）, where（当たった部品） }
+function nakaSimulate(row, H1, W, H2, angle) {
+  const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
+  const { nobi, t } = row;
+  const vHalf = info.vHalf, openGap = Math.max(0, 170 - t);
+  const g = nobi - t / 2;
+  const part = { t, segs: [H1 - nobi, (W - 2 * nobi) / 2, (W - 2 * nobi) / 2, H2 - nobi],
+    bends: [{ angle: 90, dir: 1 }, { angle, dir: -1 }, { angle: 90, dir: 1 }], grow: [g, 0, g] };
+  // への字の底が載るダイ上面の端
+  const top = info.polys.flat().filter((q) => Math.abs(q[1]) < 0.6);
+  const pressHalf = Math.min(Math.max(vHalf, ...top.filter((q) => q[0] > 0).map((q) => q[0])),
+    Math.max(vHalf, ...top.filter((q) => q[0] < 0).map((q) => -q[0])));
+  let best = null;
+  for (let m = 0; m < 4; m++) {
+    const seq = [
+      { bend: 1, mirror: false, valley: true },
+      { bend: 0, mirror: !!(m & 1), valley: false },
+      { bend: 2, mirror: !!(m & 2), valley: false },
+      { bend: 1, mirror: false, valley: false, press: true },
+    ];
+    let fail = null;
+    for (let si = 0; si < seq.length && !fail; si++) {
+      const press = !!seq[si].press;
+      if (!press && !reachCheck(part, seq, si, vHalf).ok) { fail = { step: si + 1, where: 'フランジ不足' }; break; }
+      const exArc = press ? pressHalf + t : shoulderReach(vHalf, t, 90) + t;
+      for (let p = 0; p <= 1.0001; p += 0.05) {
+        const { bendProg, lift } = strokeState(p, openGap);
+        const ch = computeChain(part, seq, si, bendProg, press ? pressHalf : vHalf);
+        if (!ch.activeDirOK) { fail = { step: si + 1, where: '向き' }; break; }
+        const tools = toolsFor(PUNCH, false, ch.innerY - lift, 'std', info.polys);
+        const gg = minGap(ch, tools.polys, t, vHalf, exArc);
+        if (gg.gap < -0.05) { fail = { step: si + 1, where: tools.names[gg.atIdx] || '工具' }; break; }
+      }
+    }
+    if (!fail) return { ok: true };
+    if (!best || fail.step > best.step) best = fail;
+  }
+  return { ok: false, ...best };
+}
+// への字の角度を小さい順に試し、全工程が通る最小の角度を返す（無ければ null と、いちばん先まで行けた失敗）
+export const NAKA_ANGLES = [5, 10, 15, 20, 25, 30, 40, 50];
+function nakaMinAngle(row, H1, W, H2) {
+  let last = null;
+  for (const a of NAKA_ANGLES) {
+    const r = nakaSimulate(row, H1, W, H2, a);
+    if (r.ok) return { angle: a };
+    last = r;
+  }
+  return { angle: null, fail: last };
+}
+const STEP_NAME = ['', 'への字', '1か所目の立上り', '2か所目の立上り', '中押し'];
 
 // 中押しで押し切った瞬間の絵に使う形。刃先＝底の内面の中央＝(0,0)、y は負が上。
 export function nakaPose(t, W, H1, H2) {

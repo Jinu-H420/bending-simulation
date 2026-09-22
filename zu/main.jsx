@@ -31,8 +31,8 @@ function simLink(shape, r, dims, mat, L) {
   if (r.grade === 'ng' && r.geo && r.geo.ok) {
     lines.push(`判定：${r.why}。`);
     lines.push('※ この型は計算が実績より甘く出るため、絵では当たらなくても実績を優先しています。');
-  } else if (r.grade === 'naka') {
-    lines.push(`判定：${r.why}。下は普通の曲げ方で当たる所です（中押しの動きはシミュレーションしていません）。`);
+  } else if (r.src === '中押し') {
+    lines.push(`判定：${r.why}。中押し（への字 → 両サイド90° → 中押し）の工程で開いています。「▶ 全工程再生」で動きが見られます。`);
   } else if (r.grade === 'ng') {
     lines.push(`判定：${r.why}。当たる瞬間で止めています（橙の丸が当たる所）。「▶ 全工程再生」で動きも見られます。`);
   }
@@ -41,6 +41,8 @@ function simLink(shape, r, dims, mat, L) {
     bends: dirs.map((d) => ({ angle: 90, dir: d })),
     dieSel: row.sel, machineSel: row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt', dieFlip: false,
     punchType: '904061', punchFlip: false, chukanSel: 'std', dieBase: true, seq,
+    nakaOn: r.src === '中押し',   // 中押しの判定なら、中押しの工程で開く
+    nakaAngle: (r.naka && r.naka.angle) || 20,
   };
   return `../#open=${encodeURIComponent(JSON.stringify({ params, note: lines.join('\n') }))}`;
 }

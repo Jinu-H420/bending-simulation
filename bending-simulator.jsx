@@ -652,8 +652,14 @@ function computeChain(part, seq, stepIdx, prog, vHalf) {
   const msegs = msegs0.map((L, k) =>
     L + (k > 0 ? growOf(k - 1) : 0) + (k < B ? growOf(k) : 0));
 
-  const activeDirOK = mb[j].dir > 0;
-  const theta = rad(Math.min(90, mb[j].angle)) * Math.max(0, Math.min(1, prog));
+  // press＝中押し。先に曲げてある への字（山）を、上から押して平らに戻す工程。
+  // 角度を「−への字の角度 → 0」に進めると、頂点がダイ上面より上にある山形から、
+  // 平らに押し切られるまでが、ふつうの曲げと同じ式で描ける（支点は vHalf に渡す値）。
+  const press = !!st.press;
+  const activeDirOK = press || mb[j].dir > 0;
+  const theta = press
+    ? -rad(Math.min(90, mb[j].angle)) * (1 - Math.max(0, Math.min(1, prog)))
+    : rad(Math.min(90, mb[j].angle)) * Math.max(0, Math.min(1, prog));
   const alpha = theta / 2;
   // V肩(±vHalf, 0)に板の「外面」が接するのがエアベンドの正しい幾何。
   // 中立軸は外面から板厚半分だけ面直にオフセットするので、鉛直に t/2 ではなく
@@ -1357,6 +1363,9 @@ const BendingSimulator = () => {
   const [records, setRecords] = useState(() => loadRecords());   // 曲げた／曲げられなかった実績
   const [recNote, setRecNote] = useState('');
   const [autoMsg, setAutoMsg] = useState('');   // 自動で段取りを決めたときの説明
+  // 中押し（捨て曲げ）でシミュレーションする：底の真ん中をへの字 → 両サイド → 中押しで戻す
+  const [nakaOn, setNakaOn] = useState(false);
+  const [nakaAngle, setNakaAngle] = useState(10);   // への字の角度（°）
   // サーバー保存（GitHub）。接続先とトークンはこの端末のブラウザにだけ置く
   const [cloudConf, setCloudConf] = useState(null);      // つながっている共有フォルダ
   const cloudConfRef = useRef(null);
@@ -1439,6 +1448,36 @@ const BendingSimulator = () => {
     () => (inputMode === 'inner' ? bends.map(() => t / 2) : nobiPerBend.map((n) => n - t / 2)),
     [inputMode, bends, t, nobiPerBend]);
   const part = useMemo(() => ({ t, segs: effSegs, bends, grow: growPerBend }), [t, effSegs, bends, growPerBend]);
+  // 中押しで曲げる底：両隣の曲げが同じ向きの辺（コの字・ハットの底）のうち、いちばん長いもの
+  const nakaSeg = useMemo(() => {
+    let best = null;
+    for (let k = 1; k < effSegs.length - 1; k++) {
+      if (bends[k - 1].dir !== bends[k].dir) continue;
+      if (best == null || effSegs[k] > effSegs[best]) best = k;
+    }
+    return best;
+  }, [effSegs, bends]);
+  // 中押しのときの板と工程。底を半分に分けて真ん中に への字の曲げを足し、
+  // ① への字 → ② 入力どおりの曲げ順 → ③ 中押し（への字を押して戻す）の順にする。
+  // への字は小さい角度なので片伸びは0（折り曲げ表の注記：150°以上の鈍角は0）。
+  const nakaPlan = useMemo(() => {
+    if (!nakaOn || nakaSeg == null) return null;
+    const k = nakaSeg;
+    const sideDir = bends[k - 1].dir;
+    const cDir = -sideDir;                         // 立上りと逆向き＝コの字を立てたとき真ん中が山
+    const segs2 = [...effSegs.slice(0, k), effSegs[k] / 2, effSegs[k] / 2, ...effSegs.slice(k + 1)];
+    const bends2 = [...bends.slice(0, k), { angle: nakaAngle, dir: cDir }, ...bends.slice(k)];
+    const grow2 = [...growPerBend.slice(0, k), 0, ...growPerBend.slice(k)];
+    const mapB = (b) => (b < k ? b : b + 1);
+    const seq2 = [
+      { bend: k, mirror: false, valley: cDir < 0, kind: 'へ' },
+      ...seq.map((q) => ({ ...q, bend: mapB(q.bend) })),
+      { bend: k, mirror: false, valley: sideDir < 0, press: true, kind: '中押し' },
+    ];
+    return { part: { t, segs: segs2, bends: bends2, grow: grow2 }, seq: seq2, k };
+  }, [nakaOn, nakaSeg, nakaAngle, effSegs, bends, growPerBend, seq, t]);
+  const simPart = nakaPlan ? nakaPlan.part : part;
+  const simSeq = nakaPlan ? nakaPlan.seq : seq;
   // 板厚・材質から基準金型（折り曲げ表の赤枠）を決め、変わったら金型を自動で切り替える。
   // 手で選び直したものは、板厚か材質を変えるまでそのまま残る。
   // 基準金型は「折り曲げ表ならこれ」という目安。選んだ金型を勝手に差し替えない。
@@ -1502,19 +1541,32 @@ const BendingSimulator = () => {
   const minOutWarn = minFlange.bad;
   const openGap = Math.max(0, OPEN_GAP_MM - t); // 刃先がV金型上面の170mm上になる開き量
 
+  useEffect(() => { if (step > simSeq.length - 1) setStep(Math.max(0, simSeq.length - 1)); }, [simSeq.length]);
+  // 中押しのとき、への字の底が載るダイ上面の端（中心からの距離。左右の近いほう）
+  const pressHalf = useMemo(() => {
+    // ダイ上面（y≒0）の頂点。ダイの輪郭が何番目の多角形かは型によって違うので全部見る
+    const top = diePolys.flat().filter((q) => Math.abs(q[1]) < 0.6);
+    const R = Math.max(vHalf, ...top.filter((q) => q[0] > 0).map((q) => q[0]));
+    const L = Math.max(vHalf, ...top.filter((q) => q[0] < 0).map((q) => -q[0]));
+    return Math.min(L, R);
+  }, [diePolys, vHalf]);
+  // 当たって当たり前の範囲（曲げ頂点から支点まで）。中押しはダイ上面の端に載っているので、そこまで
+  const exArcAt = (si) => (simSeq[si] && simSeq[si].press ? pressHalf + t : shoulderReach(vHalf, t, 90) + t);
+  // 工程 si・進み p の板。中押しの工程だけ支点をダイ上面の端にする
+  const chainAt = (si, p) => computeChain(simPart, simSeq, si, p, simSeq[si] && simSeq[si].press ? pressHalf : vHalf);
   // --- 全工程スイープ判定（ストローク0→100%を走査）---
   const verdicts = useMemo(() => {
-    return seq.map((_, si) => {
+    return simSeq.map((_, si) => {
       let orientationNG = false;
       let firstHit = null;
       let worst = Infinity;
-      // V肩に届かないフランジ（最小フランジ割れ）
-      const reach = reachCheck(part, seq, si, vHalf);
+      // V肩に届かないフランジ（最小フランジ割れ）。中押しは押し戻すだけなので見ない
+      const reach = simSeq[si].press ? { ok: true } : reachCheck(simPart, simSeq, si, vHalf);
       const reachNG = reach.ok ? null : +reach.need.toFixed(1);
-      const exArc = shoulderReach(vHalf, t, 90) + t;
+      const exArc = exArcAt(si);
       for (let p = 0; p <= 1.0001; p += 0.04) {
         const { bendProg, lift } = strokeState(p, openGap);
-        const ch = computeChain(part, seq, si, bendProg, vHalf);
+        const ch = chainAt(si, bendProg);
         if (!ch.activeDirOK) orientationNG = true;
         const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
         const g = minGap(ch, tools.polys, t, vHalf, exArc);
@@ -1524,9 +1576,9 @@ const BendingSimulator = () => {
           break;
         }
       }
-      return { orientationNG, firstHit, reachNG, worst };
+      return { orientationNG, firstHit, reachNG, worst, kind: simSeq[si].kind || null };
     });
-  }, [part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends]);
+  }, [simPart, simSeq, vHalf, pressHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends]);
 
   // シミュレーションの幾何だけで見た最小段差。実績と見比べるために出す。
   // 重い処理なのでZ段差が実際にある形のときだけ、最初の1か所について計算する。
@@ -1562,16 +1614,16 @@ const BendingSimulator = () => {
   const downWarn = useMemo(() => {
     if (!dieInfo || dieInfo.baseKind === 'measured' || !DOWNMAX[nobiV]) return null;
     let worst = null;
-    for (let si = 0; si < seq.length; si++) {
+    for (let si = 0; si < simSeq.length; si++) {
       for (let p = 0; p <= 1.0001; p += 0.1) {
         const { bendProg } = strokeState(p, openGap);
-        const ch = computeChain(part, seq, si, bendProg, vHalf);
+        const ch = chainAt(si, bendProg);
         const dc = downCheck(ch, nobiV, t, vHalf);
         if (dc && (!worst || dc.over > worst.over)) worst = { ...dc, step: si + 1 };
       }
     }
     return worst;
-  }, [dieInfo, nobiV, t, vHalf, part, seq, openGap]);
+  }, [dieInfo, nobiV, t, vHalf, simPart, simSeq, pressHalf, openGap]);
   const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG && !downWarn
     && minOutWarn.length === 0;
 
@@ -1600,17 +1652,17 @@ const BendingSimulator = () => {
   const params = useMemo(() => ({
     t, segs, inputMode, outerSegs, innerSegs, matType, nobiOverride, bends,
     dieSel, vW, dieHalf, dieBase, punchType, bendLen, machineSel, ohAdj,
-    punchFlip, dieFlip, chukanSel, seq,
+    punchFlip, dieFlip, chukanSel, seq, nakaOn, nakaAngle,
   }), [t, segs, inputMode, outerSegs, innerSegs, matType, nobiOverride, bends,
        dieSel, vW, dieHalf, dieBase, punchType, bendLen, machineSel, ohAdj,
-       punchFlip, dieFlip, chukanSel, seq]);
+       punchFlip, dieFlip, chukanSel, seq, nakaOn, nakaAngle]);
   const applyParams = (p) => {
     if (!p) return;
     const set = { t: setT, segs: setSegs, inputMode: setInputMode, outerSegs: setOuterSegs,
       innerSegs: setInnerSegs, matType: setMatType, nobiOverride: setNobiOverride, bends: setBends,
       dieSel: setDieSel, vW: setVW, dieHalf: setDieHalf, dieBase: setDieBase, punchType: setPunchType,
       bendLen: setBendLen, machineSel: setMachineSel, ohAdj: setOhAdj, punchFlip: setPunchFlip,
-      dieFlip: setDieFlip, chukanSel: setChukanSel, seq: setSeq };
+      dieFlip: setDieFlip, chukanSel: setChukanSel, seq: setSeq, nakaOn: setNakaOn, nakaAngle: setNakaAngle };
     for (const k of Object.keys(set)) if (p[k] !== undefined) set[k](p[k]);
     setStep(0); setProg(0); setPlaying(false); setAutoMsg('');
   };
@@ -1672,7 +1724,7 @@ const BendingSimulator = () => {
     const id = setTimeout(() => {
       goFailRef.current = false;
       const i = verdicts.findIndex((v) => v.firstHit || v.reachNG || v.orientationNG);
-      if (i < 0) { setStep(seq.length - 1); setProg(1); return; }
+      if (i < 0) { setStep(simSeq.length - 1); setProg(1); return; }
       setStep(i);
       setProg(verdicts[i].firstHit ? Math.min(1, verdicts[i].firstHit.prog + 0.04) : 1);
       setPlaying(false);
@@ -1756,14 +1808,15 @@ const BendingSimulator = () => {
   // --- 現在フレーム ---
   const frame = useMemo(() => {
     const { bendProg, lift } = strokeState(prog, openGap);
-    const ch = computeChain(part, seq, step, bendProg, vHalf);
+    const si = Math.min(step, simSeq.length - 1);
+    const ch = chainAt(si, bendProg);
     const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
-    const exArc = shoulderReach(vHalf, t, 90) + t;
+    const exArc = exArcAt(si);
     const g = minGap(ch, tools.polys, t, vHalf, exArc);
-    const guide = computeChain(part, seq, step, 0, vHalf); // 曲げ開始前（ストローク0%）
+    const guide = chainAt(si, 0); // 曲げ開始前（ストローク0%）
     return { ch, punchPolys: tools.punchPolys, holder: tools.holder, ram: tools.ram,
              hits: g.hits, gap: g.gap, where: tools.names[g.atIdx] || null, guide };
-  }, [part, seq, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap]);
+  }, [simPart, simSeq, pressHalf, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap]);
 
   // --- 機械チェック（型合わせ・曲げ切り・部品出し入れ）---
   const machineCheck = useMemo(() => {
@@ -1774,9 +1827,9 @@ const BendingSimulator = () => {
     const punchH = -Math.min(...punchPolys0.flatMap((poly) => poly.map((p) => p[1])));
     // 各工程で板が金型上面より上に張り出す最大高さ（開始時・完了時の姿勢から）
     let partRise = 0;
-    seq.forEach((_, si) => {
+    simSeq.forEach((_, si) => {
       [0, 1].forEach((pp) => {
-        const ch = computeChain(part, seq, si, pp, vHalf);
+        const ch = chainAt(si, pp);
         const top = -Math.min(...ch.pts.map((q) => q[1]));
         partRise = Math.max(partRise, top + t / 2);
       });
@@ -1786,7 +1839,7 @@ const BendingSimulator = () => {
     const closeMargin = dieH + punchH - dNeed - (OH - m.stroke); // ≥0で曲げ切り可
     const loadMargin = gapTDC - partRise;              // ≥0で部品出し入れ可
     return { m, OH, dieH, punchH, partRise, gapTDC, closeMargin, loadMargin };
-  }, [machineSel, ohAdj, diePolys, punchType, punchFlip, chukanSel, seq, part, vHalf, t]);
+  }, [machineSel, ohAdj, diePolys, punchType, punchFlip, chukanSel, simSeq, simPart, pressHalf, vHalf, t]);
 
   // --- 再生 ---
   useEffect(() => {
@@ -1803,7 +1856,7 @@ const BendingSimulator = () => {
   useEffect(() => {
     if (!playing || prog < 1) return;
     const id = setTimeout(() => {
-      if (step < seq.length - 1) {
+      if (step < simSeq.length - 1) {
         setStep(step + 1);
         setProg(0);
       } else {
@@ -1811,7 +1864,7 @@ const BendingSimulator = () => {
       }
     }, 700);
     return () => clearTimeout(id);
-  }, [playing, prog, step, seq.length]);
+  }, [playing, prog, step, simSeq.length]);
 
   // --- 描画 ---
   useEffect(() => {
@@ -2012,7 +2065,7 @@ const BendingSimulator = () => {
     // 情報表示
     ctx.font = '13px ui-monospace, monospace';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`工程 ${step + 1}/${seq.length}　曲げ角度 ${frame.ch.thetaDeg.toFixed(1)}°`, 16, 24);
+    ctx.fillText(`工程 ${step + 1}/${simSeq.length}${simSeq[step] && simSeq[step].kind ? `（${simSeq[step].kind === 'へ' ? 'への字' : '中押し'}）` : ''}　曲げ角度 ${frame.ch.thetaDeg.toFixed(1)}°`, 16, 24);
     if (!frame.ch.activeDirOK) {
       ctx.fillStyle = '#fbbf24';
       ctx.fillText('⚠ この向きでは谷曲げ（下向き）になります。「山谷反転」で裏返してください', 16, 44);
@@ -2029,7 +2082,7 @@ const BendingSimulator = () => {
       // 描画で例外が出ても画面全体を白くしない（前フレームを残す）
       console.error('描画エラー:', err);
     }
-  }, [frame, diePolys, dieInfo, vHalf, step, seq.length, t, view, showGuide, showDim, showDieDim, showPunchDim, prog]);
+  }, [frame, diePolys, dieInfo, vHalf, step, simSeq, t, view, showGuide, showDim, showDieDim, showPunchDim, prog]);
 
   // --- ビュー操作（1本指＝パン、2本指ピンチ＝ズーム、ホイール＝ズーム）---
   // touch-action:none で iPhone のページスクロール／ピンチ／引っ張り更新に奪われないようにする
@@ -2337,7 +2390,7 @@ const BendingSimulator = () => {
                 className={`px-2.5 py-1 rounded text-xs font-mono border transition ${
                   step === i ? 'border-sky-400 bg-sky-900/40' : 'border-slate-700 bg-slate-900'
                 } ${v.firstHit || v.orientationNG || v.reachNG ? 'text-red-300' : 'text-emerald-300'}`}>
-                工程{i + 1} {v.orientationNG ? '要反転' : v.reachNG ? `✕ フランジ不足(${v.reachNG}mm必要)` : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で${v.firstHit.where || '工具'}に干渉 ${(-v.firstHit.gap).toFixed(1)}mm` : `○ 余裕${Number.isFinite(v.worst) ? v.worst.toFixed(1) : '—'}mm`}
+                工程{i + 1}{v.kind ? `（${v.kind === 'へ' ? 'への字' : '中押し'}）` : ''} {v.orientationNG ? '要反転' : v.reachNG ? `✕ フランジ不足(${v.reachNG}mm必要)` : v.firstHit ? `✕ ${Math.round(v.firstHit.prog * 100)}%で${v.firstHit.where || '工具'}に干渉 ${(-v.firstHit.gap).toFixed(1)}mm` : `○ 余裕${Number.isFinite(v.worst) ? v.worst.toFixed(1) : '—'}mm`}
               </button>
             ))}
           </div>
@@ -2364,8 +2417,8 @@ const BendingSimulator = () => {
         )}
 
         {/* 捨て曲げの逃げ道。普通に曲がらないときだけ出す */}
-        {suteHint && (
-          <div className={`rounded-md px-4 py-2 mb-3 border text-xs ${
+        {suteHint && !nakaOn && (
+          <div className={`rounded-md px-4 py-2 mb-3 border text-xs flex items-center gap-3 flex-wrap ${
             suteHint.ok ? 'bg-amber-950/50 border-amber-700 text-amber-200'
                         : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
             {suteHint.ok
@@ -2373,6 +2426,19 @@ const BendingSimulator = () => {
               : suteHint.shortHalf
               ? `◇ 中押し（捨て曲げ）も不可 — 底の半分 ${suteHint.shortHalf.half.toFixed(1)}mm が最小フランジ ${suteHint.shortHalf.need}mm より短く、への字に曲げられません`
               : `◇ 中押し（捨て曲げ）も不可 — 押し切ったとき、刃先から ${suteHint.at}mm の高さで上型が立上りに当たります（内-内 ${suteHint.inner.toFixed(1)}mm、この高さの立上りには ${suteHint.needW}mm 要る。この内-内なら立上りの内側 ${suteHint.maxH}mm まで）`}
+            {nakaSeg != null && (
+              <button onClick={() => { setNakaOn(true); setStep(0); setProg(0); setPlaying(false); }}
+                className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold">
+                中押しでシミュレーションする
+              </button>
+            )}
+          </div>
+        )}
+        {nakaPlan && (
+          <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-amber-950/40 border-amber-700 text-amber-100 flex items-center gap-3 flex-wrap">
+            <span className="font-bold">中押しでシミュレーション中</span>
+            <span>① 底の真ん中を への字（{nakaAngle}°）→ ② 入力どおりの曲げ順 → ③ 中押し（への字を押して平らに戻す）</span>
+            <button onClick={() => { setNakaOn(false); setStep(0); setProg(0); }} className="ml-auto text-amber-300 hover:text-white">普通の曲げ方に戻す</button>
           </div>
         )}
 
@@ -2829,6 +2895,18 @@ const BendingSimulator = () => {
                 <button onClick={resetSeq} className={vbtn}>入力順に戻す</button>
               </div>
             </div>
+            {nakaSeg != null && (
+              <div className="flex items-center gap-2 flex-wrap mb-2 text-xs text-slate-300">
+                <label className="flex items-center gap-1">
+                  <input type="checkbox" checked={nakaOn}
+                    onChange={(e) => { setNakaOn(e.target.checked); setStep(0); setProg(0); setPlaying(false); }} />
+                  中押しで曲げる（底 辺{nakaSeg + 1} の真ん中）
+                </label>
+                <span className="text-slate-500">への字の角度</span>
+                <NumField value={nakaAngle} min={2} max={60} onChange={(v) => setNakaAngle(v)} className={inp} />
+                <span className="text-slate-500">°（中押しの工程は最後に自動で足します）</span>
+              </div>
+            )}
             {autoMsg && (
               <div className="text-xs mb-2 rounded border border-sky-800 bg-sky-950/50 text-sky-200 px-2 py-1">
                 {autoMsg}

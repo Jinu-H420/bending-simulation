@@ -12,7 +12,7 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
-  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON,
+  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck,
 } from '../bending-simulator.jsx';
 export { Z_ACT_ON };
 
@@ -357,8 +357,25 @@ export function lenLimit(row) {
   if (row.t >= 22) c.push({ v: PL22_MAX_LEN, why: 'PL22（金型寸法表の注記）' });
   return c.reduce((a, b) => (a.v <= b.v ? a : b));
 }
+// 基準より小さいV：最長Lの実績があればそれで判定、無ければ曲がる判定でも △（最長Lを確認中）
+function withSmallV(res, L) {
+  const sv = smallVCheck(res.row.mat, res.row.t, res.row.V);
+  if (!sv) return res;
+  const note = `板厚 t${res.row.t} の基準は V${sv.baseV}。小さい V${res.row.V} は長いものが曲げられない`;
+  if (sv.maxL != null) {
+    if (!(L > sv.maxL)) return { ...res, smallV: sv };
+    const why = `${note}（L ${sv.maxL}mm まで・実績）`;
+    return { ...res, smallV: sv, grade: 'ng', why: res.grade === 'ng' ? `${res.why}。さらに${why}` : why,
+      fix: [res.fix, `L を ${sv.maxL}mm 以下にするか、V${sv.baseV} で曲げる`].filter(Boolean).join('、または') };
+  }
+  if (res.grade === 'ng' || res.grade === 'check') return { ...res, smallV: sv, why: `${res.why}。${note}（最長Lは確認中）` };
+  return { ...res, smallV: sv, grade: 'check', why: `${res.why}。ただし${note}ので、L ${L}mm で曲がるかは確認中です`,
+    fix: `基準の V${sv.baseV} に` };
+}
+
 function withLength(res, L) {
   if (!(L > 0)) return res;
+  res = withSmallV(res, L);
   const lim = lenLimit(res.row);
   if (L <= lim.v) return { ...res, lenLim: lim };
   const why = `曲げ長さ L ${L}mm が長すぎます（${lim.why}で ${lim.v}mm まで）`;
@@ -375,8 +392,9 @@ export function judgeAll(rows, shape, mat, t, dims, L) {
   const baseV = (() => { const b = pickDie(mat, t); return b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null; })();
   const res = cand.map((row) => {
     const r = withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L);
-    const plain = (r.grade === 'ok-sim' || r.grade === 'ok-act') && !r.punch;
-    if (!plain && !(shape === 'Z' && Z_ACT_ON && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);
+    // くの字の L 上限は、普通のヤゲン（904061）で形として当たるときだけ出す（小さいVの△などでは出さない）
+    const plainGeo = r.geo && r.geo.ok && !r.punch;
+    if (!plainGeo && !(shape === 'Z' && Z_ACT_ON && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);
     return r;
   });
   res.sort((a, b) => (RANK[b.grade] - RANK[a.grade]) || ((b.row.V === baseV) - (a.row.V === baseV)) || (a.row.V - b.row.V));

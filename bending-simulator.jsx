@@ -1100,6 +1100,22 @@ function downCheck(chain, V, t, vHalf) {
 const DIE_UNIT_LEN = 835;
 // 金型寸法表の注記：PL22（t22）は一度に曲げられる長さが1500mmまで
 const PL22_MAX_LEN = 1500;
+// 板厚に対して基準（折り曲げ表の赤枠）より小さいVで曲げるときの、曲げられる最長の曲げ長さ L（実績）。
+// 小さいVほど大きな力が要るので長いものは曲げられない。機械の力（HG 220t・HD 350t）で計算すると
+// ほとんど 3000〜4000mm になり当てにならず、効いてくるのは金型が耐えられる力なので、実績で持つ。
+// 鍵は '材質|板厚|V'。値が無い組み合わせは「最長Lを確認中」として △ にする（2026-09-22 ユーザー指示）。
+// 記入シート：共有フォルダ 曲げシミュレーション\実績シート\小さいV_最長L_確認シート.xlsx
+const SMALLV_MAXL = {
+  // 例：'鉄|6|20': 1000,
+};
+// その板厚の基準のVと、小さいVのときの最長L（実績。無ければ null）。基準以上のVなら null を返す
+function smallVCheck(mat, t, V) {
+  const b = pickDie(mat === '縞' ? '縞' : '鉄', t);
+  const baseV = b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null;
+  if (!baseV || !(V < baseV)) return null;
+  const k = `${mat === '縞' ? '縞' : '鉄'}|${t}|${V}`;
+  return { baseV, maxL: SMALLV_MAXL[k] != null ? SMALLV_MAXL[k] : null, key: k };
+}
 const DIE_STOCK = { 8: 5, 12: 5, 16: 5, 20: 5, 25: 5, 32: 2, 40: 5, 50: 5, 63: 1, 80: 5, 100: 5, 125: 5, 160: 5 };
 // シミュレーターの幾何だけで、その段差をどこまで小さくできるかを探す。
 // 実績と並べて見せるためのもの。判定そのものは実績（ZMIN）と干渉判定の
@@ -1634,6 +1650,9 @@ const BendingSimulator = () => {
     return c.length ? c.reduce((a, b) => (a.v <= b.v ? a : b)) : null;
   }, [nobiV, machineSel, t]);
   const lenNG = lenLimit && bendLen > lenLimit.v ? lenLimit : null;
+  // 基準より小さいV：最長Lの実績があればそれで ✕、無ければ「確認中」
+  const smallV = useMemo(() => smallVCheck(matType, t, nobiV), [matType, t, nobiV]);
+  const smallVNG = smallV && smallV.maxL != null && bendLen > smallV.maxL;
 
   // 台の実測が使えていない金型のときだけ、下逃げの表で当たりを見る
   const downWarn = useMemo(() => {
@@ -1649,7 +1668,7 @@ const BendingSimulator = () => {
     }
     return worst;
   }, [dieInfo, nobiV, t, vHalf, simPart, simSeq, pressHalf, openGap]);
-  const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG && !downWarn
+  const allOK = noHit && zStepWarn.length === 0 && !winNG && !lenNG && !smallVNG && !downWarn
     && minOutWarn.length === 0;
 
   // --- 実績の記録と引き当て ---------------------------------------------
@@ -2446,6 +2465,7 @@ const BendingSimulator = () => {
             : !noHit ? '干渉あり — この段取りでは曲がりません'
             : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
             : lenNG ? `曲げ長さ ${bendLen}mm が上限 ${lenNG.v}mm を超えています — ${lenNG.why}`
+            : smallVNG ? `曲げ長さ ${bendLen}mm が長すぎます — 基準より小さいV${nobiV}は L ${smallV.maxL}mm まで（実績）`
             : downWarn ? `下がりがダイ・台に当たります — 曲げ線から ${downWarn.w.toFixed(0)}mm で ${downWarn.depth.toFixed(0)}mm 下がっています`
             : minOutWarn.length ? `最小フランジ ${minFlange.tbl}mm（折り曲げ表）を下回る辺があります`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
@@ -2469,6 +2489,12 @@ const BendingSimulator = () => {
           </div>
         </div>
 
+        {smallV && !smallVNG && (
+          <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-amber-950/40 border-amber-700 text-amber-100">
+            ◇ 板厚 t{t} の基準は V{smallV.baseV}。いまは小さい V{nobiV} なので、長いものは曲げられないことがあります。
+            {smallV.maxL != null ? ` この組み合わせは L ${smallV.maxL}mm まで（実績）。` : ` 曲げられる最長の L は確認中です（いま L ${bendLen}mm）。`}
+          </div>
+        )}
         {autoMsg && (
           <div className="rounded-md px-4 py-2 mb-3 border border-emerald-700 bg-emerald-950/40 text-emerald-200 text-sm">
             {autoMsg}
@@ -3130,5 +3156,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB, Z_ACT_ON,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck,
 };

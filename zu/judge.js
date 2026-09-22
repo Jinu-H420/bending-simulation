@@ -12,10 +12,36 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
+  SUTE_MIN_INNER, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck,
 } from '../bending-simulator.jsx';
 
 const PUNCH = '904061';
-export const RANK = { 'ok-act': 3, 'ok-sim': 2, check: 1, ng: 0 };
+// naka＝普通の曲げ方では上型に当たるが、中押し（捨て曲げ）なら曲がる
+export const RANK = { 'ok-act': 3, 'ok-sim': 2, naka: 1.5, check: 1, ng: 0 };
+const UPPER = ['ヤゲン', '中間板', 'ホルダ', '柱（機械上部）', 'ヤゲン（中低）'];
+
+// 普通の曲げ順（入力どおり・突き当てそのまま）で、最初に何に当たるか。
+// 中押しが効くのは上型に当たるときだけなので、それを見分けるのに使う。
+function firstHitWhere(row, outer, dirs) {
+  const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
+  const nobi = row.nobi, t = row.t;
+  const flat = outer.map((L, i) => L - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
+  const part = { t, segs: flat, bends: dirs.map((d) => ({ angle: 90, dir: d })), grow: dirs.map(() => nobi - t / 2) };
+  const seq = dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 }));
+  const openGap = Math.max(0, 170 - t);
+  const exArc = shoulderReach(info.vHalf, t, 90) + t;
+  for (let si = 0; si < seq.length; si++) {
+    if (!reachCheck(part, seq, si, info.vHalf).ok) return 'フランジ不足';
+    for (let p = 0; p <= 1.0001; p += 0.04) {
+      const { bendProg, lift } = strokeState(p, openGap);
+      const ch = computeChain(part, seq, si, bendProg, info.vHalf);
+      const tools = toolsFor(PUNCH, false, ch.innerY - lift, 'std', info.polys);
+      const g = minGap(ch, tools.polys, t, info.vHalf, exArc);
+      if (g.gap < -0.05) return tools.names[g.atIdx] || '工具';
+    }
+  }
+  return null;
+}
 
 // カーブの補間。点が無い・上限なし（400）は null/Infinity で返す
 // 両隣のどちらかが「曲げられない」(null) なら null
@@ -117,6 +143,23 @@ export function judgeU(row, H1, W, H2) {
   }
   const geo = geoCheck(row, [H1, W, H2], [1, 1]);
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（コの字の実績はまだありません）', geo };
+
+  // 中押し（捨て曲げ）：底をへの字に曲げ → 両サイドを90° → 底を中押しで戻す。
+  // 上型に当たるときだけ効き、底の内-内（W − 板厚×2）が120mm以上要る（現場の実測・経緯まとめ第17章）
+  const where = firstHitWhere(row, [H1, W, H2], [1, 1]);
+  if (where && UPPER.includes(where)) {
+    const inner = +(W - 2 * row.t).toFixed(1);
+    const needW = Math.ceil(SUTE_MIN_INNER + 2 * row.t);
+    if (inner >= SUTE_MIN_INNER) {
+      return { ...base, grade: 'naka', src: '中押し', geo,
+        why: `普通の曲げ方では${where}に当たります。底の内-内 ${inner}mm（${SUTE_MIN_INNER}mm以上）なので、中押しなら曲げられます` };
+    }
+    const lim = uLimitH(row, W);
+    const hFix = lim != null && Number.isFinite(lim) && short > lim ? `低いほうの立上りを ${Math.floor(lim)}mm 以下に` : null;
+    return { ...base, grade: 'ng', src: '計算', geo,
+      why: `${where}に当たります。中押しにも底の内-内 ${SUTE_MIN_INNER}mm が要りますが、いま ${inner}mm です`,
+      fix: hFix ? `${hFix}（普通に曲げる）か、底Wを ${needW}mm 以上に（中押し）` : `底Wを ${needW}mm 以上に（中押し）` };
+  }
   const wMin = uSimMinW(row);
   if (wMin != null && W < wMin) return { ...base, grade: 'ng', src: '計算', why: `底 ${W}mm が狭すぎます（計算で約 ${wMin}mm 以上）`, fix: `底を ${wMin}mm 以上に`, geo };
   const lim = uLimitH(row, W);

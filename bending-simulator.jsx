@@ -2330,8 +2330,8 @@ const BendingSimulator = () => {
             suteHint.ok ? 'bg-amber-950/50 border-amber-700 text-amber-200'
                         : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
             {suteHint.ok
-              ? `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。捨て曲げなら作れます — 底を一旦への字に曲げ、両サイドを90°にしてから底を曲げ戻す`
-              : `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。捨て曲げにも内-内 ${SUTE_MIN_INNER}mm 要るので、この形では逃げ道がありません`}
+              ? `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。中押し（捨て曲げ）なら作れます — 底を一旦への字に曲げ、両サイドを90°にしてから底を中押しで戻す`
+              : `◇ 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm。中押し（捨て曲げ）にも内-内 ${SUTE_MIN_INNER}mm 要るので、この形では逃げ道がありません`}
           </div>
         )}
 
@@ -2913,5 +2913,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER,
 };

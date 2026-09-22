@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
 import { judgeAll, zLimitA, uLimitH, seqText, RANK, exactLimit, actLimit } from './judge.js';
+import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import './zu.css';
 
 const ROWS = DATA.rows;
@@ -14,6 +15,7 @@ const SHAPE = {
 const GRADE = {
   'ok-act': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 実績' },
   'ok-sim': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 計算' },
+  naka: { cls: 'ok', mark: '○', word: '中押しなら曲がります', short: '○ 中押し' },
   check: { cls: 'check', mark: '△', word: '確かめが必要', short: '△ 要確認' },
   ng: { cls: 'ng', mark: '✕', word: '曲がりません', short: '✕' },
 };
@@ -29,6 +31,8 @@ function simLink(shape, r, dims, mat, L) {
   if (r.grade === 'ng' && r.geo && r.geo.ok) {
     lines.push(`判定：${r.why}。`);
     lines.push('※ この型は計算が実績より甘く出るため、絵では当たらなくても実績を優先しています。');
+  } else if (r.grade === 'naka') {
+    lines.push(`判定：${r.why}。下は普通の曲げ方で当たる所です（中押しの動きはシミュレーションしていません）。`);
   } else if (r.grade === 'ng') {
     lines.push(`判定：${r.why}。当たる瞬間で止めています（橙の丸が当たる所）。「▶ 全工程再生」で動きも見られます。`);
   }
@@ -252,6 +256,11 @@ function LimitDetail({ shape, row, x, y, other }) {
         <div className="ld-q">{yN} <b>{y}mm</b> で曲げるには</div>
         <div className="ld-a">{need.txt}<span className="tag">{need.src}</span></div>
       </div>
+      {!Z && (
+        <div className="ld-naka">
+          中押しなら：上型に当たる形でも、底W <b>{Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上</b>（内-内 {SUTE_MIN_INNER}mm 以上）で曲げられます
+        </div>
+      )}
     </div>
   );
 }
@@ -325,7 +334,7 @@ function App() {
       return `${head}\n→ 曲がりません。${best.why}。${fixes.length ? `\nこうすれば曲げられます\n${fixes.join('\n')}` : ''}`;
     }
     const src = best.grade === 'ok-act' ? '実績のある範囲です' : best.grade === 'ok-sim' ? '計算で確認しました' : '';
-    return `${head}\n→ ${g.word}（${best.die}・${best.machine}）。${best.grade === 'check' ? `${best.why}。${best.fix ? `${best.fix}すれば確実です。` : ''}` : src}`;
+    return `${head}\n→ ${g.word}（${best.die}・${best.machine}）。${best.grade === 'check' ? `${best.why}。${best.fix ? `${best.fix}すれば確実です。` : ''}` : best.grade === 'naka' ? `${best.why}。` : src}`;
   }, [best, shape, mat, t, dimsTxt.join('|'), Ltxt]);
 
   const copy = async () => {
@@ -385,7 +394,7 @@ function App() {
                 <span className="v-word">{GRADE[best.grade].word}</span>
               </div>
               <div className="v-body">
-                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : '計算のみ'}</span></div>}
+                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span></div>}
                 <div>{best.why}</div>
                 {best.grade !== 'ng' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
               </div>

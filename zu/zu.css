@@ -112,3 +112,5 @@ table.qt th { text-align: left; font-weight: 600; color: var(--sub); padding: 4p
 table.qt td { text-align: center; padding: 4px 8px; border-left: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
 table.qt tr:first-child td { color: var(--muted); font-size: 12.5px; }
 table.qt td.now { background: var(--ok-bg); font-weight: 800; color: var(--ink); }
+.ld-naka { grid-column: 1 / -1; font-size: 13.5px; color: var(--sub); padding: 6px 12px; border-radius: 8px; border: 1px dashed var(--line); }
+.ld-naka b { color: var(--ink); }

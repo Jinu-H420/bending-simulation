@@ -48,6 +48,13 @@ function simLink(shape, r, dims, mat, L) {
   return `../#open=${encodeURIComponent(JSON.stringify({ params, note: lines.join('\n') }))}`;
 }
 
+// くの字ヤゲンの L 上限を1行で。「くの字165：L 200mm 以内 ○（いま L=250 ✕）」
+function kunoText(kuno, L) {
+  const ok = (kuno || []).filter((k) => k.ok);
+  if (!ok.length) return null;
+  return ok.map((k) => `${k.punch.replace('特殊 ', '')}：L ${k.win}mm 以内${L > 0 ? (L <= k.win ? '（いまのLで○）' : `（いまのL ${L}mm は超える）`) : ''}`).join('　／　');
+}
+
 // 直し方を型ごとに出す。同じ直し方の型はまとめる（「V25・V20：段差Sを46mm以上に」）
 function fixList(list) {
   const m = new Map();
@@ -382,12 +389,14 @@ function App() {
     const g = GRADE[best.grade];
     const d = S.keys.map((k, i) => `${k}=${dims[i]}`).join('・');
     const head = `${S.name}　${mat} t${t}　${d}（外寸）　L=${Ltxt}`;
+    const kt = kunoText(best.kuno, Lnum);
+    const kLine = kt ? `\nくの字ヤゲンなら曲がる長さ：${kt}` : '';
     if (best.grade === 'ng') {
       const fixes = fixList(res.list).map((f) => `・${f.dies}：${f.fix}`);
-      return `${head}\n→ 曲がりません。${best.why}。${fixes.length ? `\nこうすれば曲げられます\n${fixes.join('\n')}` : ''}`;
+      return `${head}\n→ 曲がりません。${best.why}。${kLine}${fixes.length ? `\nこうすれば曲げられます\n${fixes.join('\n')}` : ''}`;
     }
     const src = best.grade === 'ok-act' ? '実績のある範囲です' : best.grade === 'ok-sim' ? '計算で確認しました' : '';
-    return `${head}\n→ ${g.word}（${best.die}・${best.machine}）。${best.grade === 'check' ? `${best.why}。${best.fix ? `${best.fix}すれば確実です。` : ''}` : best.grade === 'naka' ? `${best.why}。` : src}`;
+    return `${head}\n→ ${g.word}（${best.die}・${best.machine}）。${best.grade === 'check' ? `${best.why}。${best.fix ? `${best.fix}すれば確実です。` : ''}` : best.grade === 'naka' || best.grade === 'alt' ? `${best.why}。` : src}${kLine}`;
   }, [best, shape, mat, t, dimsTxt.join('|'), Ltxt]);
 
   const copy = async () => {
@@ -451,6 +460,24 @@ function App() {
                 <div>{best.why}</div>
                 {best.grade !== 'ng' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
               </div>
+              {kunoText(best.kuno, Lnum) && (
+                <div className="v-kuno">
+                  <b>くの字ヤゲンなら曲がる長さ</b>
+                  <table className="kt">
+                    <thead><tr><th>ヤゲン</th><th>曲げ長さ L</th><th>いまの L={Lnum}</th></tr></thead>
+                    <tbody>
+                      {best.kuno.filter((k) => k.ok).map((k) => (
+                        <tr key={k.punch}>
+                          <td>{k.punch.replace('特殊 ', '')}</td>
+                          <td><b>{k.win}mm 以内</b></td>
+                          <td className={Lnum <= k.win ? 'g ok-sim' : 'g ng'}>{Lnum <= k.win ? '○ 使える' : '✕ 長すぎる'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {(best.grade === 'naka' || best.src === '中押し') && <div className="hint">中押しは最終手段。L が収まるなら、くの字で曲げる</div>}
+                </div>
+              )}
               {best.grade !== 'ng' && best.fix && <div className="v-fix">→ {best.fix}すれば確実です</div>}
               {best.grade === 'ng' && res.list.some((r) => r.fix) && (
                 <div className="v-fix">
@@ -475,7 +502,7 @@ function App() {
                       <td><b>{r.die}</b>{r.row.V === res.baseV && <span className="tag">基準</span>}</td>
                       <td>{r.machine}</td>
                       <td className={`g ${r.grade}`}>{GRADE[r.grade].short}</td>
-                      <td>{r.why}</td>
+                      <td>{r.why}{kunoText(r.kuno, Lnum) && <div className="kuno-s">くの字なら：{kunoText(r.kuno, Lnum)}</div>}</td>
                       <td><a className="see" href={simLink(shape, r, dims, mat, Lnum)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>見る</a></td>
                     </tr>
                   ))}

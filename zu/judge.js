@@ -112,6 +112,23 @@ function altPunch(row, outer, dirs, L) {
 }
 const punchName = (p, flip) => `ヤゲン ${p}${flip ? '（反転）' : ''}`;
 
+// 特殊 くの字ヤゲンで曲がるか（曲げ長さを別にして、形として通るか）と、使える曲げ長さ L の上限。
+// くの字は中央の窓の中でしか使えないので、L が窓（165版＝200mm・100版＝70mm）以内のときだけ曲がる。
+export function kunoLimits(row, outer, dirs) {
+  const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
+  const nobi = row.nobi;
+  if (nobi == null) return [];
+  const flat = outer.map((x, i) => x - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
+  if (flat.some((x) => x <= 0.5)) return [];
+  const part = { t: row.t, segs: flat, bends: dirs.map((d) => ({ angle: 90, dir: d })), grow: dirs.map(() => nobi - row.t / 2) };
+  return Object.keys(PUNCH_LIB).filter((k) => PUNCH_LIB[k].special).map((pid) => {
+    const sp = PUNCH_LIB[pid].special;
+    const ok = [false, true].some((flip) =>
+      searchSequences(part, info.vHalf, info.polys, pid, flip, 'std', 1, Math.max(0, 170 - row.t)).sols.length > 0);
+    return { punch: pid, win: sp.win, ok };
+  }).sort((a, b) => b.win - a.win);
+}
+
 // Z曲げ：outer = [A, S, B]（外寸）
 export function judgeZ(row, A, S, B, L) {
   const base = { row, die: `V${row.V}`, machine: machineName(row) };
@@ -193,7 +210,7 @@ export function judgeU(row, H1, W, H2, L) {
     if (W / 2 < row.minOut) {
       return { ...base, grade: 'ng', src: '計算', geo,
         why: `${where}に当たります。中押しも、底の半分 ${W / 2}mm が最小フランジ ${row.minOut}mm より短く、への字に曲げられません`,
-        fix: [`底Wを ${Math.ceil(2 * row.minOut)}mm 以上に（中押し）`, winFix].filter(Boolean).join('、または') };
+        fix: [winFix, `底Wを ${Math.ceil(2 * row.minOut)}mm 以上に（中押し）`].filter(Boolean).join('、または') };
     }
     const n = nakaOshi(PUNCH, false, 'std', inner, Math.max(H1, H2) - row.t);
     const naka = { inner, clear: +n.clear.toFixed(1), at: n.at, maxH: n.maxH };
@@ -204,7 +221,7 @@ export function judgeU(row, H1, W, H2, L) {
         const f = a.fail || {};
         return { ...base, grade: 'ng', src: '計算', geo, naka,
           why: `${where}に当たります。中押しでも、への字を${NAKA_ANGLES[NAKA_ANGLES.length - 1]}°にしても ${STEP_NAME[f.step] || ''}で${f.where || '工具'}に当たります`,
-          fix: [`底Wを広くするか、立上りを低く`, winFix].filter(Boolean).join('、または') };
+          fix: [winFix, `底Wを広くするか、立上りを低く`].filter(Boolean).join('、または') };
       }
       naka.angle = a.angle;
       if (inner >= SUTE_MIN_INNER) {
@@ -214,14 +231,14 @@ export function judgeU(row, H1, W, H2, L) {
       // 計算では通るが、現場の決まり（内-内120mm）より狭い。確かめてから
       return { ...base, grade: 'check', src: '中押し', geo, naka,
         why: `普通の曲げ方では${where}に当たります。中押しは計算では通ります（への字 ${a.angle}°以上）が、内-内 ${inner}mm は現場の決まり ${SUTE_MIN_INNER}mm より狭く、まだ確かめていません`,
-        fix: [`底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に`, winFix].filter(Boolean).join('、または') };
+        fix: [winFix, `底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に`].filter(Boolean).join('、または') };
     }
     const lim = uLimitH(row, W);
     const hFix = lim != null && Number.isFinite(lim) && short > lim ? `低いほうの立上りを ${Math.floor(lim)}mm 以下に（普通に曲げる）` : null;
     const mFix = Number.isFinite(n.maxH) ? `高いほうの立上りを ${Math.floor(n.maxH + row.t)}mm 以下に（中押し）` : null;
     return { ...base, grade: 'ng', src: '計算', geo, naka,
       why: `${where}に当たります。中押しでも、押し切ったとき刃先から ${n.at}mm の高さで上型が立上りに当たります（そこには内-内 ${n.needW}mm 要る。いま ${inner}mm）`,
-      fix: [hFix, mFix, `底Wを ${Math.ceil(n.needW + 2 * row.t)}mm 以上に（中押し）`, winFix].filter(Boolean).join('、または') };
+      fix: [winFix, hFix, mFix, `底Wを ${Math.ceil(n.needW + 2 * row.t)}mm 以上に（中押し）`].filter(Boolean).join('、または') };
   }
   const wMin = uSimMinW(row);
   if (wMin != null && W < wMin) return { ...base, grade: 'ng', src: '計算', why: `底 ${W}mm が狭すぎます（計算で約 ${wMin}mm 以上）`, fix: `底を ${wMin}mm 以上に`, geo };
@@ -346,7 +363,12 @@ function withLength(res, L) {
 export function judgeAll(rows, shape, mat, t, dims, L) {
   const cand = rows.filter((r) => r.mat === mat && r.t === t);
   const baseV = (() => { const b = pickDie(mat, t); return b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null; })();
-  const res = cand.map((row) => withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L));
+  const res = cand.map((row) => {
+    const r = withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L);
+    const plain = (r.grade === 'ok-sim' || r.grade === 'ok-act') && !r.punch;
+    if (!plain && !(shape === 'Z' && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);
+    return r;
+  });
   res.sort((a, b) => (RANK[b.grade] - RANK[a.grade]) || ((b.row.V === baseV) - (a.row.V === baseV)) || (a.row.V - b.row.V));
   return { list: res, best: res[0] || null, baseV };
 }

@@ -1796,7 +1796,7 @@ const BendingSimulator = () => {
     const ids = Object.keys(PUNCH_LIB);
     const order = [...ids.filter((k) => !PUNCH_LIB[k].special), ...ids.filter((k) => PUNCH_LIB[k].special)];
     const cands = order.flatMap((k) => [[k, false], [k, true]]).filter(([k, f]) => !(k === punchType && f === punchFlip));
-    let i = -1, win = null;
+    let i = -1, win = null, kuno = [];
     const next = () => {
       if (cancel) return;
       // まず、いまのヤゲンのまま曲げ順・突き当てを変えれば通るか。通るなら替える必要は無い
@@ -1804,16 +1804,21 @@ const BendingSimulator = () => {
         i = 0;
         const r0 = searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, 1, openGap);
         if (r0.sols.length && !winNG) { setAltPunch(null); return; }
+        // 特殊 くの字ごとに、形として通るか（曲げ長さは別）。通るなら「L 窓mm 以内なら曲がる」と出す
+        kuno = ids.filter((k) => PUNCH_LIB[k].special).map((pid) => ({
+          punch: pid, win: PUNCH_LIB[pid].special.win,
+          ok: [false, true].some((f) => searchSequences(part, vHalf, diePolys, pid, f, chukanSel, 1, openGap).sols.length > 0),
+        })).filter((k) => k.ok).sort((a, b) => b.win - a.win);
         setTimeout(next, 0);
         return;
       }
-      if (i >= cands.length) { setAltPunch({ win }); return; }
+      if (i >= cands.length) { setAltPunch({ win, kuno }); return; }
       const [pid, flip] = cands[i++];
       const sp = PUNCH_LIB[pid].special;
       const r = searchSequences(part, vHalf, diePolys, pid, flip, chukanSel, 1, openGap);
       if (r.sols.length) {
         if (sp && bendLen > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; }
-        else { setAltPunch({ ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win }); return; }
+        else { setAltPunch({ ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win, kuno }); return; }
       }
       setTimeout(next, 0);
     };
@@ -2461,6 +2466,28 @@ const BendingSimulator = () => {
           </div>
         )}
 
+        {/* ほかのヤゲン（くの字など）。現場の順番：くの字で曲がるならくの字、中押しは最終手段 */}
+        {altWorth && altPunch && (altPunch.busy || altPunch.ok || altPunch.win || (altPunch.kuno && altPunch.kuno.length > 0)) && (
+          <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-sky-950/40 border-sky-700 text-sky-100 flex items-center gap-3 flex-wrap">
+            {altPunch.busy ? (
+              <span className="text-sky-300">ほかのヤゲン（くの字など）なら曲がるか調べています…</span>
+            ) : altPunch.ok ? (
+              <>
+                <span>◇ <b>ヤゲン {altPunch.ok.punch}{altPunch.ok.flip ? '（反転）' : ''}</b> なら曲がります
+                  {altPunch.ok.special ? `（くの字の窓に入るので、曲げ長さ ${altPunch.ok.special.win}mm まで）` : ''}</span>
+                <button onClick={applyAltPunch} className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold">このヤゲンにする</button>
+              </>
+            ) : altPunch.win ? (
+              <span>◇ <b>{altPunch.win.punch}</b> なら、曲げ長さを {altPunch.win.win}mm 以下にすれば曲がります（いま {bendLen}mm。くの字の窓 {altPunch.win.win}mm を超えています）</span>
+            ) : null}
+            {!altPunch.busy && altPunch.kuno && altPunch.kuno.length > 0 && (
+              <span className="w-full text-sky-200">
+                くの字ヤゲンなら曲がる長さ：{altPunch.kuno.map((k) => `${k.punch.replace('特殊 ', '')} は L ${k.win}mm 以内${bendLen <= k.win ? '（いまのLで○）' : `（いまの ${bendLen}mm は長すぎる）`}`).join('　／　')}
+                {nakaOn ? '　※中押しは最終手段。L が収まるならくの字で' : ''}
+              </span>
+            )}
+          </div>
+        )}
         {/* 捨て曲げの逃げ道。普通に曲がらないときだけ出す */}
         {suteHint && !nakaOn && (
           <div className={`rounded-md px-4 py-2 mb-3 border text-xs flex items-center gap-3 flex-wrap ${
@@ -2476,21 +2503,6 @@ const BendingSimulator = () => {
                 className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold">
                 中押しでシミュレーションする
               </button>
-            )}
-          </div>
-        )}
-        {altWorth && altPunch && (altPunch.busy || altPunch.ok || altPunch.win) && (
-          <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-sky-950/40 border-sky-700 text-sky-100 flex items-center gap-3 flex-wrap">
-            {altPunch.busy ? (
-              <span className="text-sky-300">ほかのヤゲン（くの字など）なら曲がるか調べています…</span>
-            ) : altPunch.ok ? (
-              <>
-                <span>◇ <b>ヤゲン {altPunch.ok.punch}{altPunch.ok.flip ? '（反転）' : ''}</b> なら曲がります
-                  {altPunch.ok.special ? `（くの字の窓に入るので、曲げ長さ ${altPunch.ok.special.win}mm まで）` : ''}</span>
-                <button onClick={applyAltPunch} className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold">このヤゲンにする</button>
-              </>
-            ) : (
-              <span>◇ <b>{altPunch.win.punch}</b> なら、曲げ長さを {altPunch.win.win}mm 以下にすれば曲がります（いま {bendLen}mm。くの字の窓 {altPunch.win.win}mm を超えています）</span>
             )}
           </div>
         )}

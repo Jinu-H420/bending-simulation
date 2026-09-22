@@ -114,3 +114,8 @@ table.qt tr:first-child td { color: var(--muted); font-size: 12.5px; }
 table.qt td.now { background: var(--ok-bg); font-weight: 800; color: var(--ink); }
 .ld-naka { grid-column: 1 / -1; font-size: 13.5px; color: var(--sub); padding: 6px 12px; border-radius: 8px; border: 1px dashed var(--line); }
 .ld-naka b { color: var(--ink); }
+.v-kuno { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--card); border: 1px dashed var(--s1); font-size: 14.5px; }
+.kuno-s { margin-top: 3px; font-size: 12.5px; color: var(--s1); font-weight: 600; }
+table.kt { border-collapse: collapse; margin-top: 4px; font-size: 14px; }
+table.kt th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 2px 14px 2px 0; }
+table.kt td { padding: 3px 14px 3px 0; border-top: 1px solid var(--grid); }

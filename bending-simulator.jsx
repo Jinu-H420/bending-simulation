@@ -1508,6 +1508,21 @@ const BendingSimulator = () => {
     const md = MACHINE_DIES[machineSel];
     if (md && ![...md.main, ...md.extra].includes(dieSel)) setDieSel(md.main[0]);
   }, [machineSel, dieSel]);
+  // 板形状の「V」を選び直したら、そのVの金型に切り替える（右の機械・金型と断面図も変わる）。
+  // いまの機械にそのVがあれば機械はそのまま。同じ2溝ダイの別の溝があればそれを使う。
+  // いまの機械に無ければ、そのVを持っている機械に切り替える。
+  const switchDieToV = (v) => {
+    const vOf = (s) => { try { return Math.round(resolveDie(s, vW, dieHalf, false, null).vHalf * 2); } catch { return null; } };
+    const curId = dieSel.split(':')[1];
+    for (const m of [machineSel, ...Object.keys(MACHINE_DIES).filter((k) => k !== machineSel)]) {
+      const same = [...MACHINE_DIES[m].main, ...MACHINE_DIES[m].extra].filter((s) => vOf(s) === v);
+      if (!same.length) continue;
+      const pick = same.find((s) => s.split(':')[1] === curId) || same[0];
+      if (m !== machineSel) setMachineSel(m);
+      if (pick !== dieSel) { setDieSel(pick); setDieFlip(false); }
+      return;
+    }
+  };
   const dieInfo = useMemo(() => resolveDie(dieSel, vW, dieHalf, dieBase, machineSel, dieFlip),
     [dieSel, vW, dieHalf, dieBase, machineSel, dieFlip]);
 
@@ -2613,7 +2628,7 @@ const BendingSimulator = () => {
                   className={`px-2 py-0.5 ${matType === '縞' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>縞</button>
               </div>
               <span className={`${lbl} ml-2`}>V</span>
-              <select value={nobiV} onChange={(e) => { setNobiV(Number(e.target.value)); setNobiOverride(null); }} className={sel}>
+              <select value={nobiV} onChange={(e) => { const v = Number(e.target.value); setNobiV(v); setNobiOverride(null); switchDieToV(v); }} className={sel}>
                 {NOBI_V_LIST.map((v) => <option key={v} value={v}>V{v}</option>)}
               </select>
               <span className={`${lbl} ml-2`}>片伸び</span>

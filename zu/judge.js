@@ -357,25 +357,78 @@ export function lenLimit(row) {
   if (row.t >= 22) c.push({ v: PL22_MAX_LEN, why: 'PL22（金型寸法表の注記）' });
   return c.reduce((a, b) => (a.v <= b.v ? a : b));
 }
+// ---------------------------------------------------------------- 登録した実績（使うたびに良くなる）
+// 曲げ屋さんに聞いて確かな結果を1件ずつ登録したもの（共有フォルダ bendsim.json の zuRecords）。
+//   { id, at, who, shape:'Z'|'U', mat, t, V, machine, dims:[a,b,c], L, method:'normal'|'kuno'|'naka', punch, ok, note }
+// 同じ形・材質・板厚・V の実績があれば、計算より実績を優先する。当てはめ方（楽なほう・きついほうの向き）：
+//   Z ：段差Sが広いほど、短いほうのフランジが短いほど楽。曲がった実績より楽なら ○、曲がらなかった実績よりきつければ ✕
+//   コ：底Wがほぼ同じ（±5mm）で、立上りが低いほど楽
+//   L ：基準より小さいVのときだけ見る。曲がった実績の L 以下なら ○、曲がらなかった L 以上なら ✕
+export const METHOD_JA = { normal: '普通に', kuno: 'くの字ヤゲンで', naka: '中押しで' };
+const recKey = (s, r) => [s, r.mat, r.t, r.V].join('|');
+function easierOrSame(shape, dims, L, rec, smallV) {
+  if (smallV && rec.L > 0 && !(L <= rec.L)) return false;
+  if (shape === 'Z') return dims[1] >= rec.dims[1] && Math.min(dims[0], dims[2]) <= Math.min(rec.dims[0], rec.dims[2]);
+  return Math.abs(dims[1] - rec.dims[1]) <= 5 && Math.max(dims[0], dims[2]) <= Math.max(rec.dims[0], rec.dims[2]);
+}
+function harderOrSame(shape, dims, L, rec, smallV) {
+  if (smallV && rec.L > 0 && rec.lenFail) return L >= rec.L;   // 長さで曲がらなかった記録
+  if (shape === 'Z') return dims[1] <= rec.dims[1] && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
+  return Math.abs(dims[1] - rec.dims[1]) <= 5 && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
+}
+const recText = (r) => `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${r.who ? `（${r.who}）` : ''}`;
+// 小さいVの最長L：曲がった実績の一番長い L
+function recMaxL(recs, shape, row) {
+  const ls = (recs || []).filter((r) => r.ok && r.mat === row.mat && r.t === row.t && r.V === row.V && r.L > 0).map((r) => r.L);
+  return ls.length ? Math.max(...ls) : null;
+}
+function withRecords(res, shape, dims, L, recs) {
+  if (!recs || !recs.length) return res;
+  const k = recKey(shape, res.row);
+  const same = recs.filter((r) => recKey(r.shape, r) === k);
+  if (!same.length) return res;
+  const smallV = !!smallVCheck(res.row.mat, res.row.t, res.row.V);
+  const okR = same.filter((r) => r.ok && easierOrSame(shape, dims, L, r, smallV));
+  if (okR.length) {
+    // 曲げ方の順番（普通 → くの字 → 中押し）で一番楽なもの
+    const pick = ['normal', 'kuno', 'naka'].map((m) => okR.find((r) => r.method === m)).find(Boolean) || okR[0];
+    const grade = pick.method === 'kuno' ? 'alt' : pick.method === 'naka' ? 'naka' : 'ok-act';
+    return { ...res, grade, src: '実績', recs: same, punch: pick.method === 'kuno' ? (pick.punch || res.punch) : res.punch,
+      why: `実績あり：${recText(pick)}。いまの寸法はそれと同じか楽です`, fix: undefined };
+  }
+  const ngR = same.filter((r) => !r.ok && r.method === 'normal' && harderOrSame(shape, dims, L, r, smallV));
+  if (ngR.length && res.grade !== 'ng' && !res.punch && res.src !== '中押し') {
+    return { ...res, grade: 'ng', src: '実績', recs: same, why: `実績：${recText(ngR[0])}。いまの寸法はそれと同じかきついので曲がりません`,
+      fix: res.fix || '寸法を見直すか、くの字・中押しを試す' };
+  }
+  return { ...res, recs: same };
+}
+
 // 基準より小さいV：最長Lの実績があればそれで判定、無ければ曲がる判定でも △（最長Lを確認中）
-function withSmallV(res, L) {
-  const sv = smallVCheck(res.row.mat, res.row.t, res.row.V);
-  if (!sv) return res;
+function withSmallV(res, L, recs) {
+  const sv0 = smallVCheck(res.row.mat, res.row.t, res.row.V);
+  if (!sv0) return res;
+  const sv = sv0;
   const note = `板厚 t${res.row.t} の基準は V${sv.baseV}。小さい V${res.row.V} は長いものが曲げられない`;
+  // ① 確かめた最長L（SMALLV_MAXL）があれば、それで ○／✕
   if (sv.maxL != null) {
     if (!(L > sv.maxL)) return { ...res, smallV: sv };
     const why = `${note}（L ${sv.maxL}mm まで・実績）`;
     return { ...res, smallV: sv, grade: 'ng', why: res.grade === 'ng' ? `${res.why}。さらに${why}` : why,
       fix: [res.fix, `L を ${sv.maxL}mm 以下にするか、V${sv.baseV} で曲げる`].filter(Boolean).join('、または') };
   }
-  if (res.grade === 'ng' || res.grade === 'check') return { ...res, smallV: sv, why: `${res.why}。${note}（最長Lは確認中）` };
-  return { ...res, smallV: sv, grade: 'check', why: `${res.why}。ただし${note}ので、L ${L}mm で曲がるかは確認中です`,
-    fix: `基準の V${sv.baseV} に` };
+  // ② 登録した実績で曲がった一番長い L。それ以下なら長さは大丈夫。超えると「そこまでは未確認」（✕ にはしない）
+  const rl = recMaxL(recs, null, res.row);
+  if (rl != null && L <= rl) return { ...res, smallV: { ...sv, recL: rl } };
+  const known = rl != null ? `曲がった実績は L ${rl}mm まで。` : '';
+  if (res.grade === 'ng' || res.grade === 'check') return { ...res, smallV: sv, why: `${res.why}。${note}（${known}最長Lは確認中）` };
+  return { ...res, smallV: sv, grade: 'check', why: `${res.why}。ただし${note}ので、${known}L ${L}mm で曲がるかは確認中です`,
+    fix: rl != null ? `L を ${rl}mm 以下にするか、基準の V${sv.baseV} に` : `基準の V${sv.baseV} に` };
 }
 
-function withLength(res, L) {
+function withLength(res, L, recs) {
   if (!(L > 0)) return res;
-  res = withSmallV(res, L);
+  res = withSmallV(res, L, recs);
   const lim = lenLimit(res.row);
   if (L <= lim.v) return { ...res, lenLim: lim };
   const why = `曲げ長さ L ${L}mm が長すぎます（${lim.why}で ${lim.v}mm まで）`;
@@ -387,11 +440,12 @@ function withLength(res, L) {
 
 // その材質・板厚で使う型を全部判定し、いちばん良いものを答えにする。
 // 同じ等級なら、折り曲げ表の基準金型（その板厚で普段使うV）を優先する。
-export function judgeAll(rows, shape, mat, t, dims, L) {
+export function judgeAll(rows, shape, mat, t, dims, L, recs = []) {
   const cand = rows.filter((r) => r.mat === mat && r.t === t);
   const baseV = (() => { const b = pickDie(mat, t); return b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null; })();
   const res = cand.map((row) => {
-    const r = withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L);
+    // 計算 → 長さ・小さいV → 登録した実績（いちばん強い）の順に重ねる
+    const r = withRecords(withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L, recs), shape, dims, L, recs);
     // くの字の L 上限は、普通のヤゲン（904061）で形として当たるときだけ出す（小さいVの△などでは出さない）
     const plainGeo = r.geo && r.geo.ok && !r.punch;
     if (!plainGeo && !(shape === 'Z' && Z_ACT_ON && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);

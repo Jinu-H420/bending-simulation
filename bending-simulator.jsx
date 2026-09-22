@@ -1392,6 +1392,7 @@ const BendingSimulator = () => {
   const [nakaAngle, setNakaAngle] = useState(10);   // への字の角度（°）
   // 曲がらないとき、ほかのヤゲン（くの字など）なら曲がるか。{ busy, ok:{punch,flip,seq,special}, win:{punch,win} }
   const [altPunch, setAltPunch] = useState(null);
+  const [zuRecs, setZuRecs] = useState([]);   // Z・コの字判定で登録した実績（共有フォルダ bendsim.json の zuRecords）
   // サーバー保存（GitHub）。接続先とトークンはこの端末のブラウザにだけ置く
   const [cloudConf, setCloudConf] = useState(null);      // つながっている共有フォルダ
   const cloudConfRef = useRef(null);
@@ -1651,7 +1652,13 @@ const BendingSimulator = () => {
   }, [nobiV, machineSel, t]);
   const lenNG = lenLimit && bendLen > lenLimit.v ? lenLimit : null;
   // 基準より小さいV：最長Lの実績があればそれで ✕、無ければ「確認中」
-  const smallV = useMemo(() => smallVCheck(matType, t, nobiV), [matType, t, nobiV]);
+  const smallV = useMemo(() => {
+    const sv = smallVCheck(matType, t, nobiV);
+    if (!sv) return null;
+    // Z・コの字判定で登録した「曲がった」実績の、いちばん長い L
+    const ls = zuRecs.filter((r) => r.ok && r.mat === (matType === '縞' ? '縞' : '鉄') && r.t === t && r.V === nobiV && r.L > 0).map((r) => r.L);
+    return { ...sv, recL: ls.length ? Math.max(...ls) : null };
+  }, [matType, t, nobiV, zuRecs]);
   const smallVNG = smallV && smallV.maxL != null && bendLen > smallV.maxL;
 
   // 台の実測が使えていない金型のときだけ、下逃げの表で当たりを見る
@@ -1733,6 +1740,7 @@ const BendingSimulator = () => {
     try {
       const { data } = await cloudPull(dir);
       setRecords((cur) => importJSON(cur, JSON.stringify(data.records || [])));
+      setZuRecs(data.zuRecords || []);   // Z・コの字判定で登録した実績（小さいVの最長Lに使う）
       setCloudSaves(data.saves || []);
       cloudConfRef.current = dir; setCloudConf(dir); setPendingDir(null);
       if (linkRef.current) {
@@ -2492,7 +2500,9 @@ const BendingSimulator = () => {
         {smallV && !smallVNG && (
           <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-amber-950/40 border-amber-700 text-amber-100">
             ◇ 板厚 t{t} の基準は V{smallV.baseV}。いまは小さい V{nobiV} なので、長いものは曲げられないことがあります。
-            {smallV.maxL != null ? ` この組み合わせは L ${smallV.maxL}mm まで（実績）。` : ` 曲げられる最長の L は確認中です（いま L ${bendLen}mm）。`}
+            {smallV.maxL != null ? ` この組み合わせは L ${smallV.maxL}mm まで（実績）。`
+              : smallV.recL != null ? ` 登録した実績では L ${smallV.recL}mm まで曲がっています（いま L ${bendLen}mm${bendLen <= smallV.recL ? '・○' : '・その先は確認中'}）。`
+              : ` 曲げられる最長の L は確認中です（いま L ${bendLen}mm）。`}
           </div>
         )}
         {autoMsg && (

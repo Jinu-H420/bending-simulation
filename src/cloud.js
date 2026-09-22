@@ -49,7 +49,8 @@ export const forgetFolder = () => keepFolder(null);
 // 画面にそのまま出せる言葉にした失敗
 const fail = (msg) => Object.assign(new Error(msg), { friendly: true });
 
-const empty = () => ({ version: 1, current: null, saves: [], records: [] });
+// zuRecords＝Z・コの字判定で登録した実績（品物ごと。曲げ屋さんに聞いて確かなものだけ）
+const empty = () => ({ version: 1, current: null, saves: [], records: [], zuRecords: [] });
 
 export async function pull(dir) {
   let fh;
@@ -94,7 +95,7 @@ async function writeText(dir, name, text) {
 }
 
 // 書く。直前に読み直して、ほかのPCの記録と名前付き保存を混ぜてから上書きする。
-// change: { current?, saveAs?: 名前, removeSave?: 名前, records?, removeKeys?: 消した実績の鍵 }
+// change: { current?, saveAs?: 名前, removeSave?: 名前, records?, removeKeys?: 消した実績の鍵, zuRecords?, removeZu? }
 export async function push(dir, change, who) {
   try {
     const { data } = await pull(dir);
@@ -118,6 +119,11 @@ export async function push(dir, change, who) {
     let recs = mergeRecords(data.records, change.records);
     if (change.removeKeys && change.removeKeys.length) recs = recs.filter((r) => !change.removeKeys.includes(r.key));
     next.records = recs;
+    // Z・コの字判定の実績：id で足し算（ほかのPCで足したものを消さない）。消すときは removeZu に id
+    const zu = new Map((data.zuRecords || []).map((z) => [z.id, z]));
+    for (const z of change.zuRecords || []) if (z && z.id) zu.set(z.id, z);
+    for (const id of change.removeZu || []) zu.delete(id);
+    next.zuRecords = [...zu.values()].sort((a, b) => (a.at < b.at ? 1 : -1));
     await writeText(dir, FILE, JSON.stringify(next, null, 1));
     return next;
   } catch (e) {

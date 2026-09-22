@@ -121,3 +121,12 @@ table.kt th { text-align: left; font-weight: 600; color: var(--muted); font-size
 table.kt td { padding: 3px 14px 3px 0; border-top: 1px solid var(--grid); }
 table.kt td.cond { color: var(--sub); font-size: 12.5px; }
 .notice { font-size: 13px; color: var(--chk); background: var(--chk-bg); border-radius: 8px; padding: 6px 10px; margin: -6px 0 12px; }
+.rec-now { font-size: 14px; color: var(--sub); margin-bottom: 6px; }
+.rec-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 560px) { .rec-grid { grid-template-columns: minmax(0, 1fr); } }
+.rec-grid select, .rec-grid input, .rec-note { font-size: 16px; }
+.rec-len { display: block; margin-top: 6px; font-size: 14px; color: var(--sub); }
+.rec-note { margin-top: 8px; }
+.rec-list { width: 100%; margin-top: 10px; }
+button.del { font: inherit; font-size: 12px; background: none; border: 0; color: var(--muted); cursor: pointer; }
+button.del:hover { color: var(--ng); }

@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
-import { judgeAll, zLimitA, uLimitH, seqText, RANK } from './judge.js';
+import { judgeAll, zLimitA, uLimitH, seqText, RANK, exactLimit, actLimit } from './judge.js';
 import './zu.css';
 
 const ROWS = DATA.rows;
@@ -173,6 +173,9 @@ function LimitChart({ shape, row, x, y, grade }) {
           return p ? <text x={sx(p.x) + 4} y={sy(yMax) + 14} style={{ fill: 'var(--sub)' }}>ここから上限なし →</text> : null;
         })()}
         {hov && <line x1={sx(hov.xv)} x2={sx(hov.xv)} y1={T} y2={sy(0)} stroke="var(--muted)" strokeDasharray="3 3" />}
+        {/* いまの寸法から縦・横に点線。横線がカーブの下にある所なら曲がる */}
+        <line x1={L} x2={W - R} y1={sy(Math.min(y, yMax))} y2={sy(Math.min(y, yMax))} stroke={col} strokeDasharray="5 4" strokeWidth="1.5" opacity=".8" />
+        <line x1={sx(Math.min(x, xMax))} x2={sx(Math.min(x, xMax))} y1={sy(0)} y2={T} stroke="var(--muted)" strokeDasharray="2 4" strokeWidth="1" />
         <circle cx={sx(Math.min(x, xMax))} cy={sy(Math.min(y, yMax))} r="8" fill={col} stroke="var(--card)" strokeWidth="2.5" />
         <text x={sx(Math.min(x, xMax)) + 12} y={sy(Math.min(y, yMax)) + 5} style={{ fill: 'var(--ink)', fontWeight: 700, fontSize: 14 }}>
           {GRADE[grade].mark} いまの寸法
@@ -188,6 +191,94 @@ function LimitChart({ shape, row, x, y, grade }) {
         {act && <span><i className="dot" style={{ background: 'var(--s2)' }} />実績（ここまで曲げた）</span>}
         <span><i style={{ background: 'var(--okzone)', height: 10 }} />曲がる範囲{act ? '（実績）' : ''}</span>
       </div>
+    </div>
+  );
+}
+
+// カーブ（計算）で、縦の値が y 以上になる横の範囲。「約 90〜110mm、約 220mm 以上」
+function rangesOver(pts, y, lastX) {
+  const out = [];
+  let st = null, prev = null;
+  for (const p of pts) {
+    const ok = p.y != null && p.y >= y;
+    if (ok && st == null) st = p.x;
+    if (!ok && st != null) { out.push([st, prev]); st = null; }
+    prev = p.x;
+  }
+  if (st != null) out.push([st, null]);
+  return out.map(([a, b]) => (b == null || b >= lastX ? `約 ${a}mm 以上` : a === b ? `約 ${a}mm` : `約 ${a}〜${b}mm`));
+}
+const limTxt = (v) => (v == null ? '曲げられない' : v === Infinity ? '上限なし' : `${v}mm まで`);
+
+// ③の上：いまの寸法での上限と、いまの寸法で曲げるための条件を、数字で言い切る
+function LimitDetail({ shape, row, x, y, other }) {
+  const [ex, setEx] = useState(undefined);   // undefined＝計算中
+  useEffect(() => {
+    setEx(undefined);
+    const id = setTimeout(() => setEx(exactLimit(row, shape, x, other)), 30);
+    return () => clearTimeout(id);
+  }, [row, shape, x, other]);
+  const Z = shape === 'Z';
+  const pts = Z ? (row.zCurve || []).map((p) => ({ x: p.S, y: p.A })) : (row.uCurve || []).map((p) => ({ x: p.W, y: p.H }));
+  const lastX = pts.length ? pts[pts.length - 1].x : 0;
+  const xN = Z ? '段差S' : '底W', yN = Z ? '短いほうのフランジ' : '立上り';
+  const act = Z ? actLimit(row, x) : null;
+
+  // いまの y で曲げるための x の条件
+  let need;
+  if (Z && row.zAct) {
+    const a = row.zAct;
+    if (y <= a.A) need = { txt: `${xN} を ${a.S}mm 以上`, src: '実績' };
+    else if (a.far && y <= a.far.A) need = { txt: `${xN} を ${a.far.S}mm 以上`, src: '実績' };
+    else need = { txt: `実績では ${a.far ? a.far.A : a.A}mm まで。${yN}を短くする`, src: '実績' };
+  } else {
+    const r = rangesOver(pts, y, lastX);
+    need = r.length ? { txt: `${xN} を ${r.join('、または ')}`, src: '計算・10mm刻み' } : { txt: `どの${xN}でも無理。${yN}を短くする`, src: '計算' };
+  }
+  return (
+    <div className="ld">
+      <div className="ld-box">
+        <div className="ld-q">{xN} <b>{x}mm</b> のとき、{yN}は</div>
+        {act ? (
+          <>
+            <div className="ld-a">{act.A == null ? act.why : `${act.A}mm まで`}<span className="tag">実績</span></div>
+            <div className="ld-s">計算では {ex === undefined ? '…' : limTxt(ex)}（この型は計算が甘く出るので実績を使う）</div>
+          </>
+        ) : (
+          <div className="ld-a">{ex === undefined ? '計算中…' : limTxt(ex)}<span className="tag">計算・1mm単位</span></div>
+        )}
+      </div>
+      <div className="ld-box">
+        <div className="ld-q">{yN} <b>{y}mm</b> で曲げるには</div>
+        <div className="ld-a">{need.txt}<span className="tag">{need.src}</span></div>
+      </div>
+    </div>
+  );
+}
+
+// ③の下：早見表。横の寸法ごとの上限を並べる。いまの寸法の列に色を付ける
+function QuickTable({ shape, row, x }) {
+  const Z = shape === 'Z';
+  const step = Z ? 5 : 10;
+  const pts = (Z ? (row.zCurve || []).map((p) => ({ x: p.S, y: p.A })) : (row.uCurve || []).map((p) => ({ x: p.W, y: p.H })))
+    .filter((p) => p.x % step === 0);
+  const span = Z ? 60 : 120;
+  const from = Math.max(pts.length ? pts[0].x : 0, Math.round((x - span / 2) / step) * step);
+  const cols = pts.filter((p) => p.x >= from && p.x <= from + span);
+  const near = cols.reduce((b, p) => (!b || Math.abs(p.x - x) < Math.abs(b.x - x) ? p : b), null);
+  const v = (y) => (y == null ? '✕' : y >= 399 ? 'なし' : Math.floor(y));
+  return (
+    <div className="qt-wrap">
+      <table className="qt">
+        <tbody>
+          <tr><th>{Z ? '段差S' : '底W'}</th>{cols.map((p) => <td key={p.x} className={p === near ? 'now' : ''}>{p.x}</td>)}</tr>
+          {Z && row.zAct && (
+            <tr><th>実績の上限</th>{cols.map((p) => { const a = actLimit(row, p.x); return <td key={p.x} className={p === near ? 'now' : ''}>{a.A == null ? '✕' : a.A}</td>; })}</tr>
+          )}
+          <tr><th>{Z ? '計算の上限' : '立上りの上限'}</th>{cols.map((p) => <td key={p.x} className={p === near ? 'now' : ''}>{v(p.y)}</td>)}</tr>
+        </tbody>
+      </table>
+      <div className="hint">早見表（mm）。✕＝最短でも曲げられない、なし＝上限なし。{Z ? '' : '左右の立上りが同じ高さのときの値。'}</div>
     </div>
   );
 }
@@ -337,7 +428,9 @@ function App() {
       {shown && (
         <section className="card" style={{ marginTop: 12 }}>
           <h2>③ どこまで曲げられるか（{shown.die}・{mat} t{t}）</h2>
+          <LimitDetail shape={shape} row={shown.row} x={x} y={y} other={Math.max(dims[0], dims[2])} />
           <LimitChart shape={shape} row={shown.row} x={x} y={y} grade={shown.grade} />
+          <QuickTable shape={shape} row={shown.row} x={x} />
           <div className="hint">
             {shape === 'Z'
               ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'

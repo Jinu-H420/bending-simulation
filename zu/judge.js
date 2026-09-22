@@ -126,6 +126,32 @@ export function judgeU(row, H1, W, H2) {
   return { ...base, grade: 'ng', src: '計算', why: 'どの曲げ順・置き方でも型に当たります', geo };
 }
 
+// いまの寸法での上限を、干渉の計算で1mm単位まで求める（グラフは10mm刻みなので目安）。
+//   Z  ：段差S＝x、長いほうのフランジ＝other のとき、短いほうのフランジの上限
+//   コ ：底W＝x のとき、立上りの上限（左右同じ高さで見る。グラフと同じ条件）
+// 返り値：数値／Infinity（上限なし）／null（その x では最短でも曲げられない）
+export function exactLimit(row, shape, x, other) {
+  if (row.nobi == null) return null;
+  const lo = Math.max(row.minOut, 5);
+  const ok = shape === 'Z'
+    ? (a) => geoCheck(row, [a, x, Math.max(other, a)], [1, -1]).ok
+    : (h) => geoCheck(row, [h, x, h], [1, 1]).ok;
+  if (!ok(lo)) return null;
+  if (ok(400)) return Infinity;
+  let a = lo, b = 400;
+  while (b - a > 0.5) { const m = (a + b) / 2; if (ok(m)) a = m; else b = m; }
+  return Math.floor(a);
+}
+
+// 実績の上限（Z）。段差Sで決まる。実績が無ければ null
+export function actLimit(row, S) {
+  const act = row.zAct;
+  if (!act) return null;
+  if (S < act.S) return { A: null, why: `段差S ${act.S}mm 未満は実績なし` };
+  if (act.far && S >= act.far.S) return { A: act.far.A };
+  return { A: act.A };
+}
+
 // 一度に曲げられる長さ。ダイの所有台数（1台835mm）と機械の長さの短いほう
 export function lenLimit(row) {
   const m = row.machine === 'HG2203' ? MACHINE_LIB.hg2203 : MACHINE_LIB.hd3504nt;

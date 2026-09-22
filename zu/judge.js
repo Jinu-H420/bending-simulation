@@ -237,11 +237,11 @@ export function judgeU(row, H1, W, H2, L) {
       }
       naka.angle = a.angle;
       if (inner >= SUTE_MIN_INNER) {
-        return { ...base, grade: 'naka', src: '中押し', geo, naka,
+        return { ...base, grade: 'naka', src: '中押し', geo, naka, hit: where,
           why: `普通の曲げ方では${where}に当たります。中押しなら曲げられます（への字 ${a.angle}°以上、内-内 ${inner}mm）` };
       }
       // 計算では通るが、現場の決まり（内-内120mm）より狭い。確かめてから
-      return { ...base, grade: 'check', src: '中押し', geo, naka,
+      return { ...base, grade: 'check', src: '中押し', geo, naka, hit: where,
         why: `普通の曲げ方では${where}に当たります。中押しは計算では通ります（への字 ${a.angle}°以上）が、内-内 ${inner}mm は現場の決まり ${SUTE_MIN_INNER}mm より狭く、まだ確かめていません`,
         fix: [winFix, `底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に`].filter(Boolean).join('、または') };
     }

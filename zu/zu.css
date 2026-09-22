@@ -57,13 +57,14 @@ input, select { font: inherit; font-size: 20px; padding: 7px 10px; border-radius
 
 .verdict { border-radius: 14px; padding: 14px 16px; border: 2px solid; }
 .verdict.ok { background: var(--ok-bg); border-color: var(--ok); }
-.verdict.check { background: var(--chk-bg); border-color: var(--chk); }
+.verdict.check { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .verdict.ng { background: var(--ng-bg); border-color: var(--ng); }
 .v-head { display: flex; align-items: center; gap: 12px; }
 .v-mark { font-size: 46px; font-weight: 800; line-height: 1; }
 .v-word { font-size: 28px; font-weight: 800; }
 .verdict.ok .v-mark, .verdict.ok .v-word { color: var(--ok); }
-.verdict.check .v-mark, .verdict.check .v-word { color: var(--chk); }
+.verdict.check .v-mark, .verdict.check .v-word { color: var(--ok); }
+.verdict.check .v-word { font-size: 24px; }
 .verdict.ng .v-mark, .verdict.ng .v-word { color: var(--ng); }
 .v-body { margin-top: 6px; font-size: 15.5px; }
 .v-body b { font-size: 17px; }
@@ -152,3 +153,20 @@ button.del:hover { color: var(--ng); }
 .ns-chips b { color: var(--ink); }
 .simbtn.naka { color: var(--s3); border-color: var(--s3); }
 @media (max-width: 480px) { .ns-row { gap: 10px; } .ns-head { font-size: 13px; flex-direction: column; gap: 3px; } .ns-sub { display: none; } .ns-arrow { right: -9px; } }
+
+/* △＝計算では曲がる。曲げ屋さんの確認が要ることは小さな札で添えるだけ */
+.v-head { flex-wrap: wrap; }
+.v-ask { margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--chk); background: var(--chk-bg);
+  border: 1px solid color-mix(in srgb, var(--chk) 40%, transparent); padding: 2px 10px; border-radius: 99px; white-space: nowrap; }
+.g.check { color: var(--chk); font-weight: 600; }
+/* 中押しでしか曲がらない：曲げ方の順に ○✕ を並べる */
+.mlad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.ml-cell { border-radius: 10px; padding: 7px 8px 8px; text-align: center; background: var(--card); border: 1px solid var(--line); }
+.ml-cell.no { opacity: .8; }
+.ml-cell.no .ml-mark { color: var(--ng); }
+.ml-cell.yes { border: 2px solid var(--s3); background: color-mix(in srgb, var(--s3) 14%, var(--card)); }
+.ml-cell.yes .ml-mark { color: var(--s3); }
+.ml-name { font-size: 13px; font-weight: 700; color: var(--sub); }
+.ml-cell.yes .ml-name { color: var(--ink); }
+.ml-mark { font-size: 26px; font-weight: 800; line-height: 1.15; }
+.ml-note { font-size: 12px; color: var(--sub); line-height: 1.35; }

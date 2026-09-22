@@ -15,6 +15,7 @@ const SHAPE = {
 const GRADE = {
   'ok-act': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 実績' },
   'ok-sim': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 計算' },
+  alt: { cls: 'ok', mark: '○', word: 'ヤゲンを替えれば曲がります', short: '○ ヤゲン替え' },
   naka: { cls: 'ok', mark: '○', word: '中押しなら曲がります', short: '○ 中押し' },
   check: { cls: 'check', mark: '△', word: '確かめが必要', short: '△ 要確認' },
   ng: { cls: 'ng', mark: '✕', word: '曲がりません', short: '✕' },
@@ -40,7 +41,7 @@ function simLink(shape, r, dims, mat, L) {
     t: row.t, matType: mat, inputMode: 'outer', outerSegs: dims, nobiOverride: null, bendLen: L,
     bends: dirs.map((d) => ({ angle: 90, dir: d })),
     dieSel: row.sel, machineSel: row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt', dieFlip: false,
-    punchType: '904061', punchFlip: false, chukanSel: 'std', dieBase: true, seq,
+    punchType: r.punch || '904061', punchFlip: !!r.punchFlip, chukanSel: 'std', dieBase: true, seq,
     nakaOn: r.src === '中押し',   // 中押しの判定なら、中押しの工程で開く
     nakaAngle: (r.naka && r.naka.angle) || 20,
   };
@@ -446,7 +447,7 @@ function App() {
                 <span className="v-word">{GRADE[best.grade].word}</span>
               </div>
               <div className="v-body">
-                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span></div>}
+                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.punch && <span className="tag">ヤゲン {best.punch}</span>}</div>}
                 <div>{best.why}</div>
                 {best.grade !== 'ng' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
               </div>

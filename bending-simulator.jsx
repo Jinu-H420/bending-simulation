@@ -1366,6 +1366,8 @@ const BendingSimulator = () => {
   // 中押し（捨て曲げ）でシミュレーションする：底の真ん中をへの字 → 両サイド → 中押しで戻す
   const [nakaOn, setNakaOn] = useState(false);
   const [nakaAngle, setNakaAngle] = useState(10);   // への字の角度（°）
+  // 曲がらないとき、ほかのヤゲン（くの字など）なら曲がるか。{ busy, ok:{punch,flip,seq,special}, win:{punch,win} }
+  const [altPunch, setAltPunch] = useState(null);
   // サーバー保存（GitHub）。接続先とトークンはこの端末のブラウザにだけ置く
   const [cloudConf, setCloudConf] = useState(null);      // つながっている共有フォルダ
   const cloudConfRef = useRef(null);
@@ -1783,6 +1785,49 @@ const BendingSimulator = () => {
   // 捨て曲げが使えるか。効くのは上型（ヤゲン・中間板・ホルダ・柱）に当たって
   // いる場合だけで、フランジ不足やダイ側の干渉は捨て曲げでも解決しない。
   // 対象は両隣の曲げが同じ向きの辺＝コの字・ハットの底。
+  // 曲がらないとき、いまの金型のまま、ほかのヤゲンを順に試す（普通のヤゲン → 特殊 くの字）。
+  // 特殊 くの字は曲げ長さが中央の窓に収まるときだけ使える。重いので少し待ってから1本ずつ試す。
+  // 上型・ダイに当たって曲がらないときだけ（段差・最小フランジ・長さの✕はヤゲンを替えても直らない）
+  const altWorth = !allOK && (!noHit || !!winNG) && zStepWarn.length === 0 && minOutWarn.length === 0 && !lenNG;
+  useEffect(() => {
+    if (!altWorth) { setAltPunch(null); return; }
+    let cancel = false;
+    setAltPunch({ busy: true });
+    const ids = Object.keys(PUNCH_LIB);
+    const order = [...ids.filter((k) => !PUNCH_LIB[k].special), ...ids.filter((k) => PUNCH_LIB[k].special)];
+    const cands = order.flatMap((k) => [[k, false], [k, true]]).filter(([k, f]) => !(k === punchType && f === punchFlip));
+    let i = -1, win = null;
+    const next = () => {
+      if (cancel) return;
+      // まず、いまのヤゲンのまま曲げ順・突き当てを変えれば通るか。通るなら替える必要は無い
+      if (i === -1) {
+        i = 0;
+        const r0 = searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, 1, openGap);
+        if (r0.sols.length && !winNG) { setAltPunch(null); return; }
+        setTimeout(next, 0);
+        return;
+      }
+      if (i >= cands.length) { setAltPunch({ win }); return; }
+      const [pid, flip] = cands[i++];
+      const sp = PUNCH_LIB[pid].special;
+      const r = searchSequences(part, vHalf, diePolys, pid, flip, chukanSel, 1, openGap);
+      if (r.sols.length) {
+        if (sp && bendLen > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; }
+        else { setAltPunch({ ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win }); return; }
+      }
+      setTimeout(next, 0);
+    };
+    const id = setTimeout(next, 500);
+    return () => { cancel = true; clearTimeout(id); };
+  }, [altWorth, part, vHalf, diePolys, chukanSel, openGap, bendLen, punchType, punchFlip, winNG]);
+  const applyAltPunch = () => {
+    const a = altPunch && altPunch.ok;
+    if (!a) return;
+    setNakaOn(false);
+    setPunchType(a.punch); setPunchFlip(a.flip); setSeq(a.seq);
+    setStep(0); setProg(1); setPlaying(false);
+  };
+
   const suteHint = useMemo(() => {
     if (allOK) return null;
     const upperHit = verdicts.some((v) => v.firstHit &&
@@ -2422,7 +2467,7 @@ const BendingSimulator = () => {
             suteHint.ok ? 'bg-amber-950/50 border-amber-700 text-amber-200'
                         : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
             {suteHint.ok
-              ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）`
+              ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）${suteHint.inner < SUTE_MIN_INNER ? `。ただし内-内 ${SUTE_MIN_INNER}mm 未満は現場でまだ確かめていない` : ''}`
               : suteHint.shortHalf
               ? `◇ 中押し（捨て曲げ）も不可 — 底の半分 ${suteHint.shortHalf.half.toFixed(1)}mm が最小フランジ ${suteHint.shortHalf.need}mm より短く、への字に曲げられません`
               : `◇ 中押し（捨て曲げ）も不可 — 押し切ったとき、刃先から ${suteHint.at}mm の高さで上型が立上りに当たります（内-内 ${suteHint.inner.toFixed(1)}mm、この高さの立上りには ${suteHint.needW}mm 要る。この内-内なら立上りの内側 ${suteHint.maxH}mm まで）`}
@@ -2431,6 +2476,21 @@ const BendingSimulator = () => {
                 className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold">
                 中押しでシミュレーションする
               </button>
+            )}
+          </div>
+        )}
+        {altWorth && altPunch && (altPunch.busy || altPunch.ok || altPunch.win) && (
+          <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-sky-950/40 border-sky-700 text-sky-100 flex items-center gap-3 flex-wrap">
+            {altPunch.busy ? (
+              <span className="text-sky-300">ほかのヤゲン（くの字など）なら曲がるか調べています…</span>
+            ) : altPunch.ok ? (
+              <>
+                <span>◇ <b>ヤゲン {altPunch.ok.punch}{altPunch.ok.flip ? '（反転）' : ''}</b> なら曲がります
+                  {altPunch.ok.special ? `（くの字の窓に入るので、曲げ長さ ${altPunch.ok.special.win}mm まで）` : ''}</span>
+                <button onClick={applyAltPunch} className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold">このヤゲンにする</button>
+              </>
+            ) : (
+              <span>◇ <b>{altPunch.win.punch}</b> なら、曲げ長さを {altPunch.win.win}mm 以下にすれば曲がります（いま {bendLen}mm。くの字の窓 {altPunch.win.win}mm を超えています）</span>
             )}
           </div>
         )}
@@ -3032,5 +3092,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB,
 };

@@ -12,12 +12,13 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
-  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck,
+  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB,
 } from '../bending-simulator.jsx';
 
 const PUNCH = '904061';
 // naka＝普通の曲げ方では上型に当たるが、中押し（捨て曲げ）なら曲がる
-export const RANK = { 'ok-act': 3, 'ok-sim': 2, naka: 1.5, check: 1, ng: 0 };
+// alt＝904061 では当たるが、ほかのヤゲン（くの字など）に替えれば曲がる
+export const RANK = { 'ok-act': 3, 'ok-sim': 2, alt: 1.8, naka: 1.5, check: 1, ng: 0 };
 const UPPER = ['ヤゲン', '中間板', 'ホルダ', '柱（機械上部）', 'ヤゲン（中低）'];
 
 // 普通の曲げ順（入力どおり・突き当てそのまま）で、最初に何に当たるか。
@@ -86,8 +87,33 @@ function geoCheck(row, outer, dirs) {
 
 const f1 = (x) => (Math.round(x * 10) / 10).toString();
 
+// 904061 で当たるとき、ほかのヤゲンを試す。普通のヤゲン → 特殊（くの字）の順。
+// 特殊 くの字は中央の窓（165版＝200mm、100版＝70mm）に曲げ長さ L が収まるときだけ使える。
+// 返り値 { ok:{punch, flip, seq, special}, win:{punch, win}（窓さえ収まれば通るもの） }
+function altPunch(row, outer, dirs, L) {
+  const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
+  const nobi = row.nobi;
+  const flat = outer.map((x, i) => x - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
+  if (flat.some((x) => x <= 0.5)) return {};
+  const part = { t: row.t, segs: flat, bends: dirs.map((d) => ({ angle: 90, dir: d })), grow: dirs.map(() => nobi - row.t / 2) };
+  const ids = Object.keys(PUNCH_LIB);
+  const order = [...ids.filter((k) => !PUNCH_LIB[k].special && k !== PUNCH), ...ids.filter((k) => PUNCH_LIB[k].special)];
+  const cands = [[PUNCH, true], ...order.flatMap((k) => [[k, false], [k, true]])];
+  let win = null;
+  for (const [pid, flip] of cands) {
+    const sp = PUNCH_LIB[pid].special;
+    if (sp && win && win.punch === pid) continue;
+    const r = searchSequences(part, info.vHalf, info.polys, pid, flip, 'std', 1, Math.max(0, 170 - row.t));
+    if (!r.sols.length) continue;
+    if (sp && L > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; continue; }
+    return { ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win };
+  }
+  return { win };
+}
+const punchName = (p, flip) => `ヤゲン ${p}${flip ? '（反転）' : ''}`;
+
 // Z曲げ：outer = [A, S, B]（外寸）
-export function judgeZ(row, A, S, B) {
+export function judgeZ(row, A, S, B, L) {
   const base = { row, die: `V${row.V}`, machine: machineName(row) };
   if (row.nobi == null) return { ...base, grade: 'ng', why: '片伸びが折り曲げ表にありません' };
   const short = Math.min(A, B), long = Math.max(A, B);
@@ -124,6 +150,11 @@ export function judgeZ(row, A, S, B) {
       fix: `段差Sを ${Math.ceil(row.zSimS)}mm 以上に`, geo };
   }
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（この型の実績はまだありません）', geo };
+  const alt = altPunch(row, [A, S, B], [1, -1], L);
+  if (alt.ok) {
+    return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, geo: { ok: true, seq: alt.ok.seq },
+      why: `904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
+  }
   const sMin = zSimMinS(row);
   if (sMin != null && S < sMin) return { ...base, grade: 'ng', src: '計算', why: `段差S ${S}mm が狭すぎます（計算で約 ${sMin}mm 以上）`, fix: `段差Sを ${sMin}mm 以上に`, geo };
   const lim = zLimitA(row, S);
@@ -134,7 +165,7 @@ export function judgeZ(row, A, S, B) {
 }
 
 // コの字：outer = [H1, W, H2]（外寸）
-export function judgeU(row, H1, W, H2) {
+export function judgeU(row, H1, W, H2, L) {
   const base = { row, die: `V${row.V}`, machine: machineName(row) };
   if (row.nobi == null) return { ...base, grade: 'ng', why: '片伸びが折り曲げ表にありません' };
   const short = Math.min(H1, H2);
@@ -143,6 +174,13 @@ export function judgeU(row, H1, W, H2) {
   }
   const geo = geoCheck(row, [H1, W, H2], [1, 1]);
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（コの字の実績はまだありません）', geo };
+  const alt = altPunch(row, [H1, W, H2], [1, 1], L);
+  if (alt.ok) {
+    return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, geo: { ok: true, seq: alt.ok.seq },
+      why: `904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（くの字の窓に入るので、曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
+  }
+  // 特殊 くの字なら通るのに、曲げ長さが窓を超えている
+  const winFix = alt.win ? `${alt.win.punch}を使い、曲げ長さ L を ${alt.win.win}mm 以下に` : null;
 
   // 中押し（捨て曲げ）：底をへの字に曲げ → 両サイドを90° → 底を中押しで戻す。上型に当たるときだけ効く。
   // 押し切った瞬間に上型がコの字の内側に入るかを計算で見る。現場の決まりは内-内120mm以上
@@ -155,7 +193,7 @@ export function judgeU(row, H1, W, H2) {
     if (W / 2 < row.minOut) {
       return { ...base, grade: 'ng', src: '計算', geo,
         why: `${where}に当たります。中押しも、底の半分 ${W / 2}mm が最小フランジ ${row.minOut}mm より短く、への字に曲げられません`,
-        fix: `底Wを ${Math.ceil(2 * row.minOut)}mm 以上に（中押し）` };
+        fix: [`底Wを ${Math.ceil(2 * row.minOut)}mm 以上に（中押し）`, winFix].filter(Boolean).join('、または') };
     }
     const n = nakaOshi(PUNCH, false, 'std', inner, Math.max(H1, H2) - row.t);
     const naka = { inner, clear: +n.clear.toFixed(1), at: n.at, maxH: n.maxH };
@@ -166,7 +204,7 @@ export function judgeU(row, H1, W, H2) {
         const f = a.fail || {};
         return { ...base, grade: 'ng', src: '計算', geo, naka,
           why: `${where}に当たります。中押しでも、への字を${NAKA_ANGLES[NAKA_ANGLES.length - 1]}°にしても ${STEP_NAME[f.step] || ''}で${f.where || '工具'}に当たります`,
-          fix: `底Wを広くするか、立上りを低く` };
+          fix: [`底Wを広くするか、立上りを低く`, winFix].filter(Boolean).join('、または') };
       }
       naka.angle = a.angle;
       if (inner >= SUTE_MIN_INNER) {
@@ -176,14 +214,14 @@ export function judgeU(row, H1, W, H2) {
       // 計算では通るが、現場の決まり（内-内120mm）より狭い。確かめてから
       return { ...base, grade: 'check', src: '中押し', geo, naka,
         why: `普通の曲げ方では${where}に当たります。中押しは計算では通ります（への字 ${a.angle}°以上）が、内-内 ${inner}mm は現場の決まり ${SUTE_MIN_INNER}mm より狭く、まだ確かめていません`,
-        fix: `底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に` };
+        fix: [`底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に`, winFix].filter(Boolean).join('、または') };
     }
     const lim = uLimitH(row, W);
     const hFix = lim != null && Number.isFinite(lim) && short > lim ? `低いほうの立上りを ${Math.floor(lim)}mm 以下に（普通に曲げる）` : null;
     const mFix = Number.isFinite(n.maxH) ? `高いほうの立上りを ${Math.floor(n.maxH + row.t)}mm 以下に（中押し）` : null;
     return { ...base, grade: 'ng', src: '計算', geo, naka,
       why: `${where}に当たります。中押しでも、押し切ったとき刃先から ${n.at}mm の高さで上型が立上りに当たります（そこには内-内 ${n.needW}mm 要る。いま ${inner}mm）`,
-      fix: [hFix, mFix, `底Wを ${Math.ceil(n.needW + 2 * row.t)}mm 以上に（中押し）`].filter(Boolean).join('、または') };
+      fix: [hFix, mFix, `底Wを ${Math.ceil(n.needW + 2 * row.t)}mm 以上に（中押し）`, winFix].filter(Boolean).join('、または') };
   }
   const wMin = uSimMinW(row);
   if (wMin != null && W < wMin) return { ...base, grade: 'ng', src: '計算', why: `底 ${W}mm が狭すぎます（計算で約 ${wMin}mm 以上）`, fix: `底を ${wMin}mm 以上に`, geo };
@@ -308,7 +346,7 @@ function withLength(res, L) {
 export function judgeAll(rows, shape, mat, t, dims, L) {
   const cand = rows.filter((r) => r.mat === mat && r.t === t);
   const baseV = (() => { const b = pickDie(mat, t); return b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null; })();
-  const res = cand.map((row) => withLength(shape === 'Z' ? judgeZ(row, ...dims) : judgeU(row, ...dims), L));
+  const res = cand.map((row) => withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L));
   res.sort((a, b) => (RANK[b.grade] - RANK[a.grade]) || ((b.row.V === baseV) - (a.row.V === baseV)) || (a.row.V - b.row.V));
   return { list: res, best: res[0] || null, baseV };
 }

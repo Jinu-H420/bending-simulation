@@ -2909,4 +2909,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
+  DIE_STOCK, DIE_UNIT_LEN,
 };

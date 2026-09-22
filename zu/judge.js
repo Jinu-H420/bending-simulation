@@ -11,7 +11,7 @@
 //   check   △ 確かめが必要（実績の範囲外で、計算では通る など）
 //   ng      ✕ 曲がらない
 import {
-  resolveDie, searchSequences, pickDie, MACHINE_LIB,
+  resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN,
 } from '../bending-simulator.jsx';
 
 const PUNCH = '904061';
@@ -126,12 +126,31 @@ export function judgeU(row, H1, W, H2) {
   return { ...base, grade: 'ng', src: '計算', why: 'どの曲げ順・置き方でも型に当たります', geo };
 }
 
+// 一度に曲げられる長さ。ダイの所有台数（1台835mm）と機械の長さの短いほう
+export function lenLimit(row) {
+  const m = row.machine === 'HG2203' ? MACHINE_LIB.hg2203 : MACHINE_LIB.hd3504nt;
+  const n = DIE_STOCK[row.V];
+  const c = [{ v: m.len, why: `${row.machine}の長さ` }];
+  if (n) c.push({ v: n * DIE_UNIT_LEN, why: `V${row.V}のダイ ${n}台×${DIE_UNIT_LEN}mm` });
+  return c.reduce((a, b) => (a.v <= b.v ? a : b));
+}
+function withLength(res, L) {
+  if (!(L > 0)) return res;
+  const lim = lenLimit(res.row);
+  if (L <= lim.v) return { ...res, lenLim: lim };
+  const why = `曲げ長さ L ${L}mm が長すぎます（${lim.why}で ${lim.v}mm まで）`;
+  const fix = `L を ${lim.v}mm 以下に`;
+  // 形でも当たるときは、両方の理由を並べる
+  if (res.grade === 'ng') return { ...res, lenLim: lim, why: `${res.why}。さらに${why}`, fix: res.fix ? `${res.fix}、かつ${fix}` : fix };
+  return { ...res, lenLim: lim, grade: 'ng', why, fix };
+}
+
 // その材質・板厚で使う型を全部判定し、いちばん良いものを答えにする。
 // 同じ等級なら、折り曲げ表の基準金型（その板厚で普段使うV）を優先する。
-export function judgeAll(rows, shape, mat, t, dims) {
+export function judgeAll(rows, shape, mat, t, dims, L) {
   const cand = rows.filter((r) => r.mat === mat && r.t === t);
   const baseV = (() => { const b = pickDie(mat, t); return b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null; })();
-  const res = cand.map((row) => (shape === 'Z' ? judgeZ(row, ...dims) : judgeU(row, ...dims)));
+  const res = cand.map((row) => withLength(shape === 'Z' ? judgeZ(row, ...dims) : judgeU(row, ...dims), L));
   res.sort((a, b) => (RANK[b.grade] - RANK[a.grade]) || ((b.row.V === baseV) - (a.row.V === baseV)) || (a.row.V - b.row.V));
   return { list: res, best: res[0] || null, baseV };
 }

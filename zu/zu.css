@@ -41,6 +41,8 @@ header p { margin: 2px 0 14px; color: var(--sub); font-size: 14.5px; }
 .fig .plate { stroke: var(--ink); }
 .fig .dim { stroke: var(--muted); }
 .fig text { fill: var(--ink); font-size: 15px; font-weight: 700; }
+.fig .depth { stroke: var(--muted); opacity: .7; }
+.fig .depth text { stroke: none; }
 .fig .lab { fill: var(--sub); font-weight: 600; font-size: 13px; }
 
 .dims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }

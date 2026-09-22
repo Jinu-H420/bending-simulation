@@ -19,7 +19,7 @@ const GRADE = {
 };
 
 // シミュレーター本体で、この形・この型を開くリンク。当たる工程・瞬間で止まって開く。
-function simLink(shape, r, dims, mat) {
+function simLink(shape, r, dims, mat, L) {
   const row = r.row;
   const dirs = shape === 'Z' ? [1, -1] : [1, 1];
   const seq = r.geo && r.geo.ok ? r.geo.seq
@@ -33,7 +33,7 @@ function simLink(shape, r, dims, mat) {
     lines.push(`判定：${r.why}。当たる瞬間で止めています（橙の丸が当たる所）。「▶ 全工程再生」で動きも見られます。`);
   }
   const params = {
-    t: row.t, matType: mat, inputMode: 'outer', outerSegs: dims, nobiOverride: null,
+    t: row.t, matType: mat, inputMode: 'outer', outerSegs: dims, nobiOverride: null, bendLen: L,
     bends: dirs.map((d) => ({ angle: 90, dir: d })),
     dieSel: row.sel, machineSel: row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt', dieFlip: false,
     punchType: '904061', punchFlip: false, chukanSel: 'std', dieBase: true, seq,
@@ -58,7 +58,7 @@ function Icon({ kind }) {
 }
 
 // 形の図（寸法の取り方）。数字は入力に合わせて変わる
-function Figure({ shape, dims }) {
+function Figure({ shape, dims, L }) {
   const [a, b, c] = dims;
   const dim = (x1, y1, x2, y2, txt, tx, ty, anchor = 'middle') => (
     <g>
@@ -67,12 +67,26 @@ function Figure({ shape, dims }) {
     </g>
   );
   return (
-    <svg className="fig" viewBox="0 0 320 190" role="img" aria-label="寸法の取り方">
+    <svg className="fig" viewBox="0 -20 330 210" role="img" aria-label="寸法の取り方">
       <defs>
         <marker id="ar" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity=".55" />
         </marker>
       </defs>
+      {(() => {
+        // 奥行き（L方向）を斜めに描いて、立体に見せる
+        const P = shape === 'Z' ? [[40, 60], [150, 60], [150, 140], [270, 140]] : [[70, 40], [70, 150], [250, 150], [250, 40]];
+        const dx = 30, dy = -22;
+        const back = P.map(([x, y]) => `${x + dx},${y + dy}`).join(' ');
+        const e = P[P.length - 1];
+        return (
+          <g className="depth">
+            <polyline points={back} fill="none" strokeWidth="2" />
+            {P.map(([x, y], i) => <line key={i} x1={x} y1={y} x2={x + dx} y2={y + dy} strokeWidth="2" />)}
+            <text className="lab" x={e[0] + dx / 2 + 8} y={e[1] + dy / 2 + 2}>L {L}</text>
+          </g>
+        );
+      })()}
       {shape === 'Z' ? (
         <>
           <polyline className="plate" points="40,60 150,60 150,140 270,140" fill="none" strokeWidth="7" strokeLinejoin="miter" />
@@ -183,6 +197,8 @@ function App() {
   const [dimsBy, setDimsBy] = useState({ Z: SHAPE.Z.def.map(String), U: SHAPE.U.def.map(String) });
   const [mat, setMat] = useState('鉄');
   const [t, setT] = useState(4.5);
+  const [Ltxt, setLtxt] = useState('1000');   // 曲げ長さ L（曲げ線に沿った製品の長さ）
+  const Lnum = Number(Ltxt);
   const [pickV, setPickV] = useState(null);
   const [copied, setCopied] = useState(false);
   const S = SHAPE[shape];
@@ -198,9 +214,9 @@ function App() {
   const [res, setRes] = useState(null);
   useEffect(() => {
     if (!valid) { setRes(null); return; }
-    const id = setTimeout(() => setRes(judgeAll(ROWS, shape, mat, t, dims)), 200);
+    const id = setTimeout(() => setRes(judgeAll(ROWS, shape, mat, t, dims, Lnum)), 200);
     return () => clearTimeout(id);
-  }, [shape, mat, t, dimsTxt.join('|')]);
+  }, [shape, mat, t, dimsTxt.join('|'), Ltxt]);
   useEffect(() => setPickV(null), [shape, mat, t]);
 
   const best = res && res.best;
@@ -212,14 +228,14 @@ function App() {
     if (!best) return '';
     const g = GRADE[best.grade];
     const d = S.keys.map((k, i) => `${k}=${dims[i]}`).join('・');
-    const head = `${S.name}　${mat} t${t}　${d}（外寸）`;
+    const head = `${S.name}　${mat} t${t}　${d}（外寸）　L=${Ltxt}`;
     if (best.grade === 'ng') {
       const fixes = fixList(res.list).map((f) => `・${f.dies}：${f.fix}`);
       return `${head}\n→ 曲がりません。${best.why}。${fixes.length ? `\nこうすれば曲げられます\n${fixes.join('\n')}` : ''}`;
     }
     const src = best.grade === 'ok-act' ? '実績のある範囲です' : best.grade === 'ok-sim' ? '計算で確認しました' : '';
     return `${head}\n→ ${g.word}（${best.die}・${best.machine}）。${best.grade === 'check' ? `${best.why}。${best.fix ? `${best.fix}すれば確実です。` : ''}` : src}`;
-  }, [best, shape, mat, t, dimsTxt.join('|')]);
+  }, [best, shape, mat, t, dimsTxt.join('|'), Ltxt]);
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(answer); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* コピーできない環境 */ }
@@ -243,7 +259,7 @@ function App() {
       <div className="grid2">
         <section className="card">
           <h2>① 寸法（外寸 mm）と板厚</h2>
-          <Figure shape={shape} dims={dimsTxt} />
+          <Figure shape={shape} dims={dimsTxt} L={Ltxt} />
           <div className="dims">
             {S.keys.map((k, i) => (
               <label key={k} className="f"><span>{S.names[i]}</span>
@@ -261,8 +277,11 @@ function App() {
                 {tList.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
             </label>
+            <label className="f" style={{ width: 140 }}><span>曲げ長さ L</span>
+              <input inputMode="decimal" value={Ltxt} onChange={(e) => setLtxt(e.target.value)} />
+            </label>
           </div>
-          <div className="hint">板厚は、実際に使う型がある厚さだけ選べます。ボンデは鉄で見てください。角度は90°。</div>
+          <div className="hint">L は曲げ線に沿った製品の長さ（図の奥行き方向）。板厚は、実際に使う型がある厚さだけ選べます。ボンデは鉄で見てください。角度は90°。</div>
         </section>
 
         <section>
@@ -286,7 +305,7 @@ function App() {
                   {fixList(res.list).map((f) => <div key={f.dies}>・{f.dies}：{f.fix}</div>)}
                 </div>
               )}
-              <a className={`simbtn ${best.grade === 'ng' ? 'strong' : ''}`} href={simLink(shape, best, dims, mat)} target="_blank" rel="noreferrer">
+              <a className={`simbtn ${best.grade === 'ng' ? 'strong' : ''}`} href={simLink(shape, best, dims, mat, Lnum)} target="_blank" rel="noreferrer">
                 {best.grade === 'ng' ? `▶ どこが当たるか、シミュレーションで見る（${best.die}）` : `▶ シミュレーションで見る（${best.die}）`}
               </a>
             </div>
@@ -304,7 +323,7 @@ function App() {
                       <td>{r.machine}</td>
                       <td className={`g ${r.grade}`}>{GRADE[r.grade].short}</td>
                       <td>{r.why}</td>
-                      <td><a className="see" href={simLink(shape, r, dims, mat)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>見る</a></td>
+                      <td><a className="see" href={simLink(shape, r, dims, mat, Lnum)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>見る</a></td>
                     </tr>
                   ))}
                 </tbody>

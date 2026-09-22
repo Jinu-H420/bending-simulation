@@ -259,7 +259,8 @@ function LimitDetail({ shape, row, x, y, other }) {
       {!Z && (() => {
         // 中押しで押し切ったとき、いまの立上りの高さに上型が入る内-内
         const n = nakaOshi(PUNCH, false, 'std', 0, other - row.t);
-        const wCalc = Math.ceil(n.needW + 2 * row.t), wRule = Math.ceil(SUTE_MIN_INNER + 2 * row.t);
+        // 底の半分ずつが最小フランジ以上いる（への字を曲げるため）
+        const wCalc = Math.max(Math.ceil(n.needW + 2 * row.t), Math.ceil(2 * row.minOut)), wRule = Math.max(Math.ceil(SUTE_MIN_INNER + 2 * row.t), Math.ceil(2 * row.minOut));
         return (
           <div className="ld-naka">
             中押しなら（上型に当たる形でも）：立上り {other}mm なら 底W <b>{wCalc}mm 以上</b> で上型が入る（計算）。

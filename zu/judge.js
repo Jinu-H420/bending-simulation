@@ -151,6 +151,12 @@ export function judgeU(row, H1, W, H2) {
   if (where && UPPER.includes(where)) {
     // 押し切った瞬間に、上型（904061・中間板・ホルダ・柱）がコの字の内側に入るか（本体の nakaOshi）
     const inner = +(W - 2 * row.t).toFixed(1);
+    // への字は底の真ん中をV溝で曲げるので、底の半分ずつが最小フランジ以上いる
+    if (W / 2 < row.minOut) {
+      return { ...base, grade: 'ng', src: '計算', geo,
+        why: `${where}に当たります。中押しも、底の半分 ${W / 2}mm が最小フランジ ${row.minOut}mm より短く、への字に曲げられません`,
+        fix: `底Wを ${Math.ceil(2 * row.minOut)}mm 以上に（中押し）` };
+    }
     const n = nakaOshi(PUNCH, false, 'std', inner, Math.max(H1, H2) - row.t);
     const naka = { inner, clear: +n.clear.toFixed(1), at: n.at, maxH: n.maxH };
     if (n.ok && inner >= SUTE_MIN_INNER) {

@@ -1745,10 +1745,13 @@ const BendingSimulator = () => {
       const inner = sharp(k) - t;
       const innerH = Math.max(sharp(k - 1), sharp(k + 1)) - t;
       const n = nakaOshi(punchType, punchFlip, chukanSel, inner, innerH);
+      // への字は底の真ん中をV溝で曲げるので、底の半分ずつが最小フランジ以上いる
+      const half = (sharp(k) + t) / 2, need = minOutLookup ? minOutLookup.val : 0;   // 外寸の半分（シートと同じ）
+      if (half < need) { n.ok = false; n.shortHalf = { half, need }; }
       if (!best || n.clear > best.clear) best = { seg: k + 1, inner, innerH, ...n };
     }
     return best;
-  }, [allOK, verdicts, effSegs, bends, growPerBend, t, punchType, punchFlip, chukanSel]);
+  }, [allOK, verdicts, effSegs, bends, growPerBend, t, punchType, punchFlip, chukanSel, minOutLookup]);
 
   // --- 現在フレーム ---
   const frame = useMemo(() => {
@@ -2367,6 +2370,8 @@ const BendingSimulator = () => {
                         : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
             {suteHint.ok
               ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）`
+              : suteHint.shortHalf
+              ? `◇ 中押し（捨て曲げ）も不可 — 底の半分 ${suteHint.shortHalf.half.toFixed(1)}mm が最小フランジ ${suteHint.shortHalf.need}mm より短く、への字に曲げられません`
               : `◇ 中押し（捨て曲げ）も不可 — 押し切ったとき、刃先から ${suteHint.at}mm の高さで上型が立上りに当たります（内-内 ${suteHint.inner.toFixed(1)}mm、この高さの立上りには ${suteHint.needW}mm 要る。この内-内なら立上りの内側 ${suteHint.maxH}mm まで）`}
           </div>
         )}

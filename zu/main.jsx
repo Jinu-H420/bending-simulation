@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
-import { judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH } from './judge.js';
+import { judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH, Z_ACT_ON } from './judge.js';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import './zu.css';
 
@@ -145,7 +145,8 @@ function LimitChart({ shape, row, x, y, grade }) {
   const yMax = Math.min(300, Math.max(150, Math.ceil((Math.max(y, curveTop) + 20) / 50) * 50));
   const sx = (v) => L + (v / xMax) * (W - L - R);
   const sy = (v) => T + (1 - Math.min(v, yMax) / yMax) * (H - T - B);
-  const act = shape === 'Z' && row.zAct;
+  const act = shape === 'Z' && Z_ACT_ON && row.zAct;
+  const actRef = shape === 'Z' && !Z_ACT_ON && row.zAct;   // 確認中のシートの値（判定には使わない）
   // 実績があれば実績の範囲、なければ計算カーブ
   const segs = [];
   let cur = [];
@@ -237,6 +238,9 @@ function LimitChart({ shape, row, x, y, grade }) {
           const p = pts.find((q) => q.x <= xMax && q.y != null && q.y >= 399);
           return p ? <text x={sx(p.x) + 4} y={sy(yMax) + 14} style={{ fill: 'var(--sub)' }}>ここから上限なし →</text> : null;
         })()}
+        {actRef && [{ x: actRef.S, y: actRef.A }, ...(actRef.far ? [{ x: actRef.far.S, y: actRef.far.A }] : [])].map((p, i) => (
+          <circle key={'r' + i} cx={sx(p.x)} cy={sy(p.y)} r="5" fill="none" stroke="var(--muted)" strokeWidth="2" />
+        ))}
         {hov && <line x1={sx(hov.xv)} x2={sx(hov.xv)} y1={T} y2={sy(0)} stroke="var(--muted)" strokeDasharray="3 3" />}
         {/* いまの寸法から縦・横に点線。横線がカーブの下にある所なら曲がる */}
         <line x1={L} x2={W - R} y1={sy(Math.min(y, yMax))} y2={sy(Math.min(y, yMax))} stroke={col} strokeDasharray="5 4" strokeWidth="1.5" opacity=".8" />
@@ -257,6 +261,7 @@ function LimitChart({ shape, row, x, y, grade }) {
         {shape === 'U' && <span><i style={{ background: 'var(--s2)' }} />くの字ヤゲン（L 200mm まで）</span>}
         {shape === 'U' && <span><i style={{ background: 'var(--s3)' }} />中押し（最終手段）</span>}
         {act && <span><i className="dot" style={{ background: 'var(--s2)' }} />実績（ここまで曲げた）</span>}
+        {actRef && <span><i className="dot" style={{ background: 'none', border: '2px solid var(--muted)' }} />シートの実績（確認中・判定には使わない）</span>}
         <span><i style={{ background: 'var(--okzone)', height: 10 }} />曲がる範囲{act ? '（実績）' : ''}</span>
       </div>
     </div>
@@ -294,7 +299,7 @@ function LimitDetail({ shape, row, x, y, other }) {
 
   // いまの y で曲げるための x の条件
   let need;
-  if (Z && row.zAct) {
+  if (Z && Z_ACT_ON && row.zAct) {
     const a = row.zAct;
     if (y <= a.A) need = { txt: `${xN} を ${a.S}mm 以上`, src: '実績' };
     else if (a.far && y <= a.far.A) need = { txt: `${xN} を ${a.far.S}mm 以上`, src: '実績' };
@@ -400,7 +405,7 @@ function QuickTable({ shape, row, x }) {
       <table className="qt">
         <tbody>
           <tr><th>{Z ? '段差S' : '底W'}</th>{cols.map((p) => <td key={p.x} className={p === near ? 'now' : ''}>{p.x}</td>)}</tr>
-          {Z && row.zAct && (
+          {Z && Z_ACT_ON && row.zAct && (
             <tr><th>実績の上限</th>{cols.map((p) => { const a = actLimit(row, p.x); return <td key={p.x} className={p === near ? 'now' : ''}>{a.A == null ? '✕' : a.A}</td>; })}</tr>
           )}
           <tr><th>{Z ? '計算の上限' : '普通に曲げる'}</th>{cols.map((p) => <td key={p.x} className={p === near ? 'now' : ''}>{v(p.y)}</td>)}</tr>
@@ -483,6 +488,7 @@ function App() {
       <header>
         <h1>Z曲げ・コの字 曲がるか判定</h1>
         <p>問い合わせの多い2つの形だけ。寸法と板厚を入れると、すぐに答えが出ます。</p>
+        {!Z_ACT_ON && shape === 'Z' && <p className="notice">Z曲げは、段差の実績を曲げ屋さんに確認中のため、いまはシミュレーションの計算で判定しています。</p>}
       </header>
 
       <div className="tabs">

@@ -978,6 +978,10 @@ const V_INNER_R = { 8: 1.3, 12: 2, 16: 2.6, 20: 3.3, 25: 4, 32: 5, 40: 6.5, 50: 
 //  注意：以前ここに入れていた V12・t2.3＝12.3／V25・t6＝30 は実績ではなく
 //  記入シートに印刷されていた計算値だった。実績はそれぞれ 24／48 で、ほぼ倍。
 // ============================================================================
+// 2026-09-22：曲げ屋さんから「段差S最小が倍の数字になっている」と指摘。正しい数字を確認するまで、
+// Z曲げの実績（下の ZMIN と、Z・コの字判定の段差S最小・フランジA上限）は判定に使わず、
+// シミュレーション（干渉判定）の結果で決める。確認が済んで表を直したら true に戻す。
+const Z_ACT_ON = false;
 const ZMIN = {
   8: { 1.6: 16 },
   12: { 1.2: 22.5, 1.6: 23, 2.3: 24 },
@@ -1443,7 +1447,7 @@ const BendingSimulator = () => {
       const outer = outerOf(k);
       out.push({ seg: k + 1, k, outer,
                  val: need ? need.val : null, src: need ? need.src : null,
-                 ok: !need || outer >= need.val });   // シミュレーション側は干渉判定が別に見る
+                 ok: !need || !Z_ACT_ON || outer >= need.val });   // シミュレーション側は干渉判定が別に見る
     }
     return out;
   }, [effSegs, outerSegs, innerSegs, inputMode, bends, nobiPerBend, nobiV, t]);
@@ -2630,16 +2634,19 @@ const BendingSimulator = () => {
                 <div className="text-slate-500">展開値: {effSegs.map((L) => L.toFixed(1)).join(' / ')}</div>
                 {zSteps.map((z) => {
                   const sim = zSim && zSim.seg === z.seg ? zSim.outer : null;
-                  const bind = Math.max(z.val != null ? z.val : 0, sim != null ? sim : 0) || null;
+                  // 実績が確認中のときは、シミュレーションの値だけで見る
+                  const bind = Math.max(Z_ACT_ON && z.val != null ? z.val : 0, sim != null ? sim : 0) || null;
                   const ng = bind != null && z.outer < bind;
                   return (
                     <div key={z.seg} className={ng ? 'text-rose-400' : 'text-slate-400'}>
                       {ng ? '⚠' : '◇'} 辺{z.seg} はZ段差 — いま 外-外 {z.outer.toFixed(1)}mm
-                      {z.val != null && (z.src === '実績'
+                      {z.val != null && (!Z_ACT_ON
+                        ? <>　／　{z.src === '実績' ? 'シートの実績' : '表の計算'} {z.val}mm（確認中のため判定に使わない）</>
+                        : z.src === '実績'
                         ? <>　／　実績 <b className="text-slate-200">{z.val}mm</b></>
                         : <>　／　表の計算 <b className="text-slate-200">{z.val}mm</b>（実績なし）</>)}
                       {sim != null && <>　／　シミュレーション <b className="text-slate-200">{sim.toFixed(1)}mm</b></>}
-                      {bind != null && <>　→ 厳しいほう <b className="text-slate-200">{bind.toFixed(1)}mm</b> で見ています</>}
+                      {bind != null && <>　→ {Z_ACT_ON ? '厳しいほう ' : ''}<b className="text-slate-200">{bind.toFixed(1)}mm</b> で見ています</>}
                       {ng && '　✕ 抜けません'}
                     </div>
                   );
@@ -3108,5 +3115,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB, Z_ACT_ON,
 };

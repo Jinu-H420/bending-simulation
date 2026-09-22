@@ -12,8 +12,9 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
-  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB,
+  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON,
 } from '../bending-simulator.jsx';
+export { Z_ACT_ON };
 
 const PUNCH = '904061';
 // naka＝普通の曲げ方では上型に当たるが、中押し（捨て曲げ）なら曲がる
@@ -147,7 +148,8 @@ export function judgeZ(row, A, S, B, L) {
       fix: `フランジを ${row.minOut}mm 以上に` };
   }
   const geo = geoCheck(row, [A, S, B], [1, -1]);
-  const act = row.zAct;
+  // 実績は確認中（Z_ACT_ON=false）のあいだ使わない。シミュレーションで決める
+  const act = Z_ACT_ON ? row.zAct : null;
 
   if (act) {
     // 実績：段差S最小と、そのSでのフランジ上限。備考に「S35なら A95」があれば広いSでの上限
@@ -174,7 +176,7 @@ export function judgeZ(row, A, S, B, L) {
     return { ...base, grade: 'check', src: '計算', why: `フランジが短いので計算では通りますが、段差S ${Math.ceil(row.zSimS)}mm 未満は実績の無い範囲です`,
       fix: `段差Sを ${Math.ceil(row.zSimS)}mm 以上に`, geo };
   }
-  if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（この型の実績はまだありません）', geo };
+  if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: Z_ACT_ON || !row.zAct ? '計算で通ります（この型の実績はまだありません）' : '計算で通ります（段差の実績は確認中のため計算で判定）', geo };
   const alt = altPunch(row, [A, S, B], [1, -1], L);
   if (alt.ok) {
     return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, geo: { ok: true, seq: alt.ok.seq },
@@ -276,7 +278,7 @@ export function exactLimit(row, shape, x, other) {
 
 // 実績の上限（Z）。段差Sで決まる。実績が無ければ null
 export function actLimit(row, S) {
-  const act = row.zAct;
+  const act = Z_ACT_ON ? row.zAct : null;
   if (!act) return null;
   if (S < act.S) return { A: null, why: `段差S ${act.S}mm 未満は実績なし` };
   if (act.far && S >= act.far.S) return { A: act.far.A };
@@ -374,7 +376,7 @@ export function judgeAll(rows, shape, mat, t, dims, L) {
   const res = cand.map((row) => {
     const r = withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L);
     const plain = (r.grade === 'ok-sim' || r.grade === 'ok-act') && !r.punch;
-    if (!plain && !(shape === 'Z' && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);
+    if (!plain && !(shape === 'Z' && Z_ACT_ON && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);
     return r;
   });
   res.sort((a, b) => (RANK[b.grade] - RANK[a.grade]) || ((b.row.V === baseV) - (a.row.V === baseV)) || (a.row.V - b.row.V));

@@ -17,6 +17,7 @@ const GRADE = {
   'ok-act': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 実績' },
   'ok-sim': { cls: 'ok', mark: '○', word: '曲がります', short: '○ 計算' },
   alt: { cls: 'ok', mark: '○', word: 'ヤゲンを替えれば曲がります', short: '○ ヤゲン替え' },
+  // alt の見出しは使うヤゲンで変える（くの字なら L の上限も見出しに入れる）→ look()
   naka: { cls: 'naka', mark: '○', word: '中押しでしか曲がりません', short: '中押しのみ' },
   check: { cls: 'check', mark: '△', word: '計算では曲がります', short: '△ 確認' },
   ng: { cls: 'ng', mark: '✕', word: '曲がりません', short: '✕' },
@@ -52,27 +53,38 @@ function simLink(shape, r, dims, mat, L) {
 // 判定の枠の見た目。中押しで曲がるもの（△ を含む）は「中押しでしか曲がらない」を一番に見せる。
 // △ は「計算では曲がるが、曲げ屋さんの確認が要る」なので、控えめに札を添えるだけにする
 const isNaka = (r) => r.src === '中押し' && r.grade !== 'ng';
+const isAlt = (r) => r.grade === 'alt' && !!r.punch;
+// くの字の特殊ヤゲンのときは「くの字特殊ヤゲン（L ○mm以内）なら曲がります」、普通のヤゲンなら名前を出す
+const altWord = (r) => (r.special ? `くの字特殊ヤゲン（L ${r.special.win}mm以内）なら曲がります` : `ヤゲン ${r.punch} なら曲がります`);
+const altShort = (r) => (r.special ? '○ くの字' : '○ ヤゲン替え');
 function look(r) {
   if (isNaka(r)) return { cls: 'naka', mark: '○', word: GRADE.naka.word, ask: r.grade === 'check' };
   const g = GRADE[r.grade];
-  return { cls: g.cls, mark: g.mark, word: g.word, ask: r.grade === 'check' };
+  return { cls: g.cls, mark: g.mark, word: isAlt(r) ? altWord(r) : g.word, ask: r.grade === 'check' };
 }
 
-// 曲げ方の順番（普通 → くの字 → 中押し）ごとに ○✕ を並べ、中押しでしか曲がらないことを一目で見せる
+// 曲げ方の順番（普通 → くの字 → 中押し）ごとに ○✕ を並べ、どれでしか曲がらないかを一目で見せる
 function MethodLadder({ r, L }) {
   const kOk = (r.kuno || []).filter((k) => k.ok);
   const kWin = kOk.length ? Math.max(...kOk.map((k) => k.win)) : null;
+  const alt = isAlt(r);
   const cells = [
-    { name: '普通に曲げる', ok: false, note: r.hit ? `${r.hit}に当たる` : '型に当たる' },
-    { name: 'くの字ヤゲン', ok: false, note: kWin != null ? `L ${kWin}mm 以内なら可（いま ${L}mm）` : '形が当たる' },
-    { name: '中押し', ok: true, note: r.naka && r.naka.angle ? `への字 ${r.naka.angle}°以上` : '' },
+    { name: '普通に曲げる', mark: '✕', note: r.hit ? `${r.hit}に当たる` : '型に当たる' },
+    alt && !r.special
+      ? { name: `ヤゲン ${r.punch}`, mark: '○', ok: true, note: 'ヤゲンを替える' }
+      : { name: 'くの字特殊ヤゲン', mark: alt ? '○' : '✕', ok: alt,
+        note: alt ? `L ${r.special.win}mm 以内（いま ${L}mm）`
+          : kWin != null ? `L ${kWin}mm 以内なら可（いま ${L}mm）` : '形が当たる' },
+    alt
+      ? { name: '中押し', mark: '—', skip: true, note: 'ここまでしなくてよい' }
+      : { name: '中押し', mark: '○', ok: true, note: r.naka && r.naka.angle ? `への字 ${r.naka.angle}°以上` : '' },
   ];
   return (
     <div className="mlad">
       {cells.map((c) => (
-        <div key={c.name} className={`ml-cell ${c.ok ? 'yes' : 'no'}`}>
+        <div key={c.name} className={`ml-cell ${c.ok ? 'yes' : c.skip ? 'skip' : 'no'}`}>
           <div className="ml-name">{c.name}</div>
-          <div className="ml-mark">{c.ok ? '○' : '✕'}</div>
+          <div className="ml-mark">{c.mark}</div>
           <div className="ml-note">{c.note}</div>
         </div>
       ))}
@@ -675,7 +687,7 @@ function App() {
       return `${head}\n→ 曲がりません。${best.why}。${kLine}${fixes.length ? `\nこうすれば曲げられます\n${fixes.join('\n')}` : ''}`;
     }
     const src = best.grade === 'ok-act' ? '実績のある範囲です' : best.grade === 'ok-sim' ? '計算で確認しました' : '';
-    const word = isNaka(best) ? GRADE.naka.word : g.word;
+    const word = isNaka(best) ? GRADE.naka.word : isAlt(best) ? altWord(best) : g.word;
     const ask = best.grade === 'check' ? `曲げ屋さんに確認が要ります：${best.why}。${best.fix ? `${best.fix}すれば確実です。` : ''}` : '';
     return `${head}\n→ ${word}（${best.die}・${best.machine}）。${ask || (best.grade === 'naka' || best.grade === 'alt' ? `${best.why}。` : src)}${kLine}`;
   }, [best, shape, mat, t, dimsTxt.join('|'), Ltxt]);
@@ -735,12 +747,12 @@ function App() {
             <div className={`verdict ${look(best).cls}`}>
               <div className="v-head">
                 <span className="v-mark">{look(best).mark}</span>
-                <span className="v-word">{look(best).word}</span>
+                <span className={`v-word ${look(best).word.length > 16 ? 'long' : ''}`}>{look(best).word}</span>
                 {look(best).ask && <span className="v-ask">△ 曲げ屋さんに確認</span>}
               </div>
-              {isNaka(best) && <MethodLadder r={best} L={Lnum} />}
+              {(isNaka(best) || isAlt(best)) && <MethodLadder r={best} L={Lnum} />}
               <div className="v-body">
-                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.recs && best.recs.length > 0 && best.src !== '実績' && <span className="tag">この型の実績 {best.recs.length}件</span>}{best.punch && <span className="tag">ヤゲン {best.punch}</span>}</div>}
+                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.recs && best.recs.length > 0 && best.src !== '実績' && <span className="tag">この型の実績 {best.recs.length}件</span>}{best.punch && <span className="tag">{best.special ? `くの字特殊ヤゲン${best.punch.replace('特殊 くの字', '')}` : `ヤゲン ${best.punch}`}</span>}</div>}
                 <div>{best.why}</div>
                 {best.grade !== 'ng' && best.src !== '中押し' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
               </div>
@@ -788,7 +800,7 @@ function App() {
                     <tr key={r.row.id} className={shown && shown.row.id === r.row.id ? 'sel' : ''} onClick={() => setPickV(r.row.id)}>
                       <td><b>{r.die}</b>{r.row.V === res.baseV && <span className="tag">基準</span>}</td>
                       <td>{r.machine}</td>
-                      <td className={`g ${isNaka(r) ? 'naka' : r.grade}`}>{isNaka(r) ? (r.grade === 'check' ? '中押しのみ △' : '中押しのみ') : GRADE[r.grade].short}</td>
+                      <td className={`g ${isNaka(r) ? 'naka' : r.grade}`}>{isNaka(r) ? (r.grade === 'check' ? '中押しのみ △' : '中押しのみ') : isAlt(r) ? altShort(r) : GRADE[r.grade].short}</td>
                       <td>{r.why}{kunoText(r.kuno, Lnum) && <div className="kuno-s">くの字なら：{kunoText(r.kuno, Lnum)}</div>}</td>
                       <td><a className="see" href={simLink(shape, r, dims, mat, Lnum)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>見る</a></td>
                     </tr>

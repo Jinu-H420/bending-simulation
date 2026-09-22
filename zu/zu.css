@@ -170,3 +170,7 @@ button.del:hover { color: var(--ng); }
 .ml-cell.yes .ml-name { color: var(--ink); }
 .ml-mark { font-size: 26px; font-weight: 800; line-height: 1.15; }
 .ml-note { font-size: 12px; color: var(--sub); line-height: 1.35; }
+.ml-cell.skip { opacity: .55; }
+.ml-cell.skip .ml-mark { color: var(--muted); }
+.v-word.long { font-size: 23px; }
+@media (max-width: 480px) { .v-word.long { font-size: 20px; } }

@@ -121,7 +121,8 @@ function altPunch(row, outer, dirs, L) {
   }
   return { win };
 }
-const punchName = (p, flip) => `ヤゲン ${p}${flip ? '（反転）' : ''}`;
+// くの字の特殊ヤゲンは現場の呼び方で出す（例：くの字特殊ヤゲン165）
+const punchName = (p, flip) => `${p.startsWith('特殊 くの字') ? `くの字特殊ヤゲン${p.replace('特殊 くの字', '')}` : `ヤゲン ${p}`}${flip ? '（反転）' : ''}`;
 
 // 特殊 くの字ヤゲンで曲がるか（曲げ長さを別にして、形として通るか）と、使える曲げ長さ L の上限。
 // くの字は中央の窓の中でしか使えないので、L が窓（165版＝200mm・100版＝70mm）以内のときだけ曲がる。
@@ -149,7 +150,8 @@ export function judgeZ(row, A, S, B, L) {
     return { ...base, grade: 'ng', why: `フランジ ${short}mm が短く、V溝に落ちます（最小 ${row.minOut}mm）`,
       fix: `フランジを ${row.minOut}mm 以上に` };
   }
-  const geo = geoCheck(row, [A, S, B], [1, -1]);
+  const outer0 = [A, S, B], dirs0 = [1, -1];
+  const geo = geoCheck(row, outer0, dirs0);
   // 実績は確認中（Z_ACT_ON=false）のあいだ使わない。シミュレーションで決める
   const act = Z_ACT_ON ? row.zAct : null;
 
@@ -181,8 +183,9 @@ export function judgeZ(row, A, S, B, L) {
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: Z_ACT_ON || !row.zAct ? '計算で通ります（この型の実績はまだありません）' : '計算で通ります（段差の実績は確認中のため計算で判定）', geo };
   const alt = altPunch(row, [A, S, B], [1, -1], L);
   if (alt.ok) {
-    return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, geo: { ok: true, seq: alt.ok.seq },
-      why: `904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
+    return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
+      hit: firstHitWhere(row, outer0, dirs0), geo: { ok: true, seq: alt.ok.seq },
+      why: `普通のヤゲン 904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
   }
   const sMin = zSimMinS(row);
   if (sMin != null && S < sMin) return { ...base, grade: 'ng', src: '計算', why: `段差S ${S}mm が狭すぎます（計算で約 ${sMin}mm 以上）`, fix: `段差Sを ${sMin}mm 以上に`, geo };
@@ -201,12 +204,14 @@ export function judgeU(row, H1, W, H2, L) {
   if (short < row.minOut) {
     return { ...base, grade: 'ng', why: `立上り ${short}mm が短く、V溝に落ちます（最小 ${row.minOut}mm）`, fix: `立上りを ${row.minOut}mm 以上に` };
   }
-  const geo = geoCheck(row, [H1, W, H2], [1, 1]);
+  const outer0 = [H1, W, H2], dirs0 = [1, 1];
+  const geo = geoCheck(row, outer0, dirs0);
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（コの字の実績はまだありません）', geo };
   const alt = altPunch(row, [H1, W, H2], [1, 1], L);
   if (alt.ok) {
-    return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, geo: { ok: true, seq: alt.ok.seq },
-      why: `904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（くの字の窓に入るので、曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
+    return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
+      hit: firstHitWhere(row, outer0, dirs0), geo: { ok: true, seq: alt.ok.seq },
+      why: `普通のヤゲン 904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（くの字の窓に入るので、曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
   }
   // 特殊 くの字なら通るのに、曲げ長さが窓を超えている
   const winFix = alt.win ? `${alt.win.punch}を使い、曲げ長さ L を ${alt.win.win}mm 以下に` : null;

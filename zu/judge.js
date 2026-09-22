@@ -82,6 +82,8 @@ export const uSimMinW = (row) => {
 };
 
 const machineName = (row) => row.machine;
+// 型の名前。V12〜V25 は HG のインサートと、HD3504NT の2溝ダイ（30540・30640）の2通りある
+export const dieName = (row) => `V${row.V}${row.two ? ' 2溝' : ''}`;
 
 // 干渉判定（曲げ順・突き当て・裏返しを自動で探す）
 function geoCheck(row, outer, dirs) {
@@ -140,7 +142,7 @@ export function kunoLimits(row, outer, dirs) {
 
 // Z曲げ：outer = [A, S, B]（外寸）
 export function judgeZ(row, A, S, B, L) {
-  const base = { row, die: `V${row.V}`, machine: machineName(row) };
+  const base = { row, die: dieName(row), machine: machineName(row) };
   if (row.nobi == null) return { ...base, grade: 'ng', why: '片伸びが折り曲げ表にありません' };
   const short = Math.min(A, B), long = Math.max(A, B);
   if (short < row.minOut) {
@@ -193,7 +195,7 @@ export function judgeZ(row, A, S, B, L) {
 
 // コの字：outer = [H1, W, H2]（外寸）
 export function judgeU(row, H1, W, H2, L) {
-  const base = { row, die: `V${row.V}`, machine: machineName(row) };
+  const base = { row, die: dieName(row), machine: machineName(row) };
   if (row.nobi == null) return { ...base, grade: 'ng', why: '片伸びが折り曲げ表にありません' };
   const short = Math.min(H1, H2);
   if (short < row.minOut) {
@@ -353,7 +355,8 @@ export function lenLimit(row) {
   const m = row.machine === 'HG2203' ? MACHINE_LIB.hg2203 : MACHINE_LIB.hd3504nt;
   const n = DIE_STOCK[row.V];
   const c = [{ v: m.len, why: `${row.machine}の長さ` }];
-  if (n) c.push({ v: n * DIE_UNIT_LEN, why: `V${row.V}のダイ ${n}台×${DIE_UNIT_LEN}mm` });
+  // 2溝ダイ（30540・30640）の台数はまだ聞いていないので、機械の長さだけで見る
+  if (n && !row.two) c.push({ v: n * DIE_UNIT_LEN, why: `V${row.V}のダイ ${n}台×${DIE_UNIT_LEN}mm` });
   if (row.t >= 22) c.push({ v: PL22_MAX_LEN, why: 'PL22（金型寸法表の注記）' });
   return c.reduce((a, b) => (a.v <= b.v ? a : b));
 }
@@ -366,6 +369,8 @@ export function lenLimit(row) {
 //   L ：基準より小さいVのときだけ見る。曲がった実績の L 以下なら ○、曲がらなかった L 以上なら ✕
 export const METHOD_JA = { normal: '普通に', kuno: 'くの字ヤゲンで', naka: '中押しで' };
 const recKey = (s, r) => [s, r.mat, r.t, r.V].join('|');
+// 同じ V でも HG のインサートと2溝ダイは別の型。型（sel）が書いてない実績は同じVならどちらにも使う
+const sameDie = (rec, row) => !rec.sel || !row.sel || rec.sel === row.sel;
 function easierOrSame(shape, dims, L, rec, smallV) {
   if (smallV && rec.L > 0 && !(L <= rec.L)) return false;
   if (shape === 'Z') return dims[1] >= rec.dims[1] && Math.min(dims[0], dims[2]) <= Math.min(rec.dims[0], rec.dims[2]);
@@ -379,13 +384,13 @@ function harderOrSame(shape, dims, L, rec, smallV) {
 const recText = (r) => `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${r.who ? `（${r.who}）` : ''}`;
 // 小さいVの最長L：曲がった実績の一番長い L
 function recMaxL(recs, shape, row) {
-  const ls = (recs || []).filter((r) => r.ok && r.mat === row.mat && r.t === row.t && r.V === row.V && r.L > 0).map((r) => r.L);
+  const ls = (recs || []).filter((r) => r.ok && r.mat === row.mat && r.t === row.t && r.V === row.V && sameDie(r, row) && r.L > 0).map((r) => r.L);
   return ls.length ? Math.max(...ls) : null;
 }
 function withRecords(res, shape, dims, L, recs) {
   if (!recs || !recs.length) return res;
   const k = recKey(shape, res.row);
-  const same = recs.filter((r) => recKey(r.shape, r) === k);
+  const same = recs.filter((r) => recKey(r.shape, r) === k && sameDie(r, res.row));
   if (!same.length) return res;
   const smallV = !!smallVCheck(res.row.mat, res.row.t, res.row.V);
   const okR = same.filter((r) => r.ok && easierOrSame(shape, dims, L, r, smallV));
@@ -451,7 +456,8 @@ export function judgeAll(rows, shape, mat, t, dims, L, recs = []) {
     if (!plainGeo && !(shape === 'Z' && Z_ACT_ON && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);
     return r;
   });
-  res.sort((a, b) => (RANK[b.grade] - RANK[a.grade]) || ((b.row.V === baseV) - (a.row.V === baseV)) || (a.row.V - b.row.V));
+  // 同じ等級なら 基準のV → 普段の型（2溝ダイは後）→ Vの小さい順
+  res.sort((a, b) => (RANK[b.grade] - RANK[a.grade]) || ((b.row.V === baseV) - (a.row.V === baseV)) || (!!a.row.two - !!b.row.two) || (a.row.V - b.row.V));
   return { list: res, best: res[0] || null, baseV };
 }
 

@@ -23,6 +23,9 @@ const SEL = {
   80: 'lib:01360:0', 100: 'lib:01860:0', 125: 'lib:03900:0', 160: 'lib:01400:0',
 };
 const machineOf = (V) => (V <= 25 ? 'hg2203' : 'hd3504nt');
+// V12〜V25 は HD3504NT の2溝ダイでも曲げられる（30540＝V12/V20、30640＝V16/V25。同じ台）。
+// HG のインサートで当たっても、こちらなら通る形がある（ダイが細い）ので、別の型として判定に入れる。
+const TWO = { 12: 'lib:30540:0', 20: 'lib:30540:1', 16: 'lib:30640:0', 25: 'lib:30640:1' };
 const PUNCH = '904061';
 const HI = 400;
 
@@ -72,10 +75,13 @@ const KUNO = '特殊 くの字165';
 const S_GRID = [];
 for (let s = 10; s <= 250; s += 5) S_GRID.push(s);
 
+const plan = zRows.flatMap((r) => [
+  { r, sel: SEL[r.V], mach: machineOf(r.V), two: false },
+  ...(TWO[r.V] ? [{ r, sel: TWO[r.V], mach: 'hd3504nt', two: true }] : []),
+]);
 const rows = [];
-for (const r of zRows) {
-  const sel = SEL[r.V];
-  const info = E.resolveDie(sel, r.V, 30, true, machineOf(r.V));
+for (const { r, sel, mach, two } of plan) {
+  const info = E.resolveDie(sel, r.V, 30, true, mach);
   const vHalf = info.vHalf;
   const nb = E.lookupTable(E.NOBI_TABLE, r.mat, r.V, r.t);
   const nobi = nb ? nb.val : null;
@@ -127,7 +133,21 @@ for (const r of zRows) {
     }
   }
 
-  const u = uData.curves.find((c) => c.V === r.V && c.t === r.t && c.mat === r.mat);
+  // コの字の普通の曲げ（904061）の上限。HG のインサートは u_ratio.json、2溝ダイはここで計算する
+  const u = two
+    ? (nobi == null ? null : (() => {
+      const hLo = Math.max(minOut, reach);
+      const pts = W_GRID.map((W) => {
+        if (!uOk(nobi, r.t, info, PUNCH, hLo, W)) return { W, H: null };
+        if (uOk(nobi, r.t, info, PUNCH, HI, W)) return { W, H: HI };
+        let a = hLo, b = HI;
+        for (let i = 0; i < 11; i++) { const m = (a + b) / 2; if (uOk(nobi, r.t, info, PUNCH, m, W)) a = m; else b = m; }
+        return { W, H: +a.toFixed(1) };
+      });
+      const f = pts.find((q) => q.H != null);
+      return { pts, lo: f ? f.W : null };
+    })())
+    : uData.curves.find((c) => c.V === r.V && c.t === r.t && c.mat === r.mat);
   // くの字で曲げたときの立上り上限（底Wごと）
   let uKuno = null;
   if (nobi != null) {
@@ -140,18 +160,20 @@ for (const r of zRows) {
       return { W, H: +a.toFixed(1) };
     });
   }
+  const firstS = zCurve ? (zCurve.find((q) => q.A != null) || {}).S ?? null : null;
   rows.push({
-    V: r.V, mat: r.mat, t: r.t, machine: r.machine, die: r.dieName || info.note.split('｜')[0].trim(),
-    sel, minOut, nobi,
-    // Z 実績（記入シートの「実際の値」）
-    zAct: r.actK != null ? { S: r.actK, A: r.actI, far: memoPoint(r.memo) } : null,
-    zSimS: r.simK,
+    id: sel, V: r.V, mat: r.mat, t: r.t, machine: two ? 'HD3504NT' : r.machine,
+    die: two ? `${sel.split(':')[1]} 2溝ダイ（HD3504NT）` : r.dieName || info.note.split('｜')[0].trim(),
+    sel, two, minOut, nobi,
+    // Z 実績（記入シートの「実際の値」）。実績は HG のインサートで取ったものなので、2溝ダイには付けない
+    zAct: !two && r.actK != null ? { S: r.actK, A: r.actI, far: memoPoint(r.memo) } : null,
+    zSimS: two ? firstS : r.simK,
     zCurve,
     uLo: u ? u.lo : null,
     uCurve: u ? u.pts : null,
     uKuno,
   });
-  process.stderr.write(`V${r.V} ${r.mat} t${r.t}\n`);
+  process.stderr.write(`V${r.V} ${r.mat} t${r.t} ${sel}\n`);
 }
 
 mkdirSync('zu/data', { recursive: true });

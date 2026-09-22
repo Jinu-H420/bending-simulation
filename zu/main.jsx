@@ -421,14 +421,14 @@ function QuickTable({ shape, row, x }) {
 
 // 実績の登録。曲げ屋さんに聞いて確かな結果だけを1件ずつ登録する。登録したものは次の判定から使う
 function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg }) {
-  const [V, setV] = useState(best ? best.row.V : list[0].row.V);
+  const [V, setV] = useState(best ? best.row.id : list[0].row.id);
   const [method, setMethod] = useState('normal');
   const [ok, setOk] = useState(true);
   const [lenFail, setLenFail] = useState(false);
   const [note, setNote] = useState('');
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
-  useEffect(() => { if (best) setV(best.row.V); }, [best && best.row.V, shape, t]);
-  const row = (list.find((r) => r.row.V === V) || list[0]).row;
+  useEffect(() => { if (best) setV(best.row.id); }, [best && best.row.id, shape, t]);
+  const row = (list.find((r) => r.row.id === V) || list[0]).row;
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === t);
   const submit = () => {
     if (!who.trim()) { alert('だれに確かめたか（名前）を入れてください'); return; }
@@ -456,8 +456,8 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
           <div className="rec-now">いまの寸法：{shape === 'Z' ? `A${dims[0]}・S${dims[1]}・B${dims[2]}` : `H${dims[0]}・W${dims[1]}・H${dims[2]}`}　{mat} t{t}　L{L || '—'}</div>
           <div className="rec-grid">
             <label className="f"><span>型</span>
-              <select value={V} onChange={(e) => setV(Number(e.target.value))}>
-                {list.map((r) => <option key={r.row.V} value={r.row.V}>V{r.row.V}（{r.row.machine}）</option>)}
+              <select value={V} onChange={(e) => setV(e.target.value)}>
+                {list.map((r) => <option key={r.row.id} value={r.row.id}>{r.die}（{r.row.machine}）</option>)}
               </select>
             </label>
             <label className="f"><span>曲げ方</span>
@@ -490,7 +490,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
                 {mine.map((r) => (
                   <tr key={r.id}>
                     <td>{String(r.at).slice(5, 10)}</td>
-                    <td>V{r.V}</td>
+                    <td>V{r.V}{/^lib:30[56]40:/.test(r.sel || '') ? ' 2溝' : ''}</td>
                     <td>{r.dims.join('・')}</td>
                     <td>{r.L || '—'}</td>
                     <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
@@ -592,7 +592,7 @@ function App() {
   useEffect(() => setPickV(null), [shape, mat, t]);
 
   const best = res && res.best;
-  const shown = res && (res.list.find((r) => r.row.V === pickV) || best);
+  const shown = res && (res.list.find((r) => r.row.id === pickV) || best);
   const x = shape === 'Z' ? dims[1] : dims[1];
   const y = Math.min(dims[0], dims[2]);   // 先に曲げる、短いほう（低いほう）で見る
 
@@ -711,7 +711,7 @@ function App() {
                 <thead><tr><th>型</th><th>機械</th><th>判定</th><th>理由</th><th></th></tr></thead>
                 <tbody>
                   {res.list.map((r) => (
-                    <tr key={r.row.V} className={shown && shown.row.V === r.row.V ? 'sel' : ''} onClick={() => setPickV(r.row.V)}>
+                    <tr key={r.row.id} className={shown && shown.row.id === r.row.id ? 'sel' : ''} onClick={() => setPickV(r.row.id)}>
                       <td><b>{r.die}</b>{r.row.V === res.baseV && <span className="tag">基準</span>}</td>
                       <td>{r.machine}</td>
                       <td className={`g ${r.grade}`}>{GRADE[r.grade].short}</td>

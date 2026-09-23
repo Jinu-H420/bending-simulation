@@ -583,7 +583,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
                   <tr key={r.id}>
                     <td>{String(r.at).slice(5, 10)}</td>
                     <td>V{r.V}{/^lib:30[56]40:/.test(r.sel || '') ? ' 2溝' : ''}</td>
-                    <td>{r.dims.join('・')}</td>
+                    <td>{(r.dims || []).join('・')}</td>
                     <td>{r.L || '—'}</td>
                     <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
                     <td className={r.ok ? 'g ok-sim' : 'g ng'}>{r.ok ? '○' : '✕'}</td>

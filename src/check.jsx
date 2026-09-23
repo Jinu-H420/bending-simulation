@@ -392,7 +392,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
                   <tr key={r.id}>
                     <td>{String(r.at).slice(5, 10)}</td>
                     <td>V{r.V}{/^lib:30[56]40:/.test(r.sel || '') ? ' 2溝' : ''}</td>
-                    <td>{r.dims.join('・')}</td>
+                    <td>{(r.dims || []).join('・')}</td>
                     <td>{r.L || '—'}</td>
                     <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
                     <td className={r.ok ? 'g-ok' : 'g-ng'}>{r.ok ? '○' : '✕'}</td>
@@ -622,4 +622,21 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+// どこかで落ちても画面を真っ白にしない
+class Boundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="wrap">
+        <div className="card">
+          <b>表示でつまずきました。</b>
+          <div className="hint">ページを読み直してください（Ctrl＋F5）。直らないときは、この文面を知らせてください：{String(this.state.err && this.state.err.message || this.state.err)}</div>
+        </div>
+      </div>
+    );
+  }
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Boundary><App /></Boundary>);

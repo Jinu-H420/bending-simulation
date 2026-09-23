@@ -174,4 +174,21 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+// どこかで落ちても画面を真っ白にしない
+class Boundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="wrap">
+        <div className="card">
+          <b>表示でつまずきました。</b>
+          <div className="hint">ページを読み直してください（Ctrl＋F5）。直らないときは、この文面を知らせてください：{String(this.state.err && this.state.err.message || this.state.err)}</div>
+        </div>
+      </div>
+    );
+  }
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Boundary><App /></Boundary>);

@@ -404,7 +404,7 @@ function harderOrSame(shape, dims, L, rec, smallV) {
   if (shape === 'Z') return dims[1] <= rec.dims[1] && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
   return Math.abs(dims[1] - rec.dims[1]) <= 5 && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
 }
-const recText = (r) => `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${r.who ? `（${r.who}）` : ''}`;
+const recText = (r) => (!r || !Array.isArray(r.dims) ? '（記録の中身が足りません）' : `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${r.who ? `（${r.who}）` : ''}`);
 // 小さいVの最長L：曲がった実績の一番長い L
 function recMaxL(recs, shape, row) {
   const ls = (recs || []).filter((r) => r.ok && r.mat === row.mat && r.t === row.t && r.V === row.V && sameDie(r, row) && r.L > 0).map((r) => r.L);
@@ -413,7 +413,8 @@ function recMaxL(recs, shape, row) {
 function withRecords(res, shape, dims, L, recs) {
   if (!recs || !recs.length) return res;
   const k = recKey(shape, res.row);
-  const same = recs.filter((r) => recKey(r.shape, r) === k && sameDie(r, res.row));
+  const same = recs.filter((r) => r && Array.isArray(r.dims) && r.dims.length >= 3
+    && recKey(r.shape, r) === k && sameDie(r, res.row));
   if (!same.length) return res;
   const smallV = !!smallVCheck(res.row.mat, res.row.t, res.row.V);
   const okR = same.filter((r) => r.ok && easierOrSame(shape, dims, L, r, smallV));
@@ -497,7 +498,9 @@ export function judgeAll(rows, shape, mat, t, dims, L, recs = []) {
 //   ok＝これより楽なので曲がる／ng＝これよりきついので曲がらない
 export function recMatch(row, shape, dims, L, recs) {
   const k = recKey(shape, row);
-  const same = (recs || []).filter((r) => recKey(r.shape, r) === k && sameDie(r, row));
+  // 中身が欠けている記録（古いもの・手で直したもの）は使わない
+  const same = (recs || []).filter((r) => r && Array.isArray(r.dims) && r.dims.length >= 3
+    && recKey(r.shape, r) === k && sameDie(r, row));
   const smallV = !!smallVCheck(row.mat, row.t, row.V);
   return {
     same,

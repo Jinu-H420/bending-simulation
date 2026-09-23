@@ -512,7 +512,6 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
   const row = (list.find((r) => r.row.id === V) || list[0]).row;
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === t);
   const submit = () => {
-    if (!who.trim()) { alert('だれに確かめたか（名前）を入れてください'); return; }
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
     const punch = method === 'kuno' ? '特殊 くの字165' : method === 'kuno100' ? '特殊 くの字100' : '904061';
     saveRec({
@@ -549,8 +548,8 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
                 <option value="naka">中押し</option>
               </select>
             </label>
-            <label className="f"><span>確かめた人</span>
-              <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中" />
+            <label className="f"><span>確かめた人（任意）</span>
+              <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中（入れなくてよい）" />
             </label>
           </div>
           <div className="seg" style={{ marginTop: 8, display: 'inline-flex' }}>

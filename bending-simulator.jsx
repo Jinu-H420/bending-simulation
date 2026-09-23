@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { loadRecords, addRecord, removeRecord, lookup, missRate, exportJSON, importJSON } from './src/records.js';
+import { loadRecords, addRecord, removeRecord, lookup, missRate, mergeRecords, exportJSON, importJSON } from './src/records.js';
 import { folderSupported, loadFolder, pickFolder, forgetFolder, permission, pull as cloudPull, push as cloudPush } from './src/cloud.js';
 
 // ============================================================================
@@ -1384,7 +1384,9 @@ const BendingSimulator = () => {
     { bend: 2, mirror: false, valley: true },
     { bend: 3, mirror: true, valley: false },
   ]);
-  const [records, setRecords] = useState(() => loadRecords());   // 曲げた／曲げられなかった実績
+  // 曲げた／曲げられなかった実績。置き場所は共有フォルダの zuRecords 1か所だけ（つないでいない間はこのPCに控え）
+  const [records, setRecords] = useState(() => loadRecords());
+  const zuRecs = records;
   const [recNote, setRecNote] = useState('');
   const [autoMsg, setAutoMsg] = useState('');   // 自動で段取りを決めたときの説明
   // 中押し（捨て曲げ）でシミュレーションする：底の真ん中をへの字 → 両サイド → 中押しで戻す
@@ -1392,7 +1394,7 @@ const BendingSimulator = () => {
   const [nakaAngle, setNakaAngle] = useState(10);   // への字の角度（°）
   // 曲がらないとき、ほかのヤゲン（くの字など）なら曲がるか。{ busy, ok:{punch,flip,seq,special}, win:{punch,win} }
   const [altPunch, setAltPunch] = useState(null);
-  const [zuRecs, setZuRecs] = useState([]);   // Z・コの字判定で登録した実績（共有フォルダ bendsim.json の zuRecords）
+  // zuRecs は records と同じもの（共有フォルダ bendsim.json の zuRecords）。小さいVの最長Lにも使う
   // サーバー保存（GitHub）。接続先とトークンはこの端末のブラウザにだけ置く
   const [cloudConf, setCloudConf] = useState(null);      // つながっている共有フォルダ
   const cloudConfRef = useRef(null);
@@ -1680,22 +1682,37 @@ const BendingSimulator = () => {
 
   // --- 実績の記録と引き当て ---------------------------------------------
   // いまの段取りを1件の「条件」にまとめる。記録の鍵もここから作る。
+  // 形（Z・コの字など）と外寸も入れておく。ほかの画面（かんたん判定・Z判定）でもそのまま使えるように
+  const recShape = useMemo(() => {
+    const d = bends.map((b) => b.dir);
+    if (effSegs.length === 2 && d.length === 1) return 'L';
+    if (effSegs.length === 3 && d.length === 2) return d[0] === d[1] ? 'U' : 'Z';
+    if (effSegs.length === 5 && d.length === 4) return 'HAT';
+    return 'free';
+  }, [effSegs.length, bends]);
+  const recDims = useMemo(() => effSegs.map((L, k) => +Number(
+    inputMode === 'outer' ? outerSegs[k]
+    : inputMode === 'inner' ? innerSegs[k] + 2 * t
+    : Number(L) + (nobiPerBend[k - 1] || 0) + (nobiPerBend[k] || 0)).toFixed(1)),
+  [effSegs, inputMode, outerSegs, innerSegs, nobiPerBend, t]);
   const nowCase = useMemo(() => ({
     die: dieSel, dieFlip, punch: punchType, punchFlip, machine: machineSel,
     mat: matType, t, nobi: baseNobi, segs: effSegs, bends, seq, simOK: allOK,
+    shape: recShape, dims: recDims, V: Math.round(vHalf * 2), L: bendLen,
+    method: nakaOn ? 'naka' : /^特殊 くの字/.test(punchType) ? 'kuno' : 'normal',
   }), [dieSel, dieFlip, punchType, punchFlip, machineSel, matType, t, baseNobi,
-       effSegs, bends, seq, allOK]);
+       effSegs, bends, seq, allOK, recShape, recDims, vHalf, bendLen, nakaOn]);
   const recHit = useMemo(() => lookup(records, nowCase), [records, nowCase]);
   const recMiss = useMemo(() => missRate(records, nowCase), [records, nowCase]);
   const saveResult = (bent) => {
-    const next = addRecord(records, nowCase, bent, recNote);
-    setRecords(next);
+    const { list, rec } = addRecord(records, nowCase, bent, recNote, who);
+    setRecords(list);
     setRecNote('');
-    cloudSend({ records: next });   // 実績はすぐ共有フォルダにも残す
+    cloudSend({ zuRecords: [rec] });   // 実績はすぐ共有フォルダの zuRecords に残す（登録先は1か所）
   };
-  const dropRecord = (key) => {
-    setRecords(removeRecord(records, key));
-    cloudSend({ removeKeys: [key] });
+  const dropRecord = (id) => {
+    setRecords(removeRecord(records, id));
+    cloudSend({ removeZu: [id] });
   };
 
   // --- サーバー（GitHub）保存 -------------------------------------------
@@ -1740,7 +1757,11 @@ const BendingSimulator = () => {
     try {
       const { data } = await cloudPull(dir);
       setRecords((cur) => importJSON(cur, JSON.stringify(data.records || [])));
-      setZuRecs(data.zuRecords || []);   // Z・コの字判定で登録した実績（小さいVの最長Lに使う）
+      // 共有フォルダの実績と、このPCの控えを混ぜて1つにする
+      const merged = mergeRecords(data.zuRecords || [], records);
+      setRecords(merged);
+      const onlyHere = merged.filter((r) => !(data.zuRecords || []).some((z) => z.id === r.id));
+      if (onlyHere.length) cloudSend({ zuRecords: onlyHere });   // このPCだけにあったものを共有フォルダへ
       setCloudSaves(data.saves || []);
       cloudConfRef.current = dir; setCloudConf(dir); setPendingDir(null);
       if (linkRef.current) {
@@ -2442,16 +2463,16 @@ const BendingSimulator = () => {
         {/* 実績バー：同じ条件を実際に曲げた記録があれば、シミュレーションより前に出す */}
         {recHit.exact && (
           <div className={`rounded-md px-4 py-2 mb-2 border text-sm flex items-center gap-3 flex-wrap ${
-            recHit.exact.bent ? 'bg-emerald-950/40 border-emerald-600 text-emerald-200'
+            recHit.exact.ok ? 'bg-emerald-950/40 border-emerald-600 text-emerald-200'
                               : 'bg-amber-950/40 border-amber-600 text-amber-200'}`}>
             <span className="font-bold">
-              実績 {recHit.exact.bent ? '曲がりました' : '曲がりませんでした'}
+              実績 {recHit.exact.ok ? '曲がりました' : '曲がりませんでした'}
             </span>
             <span className="text-xs opacity-80">
               {recHit.exact.at} 記録／{recHit.exact.n}回
               {recHit.exact.note ? `　${recHit.exact.note}` : ''}
             </span>
-            {recHit.exact.bent !== allOK && (
+            {recHit.exact.ok !== allOK && (
               <span className="text-xs font-bold text-rose-300">
                 ⚠ シミュレーションは「{allOK ? '曲がる' : '曲がらない'}」と出しています。実績を優先してください
               </span>
@@ -3095,7 +3116,7 @@ const BendingSimulator = () => {
             <div className="mt-3 rounded border border-slate-700 bg-slate-950/60 px-3 py-2">
               <div className="text-xs font-bold text-slate-200 mb-1">実際はどうでしたか</div>
               <div className="text-[11px] text-slate-500 mb-2">
-                記録すると、次に同じ段取りを開いたときに判定より先に出ます。{cloudConf ? '共有フォルダにも保存されます。' : 'このPCに保存されます（右上で共有フォルダにつなぐと、ほかのPCでも見られます）。'}
+                記録すると、次に同じ段取りを開いたときに判定より先に出ます。かんたん判定・Z曲げ／コの字判定と同じ所（共有フォルダ bendsim.json）に貯まります。{cloudConf ? '共有フォルダにも保存されます。' : 'このPCに保存されます（右上で共有フォルダにつなぐと、ほかのPCでも見られます）。'}
               </div>
               <div className="flex items-center gap-2 flex-wrap mb-2">
                 <button onClick={() => saveResult(true)}
@@ -3106,6 +3127,9 @@ const BendingSimulator = () => {
                   className="px-3 py-1 text-xs rounded border border-rose-600 text-rose-300 hover:bg-rose-900/40">
                   曲がらなかった
                 </button>
+                <input value={who} onChange={(e) => { setWho(e.target.value); try { localStorage.setItem('bendsim.who', e.target.value); } catch { /* 無視 */ } }}
+                  placeholder="確かめた人（任意）"
+                  className="w-40 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
                 <input value={recNote} onChange={(e) => setRecNote(e.target.value)}
                   placeholder="ひとこと（当たった場所など）"
                   className="flex-1 min-w-40 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
@@ -3113,19 +3137,19 @@ const BendingSimulator = () => {
               {recHit.similar.length > 0 && (
                 <div className="text-[11px] text-slate-400 mb-1">
                   同じ金型・板厚の記録 {recHit.similar.length}件 —
-                  曲がった {recHit.similar.filter((r) => r.bent).length}／
-                  曲がらなかった {recHit.similar.filter((r) => !r.bent).length}
+                  曲がった {recHit.similar.filter((r) => r.ok).length}／
+                  曲がらなかった {recHit.similar.filter((r) => !r.ok).length}
                 </div>
               )}
               {records.length > 0 && (
                 <div className="max-h-32 overflow-auto text-[11px] font-mono space-y-0.5">
                   {records.slice(0, 12).map((r) => (
-                    <div key={r.key} className="flex items-center gap-2">
-                      <span className={r.bent ? 'text-emerald-400' : 'text-rose-400'}>{r.bent ? '○' : '✕'}</span>
+                    <div key={r.id} className="flex items-center gap-2">
+                      <span className={r.ok ? 'text-emerald-400' : 'text-rose-400'}>{r.ok ? '○' : '✕'}</span>
                       <span className="text-slate-500">{r.at}</span>
-                      <span className="text-slate-300 truncate">{r.mat}t{r.t}／{r.segs.join('/')}</span>
-                      {r.sim != null && r.sim !== r.bent && <span className="text-amber-400">判定と相違</span>}
-                      <button onClick={() => dropRecord(r.key)}
+                      <span className="text-slate-300 truncate">{r.mat}t{r.t}／{(r.dims || []).join('/')}</span>
+                      {r.case && r.case.sim != null && r.case.sim !== r.ok && <span className="text-amber-400">判定と相違</span>}
+                      <button onClick={() => dropRecord(r.id)}
                         className="ml-auto text-slate-600 hover:text-rose-400">消す</button>
                     </div>
                   ))}

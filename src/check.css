@@ -100,3 +100,4 @@ button.del { font: inherit; font-size: 12px; background: none; border: 0; color:
 button.del:hover { color: var(--ng); }
 .tag-act { font-size: 12px; font-weight: 700; color: var(--ok); border: 1px solid var(--ok); border-radius: 99px; padding: 1px 8px; margin-left: 6px; }
 .res-body .sub { color: var(--sub); font-size: 13.5px; }
+.res-foot .learn { color: var(--accent); }

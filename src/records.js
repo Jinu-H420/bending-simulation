@@ -82,7 +82,8 @@ export function addRecord(list, c, bent, note, who) {
     dims: (c.dims || c.segs).map((x) => +Number(x).toFixed(1)), L: c.L || null,
     method: c.method || 'normal', punch: c.punch, ok: !!bent, lenFail: false, note: note || '', n: 1,
     case: {
-      key, sim: c.simOK, dieFlip: !!c.dieFlip, punchFlip: !!c.punchFlip,
+      key, sim: c.simOK, gap: typeof c.gap === 'number' ? +c.gap.toFixed(2) : null,
+      dieFlip: !!c.dieFlip, punchFlip: !!c.punchFlip,
       segs: c.segs.map((x) => +x.toFixed(1)),
       bends: c.bends.map((b) => ({ angle: b.angle, dir: b.dir })),
       seq: c.seq.map((s) => ({ bend: s.bend, mirror: !!s.mirror, valley: !!s.valley })),
@@ -115,6 +116,24 @@ export function missRate(list, c) {
   if (!rel.length) return null;
   return { n: rel.length, miss: rel.filter((r) => r.case.sim !== r.ok).length };
 }
+
+// 実績から学ぶ「余裕」。使うほど判定が実物に近づく。
+//   need  ：シミュレーションでは当たらない（余裕があった）のに曲がらなかった → その余裕では足りない
+//   allow ：シミュレーションでは当たるのに曲がった → その分は当たっても曲がる（板が逃げるなど）
+// どちらも同じ型・材質・板厚の記録だけを見る。記録が無ければ null。
+export function learned(list, sel, mat, t) {
+  const rel = (list || []).filter((r) => r.sel === sel && r.mat === mat && Number(r.t) === Number(t)
+    && r.case && typeof r.case.gap === 'number');
+  if (!rel.length) return null;
+  const tooTight = rel.filter((r) => !r.ok && r.case.gap >= -0.05).map((r) => r.case.gap);
+  const bentAnyway = rel.filter((r) => r.ok && r.case.gap < -0.05).map((r) => -r.case.gap);
+  const need = tooTight.length ? +(Math.max(...tooTight) + 0.1).toFixed(2) : null;
+  const allow = bentAnyway.length ? +Math.max(...bentAnyway).toFixed(2) : null;
+  if (need == null && allow == null) return null;
+  return { n: rel.length, need, allow };
+}
+// 判定で使う「当たり」の境目。実績が無ければこれまでどおり -0.05mm
+export const gapLimit = (lr) => (lr && lr.need != null ? lr.need : lr && lr.allow != null ? -lr.allow : -0.05);
 
 export function exportJSON(list) {
   return JSON.stringify({ version: 3, savedAt: new Date().toISOString(), zuRecords: list }, null, 1);

@@ -14,6 +14,7 @@ import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
   SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck,
 } from '../bending-simulator.jsx';
+import { learned, gapLimit } from '../src/records.js';
 export { Z_ACT_ON };
 
 const PUNCH = '904061';
@@ -24,7 +25,7 @@ const UPPER = ['ヤゲン', '中間板', 'ホルダ', '柱（機械上部）', '
 
 // 普通の曲げ順（入力どおり・突き当てそのまま）で、最初に何に当たるか。
 // 中押しが効くのは上型に当たるときだけなので、それを見分けるのに使う。
-function firstHitWhere(row, outer, dirs) {
+function firstHitWhere(row, outer, dirs, need = -0.05) {
   const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
   const nobi = row.nobi, t = row.t;
   const flat = outer.map((L, i) => L - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
@@ -39,7 +40,7 @@ function firstHitWhere(row, outer, dirs) {
       const ch = computeChain(part, seq, si, bendProg, info.vHalf);
       const tools = toolsFor(PUNCH, false, ch.innerY - lift, 'std', info.polys);
       const g = minGap(ch, tools.polys, t, info.vHalf, exArc);
-      if (g.gap < -0.05) return tools.names[g.atIdx] || '工具';
+      if (g.gap < need) return tools.names[g.atIdx] || '工具';
     }
   }
   return null;
@@ -86,13 +87,13 @@ const machineName = (row) => row.machine;
 export const dieName = (row) => `V${row.V}${row.two ? ' 2溝' : ''}`;
 
 // 干渉判定（曲げ順・突き当て・裏返しを自動で探す）
-function geoCheck(row, outer, dirs) {
+function geoCheck(row, outer, dirs, need = -0.05) {
   const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
   const nobi = row.nobi;
   const flat = outer.map((L, i) => L - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
   if (flat.some((x) => x <= 0.5)) return { ok: false, why: '寸法が短すぎて形になりません' };
   const part = { t: row.t, segs: flat, bends: dirs.map((d) => ({ angle: 90, dir: d })), grow: dirs.map(() => nobi - row.t / 2) };
-  const r = searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, Math.max(0, 170 - row.t));
+  const r = searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, Math.max(0, 170 - row.t), need);
   return r.sols.length ? { ok: true, seq: r.sols[0] } : { ok: false };
 }
 
@@ -101,7 +102,7 @@ const f1 = (x) => (Math.round(x * 10) / 10).toString();
 // 904061 で当たるとき、ほかのヤゲンを試す。普通のヤゲン → 特殊（くの字）の順。
 // 特殊 くの字は中央の窓（165版＝200mm、100版＝70mm）に曲げ長さ L が収まるときだけ使える。
 // 返り値 { ok:{punch, flip, seq, special}, win:{punch, win}（窓さえ収まれば通るもの） }
-function altPunch(row, outer, dirs, L) {
+function altPunch(row, outer, dirs, L, need = -0.05) {
   const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
   const nobi = row.nobi;
   const flat = outer.map((x, i) => x - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
@@ -114,7 +115,7 @@ function altPunch(row, outer, dirs, L) {
   for (const [pid, flip] of cands) {
     const sp = PUNCH_LIB[pid].special;
     if (sp && win && win.punch === pid) continue;
-    const r = searchSequences(part, info.vHalf, info.polys, pid, flip, 'std', 1, Math.max(0, 170 - row.t));
+    const r = searchSequences(part, info.vHalf, info.polys, pid, flip, 'std', 1, Math.max(0, 170 - row.t), need);
     if (!r.sols.length) continue;
     if (sp && L > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; continue; }
     return { ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win };
@@ -142,7 +143,7 @@ export function kunoLimits(row, outer, dirs) {
 }
 
 // Z曲げ：outer = [A, S, B]（外寸）
-export function judgeZ(row, A, S, B, L) {
+export function judgeZ(row, A, S, B, L, need = -0.05) {
   const base = { row, die: dieName(row), machine: machineName(row) };
   if (row.nobi == null) return { ...base, grade: 'ng', why: '片伸びが折り曲げ表にありません' };
   const short = Math.min(A, B), long = Math.max(A, B);
@@ -151,7 +152,7 @@ export function judgeZ(row, A, S, B, L) {
       fix: `フランジを ${row.minOut}mm 以上に` };
   }
   const outer0 = [A, S, B], dirs0 = [1, -1];
-  const geo = geoCheck(row, outer0, dirs0);
+  const geo = geoCheck(row, outer0, dirs0, need);
   // 実績は確認中（Z_ACT_ON=false）のあいだ使わない。シミュレーションで決める
   const act = Z_ACT_ON ? row.zAct : null;
 
@@ -181,7 +182,7 @@ export function judgeZ(row, A, S, B, L) {
       fix: `段差Sを ${Math.ceil(row.zSimS)}mm 以上に`, geo };
   }
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: Z_ACT_ON || !row.zAct ? '計算で通ります（この型の実績はまだありません）' : '計算で通ります（段差の実績は確認中のため計算で判定）', geo };
-  const alt = altPunch(row, [A, S, B], [1, -1], L);
+  const alt = altPunch(row, [A, S, B], [1, -1], L, need);
   if (alt.ok) {
     return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
       hit: firstHitWhere(row, outer0, dirs0), geo: { ok: true, seq: alt.ok.seq },
@@ -197,7 +198,7 @@ export function judgeZ(row, A, S, B, L) {
 }
 
 // コの字：outer = [H1, W, H2]（外寸）
-export function judgeU(row, H1, W, H2, L) {
+export function judgeU(row, H1, W, H2, L, need = -0.05) {
   const base = { row, die: dieName(row), machine: machineName(row) };
   if (row.nobi == null) return { ...base, grade: 'ng', why: '片伸びが折り曲げ表にありません' };
   const short = Math.min(H1, H2);
@@ -205,9 +206,9 @@ export function judgeU(row, H1, W, H2, L) {
     return { ...base, grade: 'ng', why: `立上り ${short}mm が短く、V溝に落ちます（最小 ${row.minOut}mm）`, fix: `立上りを ${row.minOut}mm 以上に` };
   }
   const outer0 = [H1, W, H2], dirs0 = [1, 1];
-  const geo = geoCheck(row, outer0, dirs0);
+  const geo = geoCheck(row, outer0, dirs0, need);
   if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（コの字の実績はまだありません）', geo };
-  const alt = altPunch(row, [H1, W, H2], [1, 1], L);
+  const alt = altPunch(row, [H1, W, H2], [1, 1], L, need);
   if (alt.ok) {
     return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
       hit: firstHitWhere(row, outer0, dirs0), geo: { ok: true, seq: alt.ok.seq },
@@ -219,7 +220,7 @@ export function judgeU(row, H1, W, H2, L) {
   // 中押し（捨て曲げ）：底をへの字に曲げ → 両サイドを90° → 底を中押しで戻す。上型に当たるときだけ効く。
   // 押し切った瞬間に上型がコの字の内側に入るかを計算で見る。現場の決まりは内-内120mm以上
   // （経緯まとめ第17章）なので、それより狭くて計算では入るものは △ にする。
-  const where = firstHitWhere(row, [H1, W, H2], [1, 1]);
+  const where = firstHitWhere(row, [H1, W, H2], [1, 1], need);
   if (where && UPPER.includes(where)) {
     // 押し切った瞬間に、上型（904061・中間板・ホルダ・柱）がコの字の内側に入るか（本体の nakaOshi）
     const inner = +(W - 2 * row.t).toFixed(1);
@@ -454,8 +455,13 @@ export function judgeAll(rows, shape, mat, t, dims, L, recs = []) {
   const cand = rows.filter((r) => r.mat === mat && r.t === t);
   const baseV = (() => { const b = pickDie(mat, t); return b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null; })();
   const res = cand.map((row) => {
+    // その型の実績から学んだ「要る余裕」。記録が増えるほど、当たりの見方が実物に近づく
+    const lr = learned(recs, row.sel, mat, t);
+    const need = gapLimit(lr);
     // 計算 → 長さ・小さいV → 登録した実績（いちばん強い）の順に重ねる
-    const r = withRecords(withLength(shape === 'Z' ? judgeZ(row, ...dims, L) : judgeU(row, ...dims, L), L, recs), shape, dims, L, recs);
+    const r0 = shape === 'Z' ? judgeZ(row, ...dims, L, need) : judgeU(row, ...dims, L, need);
+    if (lr) r0.learn = lr;
+    const r = withRecords(withLength(r0, L, recs), shape, dims, L, recs);
     // くの字の L 上限は、普通のヤゲン（904061）で形として当たるときだけ出す（小さいVの△などでは出さない）
     const plainGeo = r.geo && r.geo.ok && !r.punch;
     if (!plainGeo && !(shape === 'Z' && Z_ACT_ON && row.zAct)) r.kuno = kunoLimits(row, dims, shape === 'Z' ? [1, -1] : [1, 1]);
@@ -483,13 +489,13 @@ export { recText };
 // ---------------------------------------------------------------- かんたん判定（check.html）から使う
 // row は { sel, machine:'HG2203'|'HD3504NT', V, mat, t, nobi, minOut }。カーブ（zu-data）は要らない。
 // ① 904061 で当たるとき、ほかのヤゲン（くの字を含む）で曲がるか
-export function rescuePunch(row, outer, dirs, L) {
-  const a = altPunch(row, outer, dirs, L);
+export function rescuePunch(row, outer, dirs, L, need = -0.05) {
+  const a = altPunch(row, outer, dirs, L, need);
   return a.ok ? { punch: a.ok.punch, flip: a.ok.flip, seq: a.ok.seq, special: a.ok.special || null, win: a.win } : { win: a.win };
 }
 // ② コの字で、中押し（捨て曲げ）なら曲がるか。上型に当たるときだけ効く
-export function nakaPlan(row, H1, W, H2) {
-  const where = firstHitWhere(row, [H1, W, H2], [1, 1]);
+export function nakaPlan(row, H1, W, H2, need = -0.05) {
+  const where = firstHitWhere(row, [H1, W, H2], [1, 1], need);
   if (!where || !UPPER.includes(where)) return { ok: false, where };
   if (W / 2 < row.minOut) {
     return { ok: false, where, why: `底の半分 ${W / 2}mm が最小フランジ ${row.minOut}mm より短く、への字に曲げられません` };

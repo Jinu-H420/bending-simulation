@@ -756,6 +756,12 @@ function App() {
                 {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.recs && best.recs.length > 0 && best.src !== '実績' && <span className="tag">この型の実績 {best.recs.length}件</span>}{best.punch && <span className="tag">{best.special ? `くの字特殊ヤゲン${best.punch.replace('特殊 くの字', '')}` : `ヤゲン ${best.punch}`}</span>}</div>}
                 <div>{best.why}</div>
                 {best.grade !== 'ng' && best.src !== '中押し' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
+                {best.learn && (
+                  <div className="hint">実績から学習（この型の記録 {best.learn.n}件）：
+                    {best.learn.need != null ? `余裕 ${best.learn.need}mm 以上ないと曲がらなかったので、その線で見ています` : ''}
+                    {best.learn.allow != null ? `${best.learn.need != null ? '／' : ''}絵で ${best.learn.allow}mm 当たっても曲がった実績があります` : ''}
+                  </div>
+                )}
               </div>
               {best.src === '中押し' && best.naka && best.grade !== 'ng' && (
                 <NakaSteps angle={best.naka.angle} inner={best.naka.inner} pending={best.grade === 'check'} />

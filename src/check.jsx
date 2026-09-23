@@ -10,6 +10,7 @@ import {
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck,
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA } from '../zu/judge.js';
+import { learned, gapLimit } from './records.js';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
 import './check.css';
 
@@ -121,7 +122,7 @@ const vOf = (info) => Math.round(info.vHalf * 2);
 
 // 1つの金型で判定する
 function judge({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
-  return withRecs(withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn, L }), { L, t, mat }), { shape, outer, L, recs });
+  return withRecs(withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }), { L, t, mat }), { shape, outer, L, recs });
 }
 // 曲げ屋さんに確かめて登録した実績があれば、計算より優先する（Z・コの字のみ）
 function withRecs(r, { shape, outer, L, recs }) {
@@ -134,7 +135,7 @@ function withRecs(r, { shape, outer, L, recs }) {
     why: `実績：${recText(m.ng)}。いまの寸法はそれと同じかきついので曲がりません` };
   return { ...r, recs: m.same };
 }
-function judgeShape({ shape, outer, t, mat, sel, nobiIn, L }) {
+function judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
   const S = SHAPES[shape];
   const machine = machineOfSel(sel);
   const info = resolveDie(sel, 20, 30, true, machine);
@@ -164,8 +165,11 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L }) {
   const part = { t, segs: flat, bends: S.dirs.map((d) => ({ angle: 90, dir: d })), grow: S.dirs.map(() => nobi - t / 2) };
   const openGap = Math.max(0, 170 - t);
 
-  const r = searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, openGap);
-  if (r.sols.length) return { ...res, ok: true, seq: r.sols[0], minOut: mo && mo.val };
+  // その型の実績から学んだ「要る余裕」。登録が増えるほど、当たりの見方が実物に近づく
+  const learn = learned(recs, sel, mat, t);
+  const need = gapLimit(learn);
+  const r = searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, openGap, need);
+  if (r.sols.length) return { ...res, ok: true, seq: r.sols[0], minOut: mo && mo.val, learn };
 
   // 通らないとき：入力順・裏返しは山谷どおり・突き当ては全組合せで、いちばん惜しい所を理由にする
   const n = S.dirs.length;
@@ -185,7 +189,7 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L }) {
         if (!w || g.gap < w.gap) w = { gap: g.gap, step: si + 1, name: tools.names[g.atIdx] };
       }
       if (!worst || w.gap < worst.gap) worst = w;
-      if (w.gap < -0.05) break;
+      if (w.gap < need) break;
     }
     if (!best || worst.gap > best.gap) best = worst;
   }
@@ -195,24 +199,25 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L }) {
   // 普通に曲げられないときの逃げ道。現場の順番は くの字 → 中押し（最終手段）
   const row = { sel, machine: machine === 'hg2203' ? 'HG2203' : 'HD3504NT', V, mat, t, nobi, minOut: (mo && mo.val) || 0,
     two: /^lib:30[56]40:/.test(sel) };
-  const alt = rescuePunch(row, outer, S.dirs, L || 0);
+  const alt = rescuePunch(row, outer, S.dirs, L || 0, need);
   if (alt.punch) {
     return { ...res, ok: true, method: alt.special ? 'kuno' : 'punch', punch: alt.punch, punchFlip: alt.flip,
       special: alt.special, seq: alt.seq, minOut: mo && mo.val, hit,
+      learn,
       why: alt.special
         ? `普通のヤゲン 904061 では当たりますが、くの字特殊ヤゲン${alt.punch.replace('特殊 くの字', '')}なら曲がります（曲げ長さ ${alt.special.win}mm まで）`
         : `普通のヤゲン 904061 では当たりますが、ヤゲン ${alt.punch}${alt.flip ? '（反転）' : ''} なら曲がります` };
   }
   if (shape === 'U') {
-    const nk = nakaPlan(row, outer[0], outer[1], outer[2]);
+    const nk = nakaPlan(row, outer[0], outer[1], outer[2], need);
     if (nk.ok) {
-      return { ...res, ok: true, method: 'naka', naka: nk, minOut: mo && mo.val, hit,
+      return { ...res, ok: true, method: 'naka', naka: nk, minOut: mo && mo.val, hit, learn,
         why: `普通の曲げ方では${nk.where}に当たります。中押し（捨て曲げ）なら曲がります（への字 ${nk.angle}°以上、底の内-内 ${nk.inner}mm）`
           + (nk.pending ? `。内-内 ${nk.inner}mm は現場の決まり ${nk.sute}mm より狭く、まだ確かめていません` : '') };
     }
-    if (nk.why) return { ...res, ok: false, why: `${hit}。中押しでも、${nk.why}`, kunoWin: alt.win || null };
+    if (nk.why) return { ...res, ok: false, why: `${hit}。中押しでも、${nk.why}`, kunoWin: alt.win || null, learn };
   }
-  return { ...res, ok: false, why: hit, kunoWin: alt.win || null };
+  return { ...res, ok: false, why: hit, kunoWin: alt.win || null, learn };
 }
 
 // その型・その寸法でシミュレーターを開くリンク。曲がらない型は、当たる所で止まる
@@ -264,6 +269,13 @@ function Result({ r, big, now }) {
       <div className="res-foot">
         片伸び {r.nobi != null ? r.nobi : '—'}（{r.nobiSrc}）
         {r.lenLim && <span className="len">曲げ長さは {r.lenLim.v}mm まで（{r.lenLim.why}）</span>}
+        {r.learn && (
+          <span className="learn">
+            実績から学習（この型の記録 {r.learn.n}件）：
+            {r.learn.need != null ? `余裕 ${r.learn.need}mm 以上ないと曲がらなかったので、その線で見ています` : ''}
+            {r.learn.allow != null ? `${r.learn.need != null ? '／' : ''}絵で ${r.learn.allow}mm 当たっても曲がった実績があるので、その分は当たりとみなしていません` : ''}
+          </span>
+        )}
         {r.ok && r.smallV && r.smallV.maxL == null && (
           <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
         )}

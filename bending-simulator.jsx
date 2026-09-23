@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { loadRecords, addRecord, removeRecord, lookup, missRate, mergeRecords, exportJSON, importJSON } from './src/records.js';
+import { loadRecords, addRecord, removeRecord, lookup, missRate, mergeRecords, learned, gapLimit, exportJSON, importJSON } from './src/records.js';
 import { folderSupported, loadFolder, pickFolder, forgetFolder, permission, pull as cloudPull, push as cloudPush } from './src/cloud.js';
 
 // ============================================================================
@@ -844,7 +844,7 @@ function reachCheck(part, seq, stepIdx, vHalf) {
 // 自動段取り探索（Dr.ABE_Bend相当の簡易版）
 // 曲げ順×姿勢（左右反転・表裏）をDFSで総当りし、粗ストローク走査で干渉チェック
 // ============================================================================
-function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap = 0) {
+function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap = 0, need = -0.05) {
   const seq = [...prefix, st];
   const idx = prefix.length;
   // アクティブ曲げの左右のフランジがV肩に届かなければ不可
@@ -857,7 +857,7 @@ function stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, c
     const ch = computeChain(part, seq, idx, bendProg, vHalf);
     if (!ch.activeDirOK) return false;
     const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
-    if (minGap(ch, tools.polys, part.t, vHalf, exArc).gap < -0.05) return false;
+    if (minGap(ch, tools.polys, part.t, vHalf, exArc).gap < need) return false;
   }
   return true;
 }
@@ -883,7 +883,8 @@ function searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel
   return null;
 }
 
-function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, limit = 6, openGap = 0) {
+// need＝「これ以上の余裕がないと当たり」とみなす境目。実績から学んだ値を外から渡せる（既定 -0.05mm）
+function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, limit = 6, openGap = 0, need = -0.05) {
   const B = part.bends.length;
   const sols = [];
   let tried = 0;
@@ -896,7 +897,7 @@ function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel,
           if (sols.length >= limit) return;
           tried++;
           const st = { bend: b, mirror, valley };
-          if (stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap)) {
+          if (stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap, need)) {
             dfs([...prefix, st], remaining.filter((x) => x !== b));
           }
         }
@@ -1599,6 +1600,9 @@ const BendingSimulator = () => {
   // 工程 si・進み p の板。中押しの工程だけ支点をダイ上面の端にする
   const chainAt = (si, p) => computeChain(simPart, simSeq, si, p, simSeq[si] && simSeq[si].press ? pressHalf : vHalf);
   // --- 全工程スイープ判定（ストローク0→100%を走査）---
+  // この金型・板厚で実績から学んだ「要る余裕」。記録が増えるほど判定が実物に近づく
+  const learn = useMemo(() => learned(records, dieSel, matType, t), [records, dieSel, matType, t]);
+  const hitAt = gapLimit(learn);   // これより余裕が少なければ「当たり」とみなす
   const verdicts = useMemo(() => {
     return simSeq.map((_, si) => {
       let orientationNG = false;
@@ -1615,14 +1619,15 @@ const BendingSimulator = () => {
         const tools = toolsFor(punchType, punchFlip, ch.innerY - lift, chukanSel, diePolys);
         const g = minGap(ch, tools.polys, t, vHalf, exArc);
         if (g.gap < worst) worst = g.gap;
-        if (g.gap < -0.05) {
+        if (g.gap < hitAt) {
           firstHit = { prog: p, count: g.hits.length, gap: g.gap, where: tools.names[g.atIdx] || null };
           break;
         }
       }
       return { orientationNG, firstHit, reachNG, worst, kind: simSeq[si].kind || null };
     });
-  }, [simPart, simSeq, vHalf, pressHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends]);
+  }, [simPart, simSeq, vHalf, pressHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends, hitAt]);
+  const worstGap = useMemo(() => Math.min(...verdicts.map((v) => v.worst)), [verdicts]);
 
   // シミュレーションの幾何だけで見た最小段差。実績と見比べるために出す。
   // 重い処理なのでZ段差が実際にある形のときだけ、最初の1か所について計算する。
@@ -1698,10 +1703,10 @@ const BendingSimulator = () => {
   const nowCase = useMemo(() => ({
     die: dieSel, dieFlip, punch: punchType, punchFlip, machine: machineSel,
     mat: matType, t, nobi: baseNobi, segs: effSegs, bends, seq, simOK: allOK,
-    shape: recShape, dims: recDims, V: Math.round(vHalf * 2), L: bendLen,
+    shape: recShape, dims: recDims, V: Math.round(vHalf * 2), L: bendLen, gap: worstGap,
     method: nakaOn ? 'naka' : /^特殊 くの字/.test(punchType) ? 'kuno' : 'normal',
   }), [dieSel, dieFlip, punchType, punchFlip, machineSel, matType, t, baseNobi,
-       effSegs, bends, seq, allOK, recShape, recDims, vHalf, bendLen, nakaOn]);
+       effSegs, bends, seq, allOK, recShape, recDims, vHalf, bendLen, nakaOn, worstGap]);
   const recHit = useMemo(() => lookup(records, nowCase), [records, nowCase]);
   const recMiss = useMemo(() => missRate(records, nowCase), [records, nowCase]);
   const saveResult = (bent) => {
@@ -2477,6 +2482,14 @@ const BendingSimulator = () => {
                 ⚠ シミュレーションは「{allOK ? '曲がる' : '曲がらない'}」と出しています。実績を優先してください
               </span>
             )}
+          </div>
+        )}
+        {learn && (
+          <div className="rounded-md px-4 py-2 mb-2 border border-sky-700 bg-sky-950/30 text-sky-200 text-xs">
+            実績から学習（この金型・{matType} t{t} の記録 {learn.n}件）：
+            {learn.need != null && <>余裕が {learn.need}mm 以上ないと曲がらなかったので、その線で判定しています。</>}
+            {learn.allow != null && <>絵で {learn.allow}mm 当たっても曲がった実績があるので、その分は当たりとみなしていません。</>}
+            　いまの余裕 {Number.isFinite(worstGap) ? worstGap.toFixed(1) : '—'}mm
           </div>
         )}
         {!recHit.exact && recMiss && recMiss.miss > 0 && (

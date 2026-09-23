@@ -129,6 +129,8 @@ function withRecs(r, { shape, outer, L, recs }) {
   if (!recs || !recs.length || r.skip || !r.V || !(shape === 'Z' || shape === 'U')) return r;
   const m = recMatch({ mat: r.mat || null, t: r.t, V: r.V, sel: r.sel }, shape, outer, L, recs);
   if (!m.same.length) return r;
+  if (m.ok && m.ng) return { ...r, src: '実績', clash: true, rec: m.ok,
+    why: `実績が食い違っています：${recText(m.ok)}／${recText(m.ng)}。どちらかが間違いのはずなので、確かめてください` };
   if (m.ok) return { ...r, ok: true, src: '実績', rec: m.ok, method: m.ok.method === 'normal' ? null : m.ok.method,
     why: `実績あり：${recText(m.ok)}。いまの寸法はそれと同じか楽です` };
   if (m.ng && r.ok && !r.method) return { ...r, ok: false, src: '実績', rec: m.ng,
@@ -259,7 +261,7 @@ function Result({ r, big, now }) {
         <span className="mark">{r.ok ? '○' : '✕'}</span>
         <span className="verdict">{m ? WORD[m](r) : r.ok ? '曲がります' : '曲がりません'}</span>
         <span className="die">{r.label}（{MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）</span>
-        {r.src === '実績' && <span className="tag-act">実績あり</span>}
+        {r.src === '実績' && <span className={r.clash ? 'tag-clash' : 'tag-act'}>{r.clash ? '⚠ 実績が食い違い' : '実績あり'}</span>}
       </div>
       {r.ok && !m && r.src !== '実績' ? (
         <div className="res-body">曲げ順：<b>{seqText(r.seq)}</b></div>

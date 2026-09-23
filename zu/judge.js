@@ -400,6 +400,14 @@ function withRecords(res, shape, dims, L, recs) {
   if (!same.length) return res;
   const smallV = !!smallVCheck(res.row.mat, res.row.t, res.row.V);
   const okR = same.filter((r) => r.ok && easierOrSame(shape, dims, L, r, smallV));
+  const ngAll = same.filter((r) => !r.ok && r.method === 'normal' && harderOrSame(shape, dims, L, r, smallV));
+  // いまの寸法に、曲がった実績と曲がらなかった実績の両方が当てはまる＝どちらかが間違い
+  const clash = okR.length && ngAll.length ? { ok: okR[0], ng: ngAll[0] } : null;
+  if (clash) {
+    return { ...res, grade: 'check', src: '実績', recs: same, clash,
+      why: `実績が食い違っています：${recText(clash.ok)}／${recText(clash.ng)}。どちらかが間違いのはずなので、確かめてください`,
+      fix: res.fix };
+  }
   if (okR.length) {
     // 曲げ方の順番（普通 → くの字 → 中押し）で一番楽なもの
     const pick = ['normal', 'kuno', 'naka'].map((m) => okR.find((r) => r.method === m)).find(Boolean) || okR[0];

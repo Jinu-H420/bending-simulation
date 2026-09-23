@@ -9,7 +9,7 @@ const single = process.argv.some((a) => a.includes('dist-single'));
 
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/bending-simulation/' : '/',
-  build: single ? {} : { rollupOptions: { input: { main: 'index.html', check: 'check.html', zu: 'zu/index.html' } } },
+  build: single ? {} : { rollupOptions: { input: { main: 'index.html', check: 'check.html', zu: 'zu/index.html', records: 'records.html' } } },
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,

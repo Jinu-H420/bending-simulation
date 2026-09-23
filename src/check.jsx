@@ -461,7 +461,7 @@ function App() {
   const base = useMemo(() => pickDie(mat, t), [mat, t]);
   const nobiIn = nobiText.trim() === '' ? null : Number(nobiText);
 
-  const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setFocus(null); setResult(null); setOthers(null); };
+  const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setFocus(null); setOthers(null); };
   const Lnum = Number(Ltext);
   const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
     nobiIn: Number.isFinite(nobiIn) ? nobiIn : null, recs });
@@ -473,6 +473,18 @@ function App() {
     setBusy('判定しています…');
     setTimeout(() => { setResult(judge({ ...input(), sel: base.sel })); setBusy(''); }, 20);
   };
+
+  // 形や寸法を変えたら、押さなくても判定し直す（前は結果が消えたままだった）
+  useEffect(() => {
+    if (!base || !base.sel) { setResult(null); return undefined; }
+    if (dims.some((d) => !(Number(d) > 0)) || !(Number(t) > 0)) { setResult(null); return undefined; }
+    setBusy('判定しています…');
+    const id = setTimeout(() => {
+      setResult(judge({ ...input(), sel: base.sel }));
+      setBusy('');
+    }, 300);
+    return () => clearTimeout(id);
+  }, [shape, dims.join('|'), t, mat, nobiText, Ltext, recs]);
 
   // 使えるほかの金型を全部試す（1型ずつ画面に出す）
   const runOthers = () => {
@@ -519,7 +531,7 @@ function App() {
               <span>{lb}</span>
               <input inputMode="decimal" value={dims[i]}
                 onFocus={() => setFocus(i)} onBlur={() => setFocus((k) => (k === i ? null : k))}
-                onChange={(e) => { const d = [...dims]; d[i] = e.target.value; setDims(d); setResult(null); setOthers(null); }} />
+                onChange={(e) => { const d = [...dims]; d[i] = e.target.value; setDims(d); setOthers(null); }} />
             </label>
           ))}
         </div>
@@ -529,7 +541,7 @@ function App() {
         <div className="row">
           <label className="inl"><span>L</span>
             <input inputMode="decimal" value={Ltext}
-              onChange={(e) => { setLtext(e.target.value); setResult(null); setOthers(null); }} />
+              onChange={(e) => { setLtext(e.target.value); setOthers(null); }} />
           </label>
           <div className="hint" style={{ marginTop: 0 }}>
             ダイは1本 {DIE_UNIT_LEN}mm。まず {L_DEF}mm（1本に収まる長さ）を入れてあります。長いものは、ダイの台数と機械の長さで曲げられないことがあります。
@@ -540,14 +552,14 @@ function App() {
         <div className="row">
           <div className="seg">
             {['鉄', '縞'].map((m) => (
-              <button key={m} className={mat === m ? 'on' : ''} onClick={() => { setMat(m); setResult(null); setOthers(null); }}>{m}</button>
+              <button key={m} className={mat === m ? 'on' : ''} onClick={() => { setMat(m); setOthers(null); }}>{m}</button>
             ))}
           </div>
           <label className="inl"><span>板厚 t</span>
-            <input inputMode="decimal" value={t} onChange={(e) => { setT(e.target.value); setResult(null); setOthers(null); }} />
+            <input inputMode="decimal" value={t} onChange={(e) => { setT(e.target.value); setOthers(null); }} />
           </label>
           <label className="inl"><span>片伸び</span>
-            <input inputMode="decimal" placeholder="表から自動" value={nobiText} onChange={(e) => { setNobiText(e.target.value); setResult(null); }} />
+            <input inputMode="decimal" placeholder="表から自動" value={nobiText} onChange={(e) => { setNobiText(e.target.value); }} />
           </label>
         </div>
         <div className="hint">

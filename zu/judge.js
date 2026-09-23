@@ -86,6 +86,23 @@ const machineName = (row) => row.machine;
 // 型の名前。V12〜V25 は HG のインサートと、HD3504NT の2溝ダイ（30540・30640）の2通りある
 export const dieName = (row) => `V${row.V}${row.two ? ' 2溝' : ''}`;
 
+// その曲げ順で、いちばん余裕が少なかったところ（mm）。登録した実績と一緒に残し、次からの学習に使う
+function seqGap(part, info, seq, punch, flip, t) {
+  const exArc = shoulderReach(info.vHalf, t, 90) + t;
+  const openGap = Math.max(0, 170 - t);
+  let worst = Infinity;
+  for (let si = 0; si < seq.length; si++) {
+    for (let p = 0; p <= 1.0001; p += 0.05) {
+      const { bendProg, lift } = strokeState(p, openGap);
+      const ch = computeChain(part, seq, si, bendProg, info.vHalf);
+      const tools = toolsFor(punch, flip, ch.innerY - lift, 'std', info.polys);
+      const g = minGap(ch, tools.polys, t, info.vHalf, exArc);
+      if (g.gap < worst) worst = g.gap;
+    }
+  }
+  return Number.isFinite(worst) ? +worst.toFixed(2) : null;
+}
+
 // 干渉判定（曲げ順・突き当て・裏返しを自動で探す）
 function geoCheck(row, outer, dirs, need = -0.05) {
   const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
@@ -94,7 +111,7 @@ function geoCheck(row, outer, dirs, need = -0.05) {
   if (flat.some((x) => x <= 0.5)) return { ok: false, why: '寸法が短すぎて形になりません' };
   const part = { t: row.t, segs: flat, bends: dirs.map((d) => ({ angle: 90, dir: d })), grow: dirs.map(() => nobi - row.t / 2) };
   const r = searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, Math.max(0, 170 - row.t), need);
-  return r.sols.length ? { ok: true, seq: r.sols[0] } : { ok: false };
+  return r.sols.length ? { ok: true, seq: r.sols[0], gap: seqGap(part, info, r.sols[0], PUNCH, false, row.t) } : { ok: false };
 }
 
 const f1 = (x) => (Math.round(x * 10) / 10).toString();
@@ -181,7 +198,7 @@ export function judgeZ(row, A, S, B, L, need = -0.05) {
     return { ...base, grade: 'check', src: '計算', why: `フランジが短いので計算では通りますが、段差S ${Math.ceil(row.zSimS)}mm 未満は実績の無い範囲です`,
       fix: `段差Sを ${Math.ceil(row.zSimS)}mm 以上に`, geo };
   }
-  if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: Z_ACT_ON || !row.zAct ? '計算で通ります（この型の実績はまだありません）' : '計算で通ります（段差の実績は確認中のため計算で判定）', geo };
+  if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', gap: geo.gap, why: Z_ACT_ON || !row.zAct ? '計算で通ります（この型の実績はまだありません）' : '計算で通ります（段差の実績は確認中のため計算で判定）', geo };
   const alt = altPunch(row, [A, S, B], [1, -1], L, need);
   if (alt.ok) {
     return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
@@ -207,7 +224,7 @@ export function judgeU(row, H1, W, H2, L, need = -0.05) {
   }
   const outer0 = [H1, W, H2], dirs0 = [1, 1];
   const geo = geoCheck(row, outer0, dirs0, need);
-  if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', why: '計算で通ります（コの字の実績はまだありません）', geo };
+  if (geo.ok) return { ...base, grade: 'ok-sim', src: '計算', gap: geo.gap, why: '計算で通ります（コの字の実績はまだありません）', geo };
   const alt = altPunch(row, [H1, W, H2], [1, 1], L, need);
   if (alt.ok) {
     return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
@@ -403,17 +420,13 @@ function withRecords(res, shape, dims, L, recs) {
   const ngAll = same.filter((r) => !r.ok && r.method === 'normal' && harderOrSame(shape, dims, L, r, smallV));
   // いまの寸法に、曲がった実績と曲がらなかった実績の両方が当てはまる＝どちらかが間違い
   const clash = okR.length && ngAll.length ? { ok: okR[0], ng: ngAll[0] } : null;
-  if (clash) {
-    return { ...res, grade: 'check', src: '実績', recs: same, clash,
-      why: `実績が食い違っています：${recText(clash.ok)}／${recText(clash.ng)}。どちらかが間違いのはずなので、確かめてください`,
-      fix: res.fix };
-  }
   if (okR.length) {
     // 曲げ方の順番（普通 → くの字 → 中押し）で一番楽なもの
     const pick = ['normal', 'kuno', 'naka'].map((m) => okR.find((r) => r.method === m)).find(Boolean) || okR[0];
     const grade = pick.method === 'kuno' ? 'alt' : pick.method === 'naka' ? 'naka' : 'ok-act';
-    return { ...res, grade, src: '実績', recs: same, punch: pick.method === 'kuno' ? (pick.punch || res.punch) : res.punch,
-      why: `実績あり：${recText(pick)}。いまの寸法はそれと同じか楽です`, fix: undefined };
+    return { ...res, grade, src: '実績', recs: same, clash, punch: pick.method === 'kuno' ? (pick.punch || res.punch) : res.punch,
+      why: `実績あり：${recText(pick)}。いまの寸法はそれと同じか楽です${clash ? `（ただし ${recText(clash.ng)} という実績もあります。どちらかが間違いのはずなので確かめてください）` : ''}`,
+      fix: undefined };
   }
   const ngR = same.filter((r) => !r.ok && r.method === 'normal' && harderOrSame(shape, dims, L, r, smallV));
   if (ngR.length && res.grade !== 'ng' && !res.punch && res.src !== '中押し') {

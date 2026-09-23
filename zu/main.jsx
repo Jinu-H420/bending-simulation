@@ -510,7 +510,8 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
   // 判定の答えの曲げ方を、そのまま既定にする
   const autoMethod = best && best.src === '中押し' ? 'naka' : best && best.special ? 'kuno' : 'normal';
   useEffect(() => { if (best) { setV(best.row.id); setMethod(autoMethod); } }, [best && best.row.id, autoMethod, shape, t]);
-  const row = (list.find((r) => r.row.id === V) || list[0]).row;
+  const picked = list.find((r) => r.row.id === V) || list[0];
+  const row = picked.row;
   const done = recMatch(row, shape, dims, L, recs).ok;     // すでに実績がある寸法
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === t);
   const save = (ok) => {
@@ -522,6 +523,8 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
       method: m.startsWith('kuno') ? 'kuno' : m,
       punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
       ok, lenFail: false, note: note.trim(),
+      // そのときの計算（○✕と余裕）も残す。次からの「要る余裕」の学習に使う
+      case: { key: null, sim: picked.grade !== 'ng', gap: typeof picked.gap === 'number' ? picked.gap : null },
     });
     setNote('');
   };
@@ -760,7 +763,7 @@ function App() {
                 {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.recs && best.recs.length > 0 && best.src !== '実績' && <span className="tag">この型の実績 {best.recs.length}件</span>}{best.punch && <span className="tag">{best.special ? `くの字特殊ヤゲン${best.punch.replace('特殊 くの字', '')}` : `ヤゲン ${best.punch}`}</span>}</div>}
                 <div>{best.why}</div>
                 {best.grade !== 'ng' && best.src !== '中押し' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
-                {best.clash && <div className="v-ask" style={{ display: 'block', margin: '6px 0' }}>⚠ 実績が食い違っています。実績の一覧で確かめてください</div>}
+                {best.clash && <div className="hint">⚠ 反対の実績もあります（{recText(best.clash.ng)}）。実績の一覧で確かめてください</div>}
                 {best.learn && (
                   <div className="hint">実績から学習（この型の記録 {best.learn.n}件）：
                     {best.learn.need != null ? `余裕 ${best.learn.need}mm 以上ないと曲がらなかったので、その線で見ています` : ''}

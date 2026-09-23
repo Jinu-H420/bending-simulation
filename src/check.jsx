@@ -129,10 +129,10 @@ function withRecs(r, { shape, outer, L, recs }) {
   if (!recs || !recs.length || r.skip || !r.V || !(shape === 'Z' || shape === 'U')) return r;
   const m = recMatch({ mat: r.mat || null, t: r.t, V: r.V, sel: r.sel }, shape, outer, L, recs);
   if (!m.same.length) return r;
-  if (m.ok && m.ng) return { ...r, src: '実績', clash: true, rec: m.ok,
-    why: `実績が食い違っています：${recText(m.ok)}／${recText(m.ng)}。どちらかが間違いのはずなので、確かめてください` };
-  if (m.ok) return { ...r, ok: true, src: '実績', rec: m.ok, method: m.ok.method === 'normal' ? null : m.ok.method,
-    why: `実績あり：${recText(m.ok)}。いまの寸法はそれと同じか楽です` };
+  // 登録した「曲がった」実績は必ず勝たせる（反対の実績があるときは注意書きを足す）
+  if (m.ok) return { ...r, ok: true, src: '実績', rec: m.ok, clash: !!m.ng, method: m.ok.method === 'normal' ? null : m.ok.method,
+    why: `実績あり：${recText(m.ok)}。いまの寸法はそれと同じか楽です`
+      + (m.ng ? `（ただし ${recText(m.ng)} という実績もあります。確かめてください）` : '') };
   if (m.ng && r.ok && !r.method) return { ...r, ok: false, src: '実績', rec: m.ng,
     why: `実績：${recText(m.ng)}。いまの寸法はそれと同じかきついので曲がりません` };
   return { ...r, recs: m.same };
@@ -171,7 +171,21 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
   const learn = learned(recs, sel, mat, t);
   const need = gapLimit(learn);
   const r = searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, openGap, need);
-  if (r.sols.length) return { ...res, ok: true, seq: r.sols[0], minOut: mo && mo.val, learn };
+  if (r.sols.length) {
+    // そのときの余裕（いちばん少ないところ）。登録すると次からの学習に使う
+    const exArc0 = shoulderReach(info.vHalf, t, 90) + t;
+    let worst = Infinity;
+    for (let si = 0; si < r.sols[0].length; si++) {
+      for (let p = 0; p <= 1.0001; p += 0.05) {
+        const { bendProg, lift } = strokeState(p, openGap);
+        const ch = computeChain(part, r.sols[0], si, bendProg, info.vHalf);
+        const tools = toolsFor(PUNCH, false, ch.innerY - lift, 'std', info.polys);
+        const g = minGap(ch, tools.polys, t, info.vHalf, exArc0);
+        if (g.gap < worst) worst = g.gap;
+      }
+    }
+    return { ...res, ok: true, seq: r.sols[0], minOut: mo && mo.val, learn, gap: Number.isFinite(worst) ? +worst.toFixed(2) : null };
+  }
 
   // 通らないとき：入力順・裏返しは山谷どおり・突き当ては全組合せで、いちばん惜しい所を理由にする
   const n = S.dirs.length;
@@ -196,6 +210,7 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
     if (!best || worst.gap > best.gap) best = worst;
   }
   const where = best.gap <= -999 ? best.name : `${best.name}に ${(-best.gap).toFixed(1)}mm 当たる`;
+  const worstGap = best.gap > -900 ? +best.gap.toFixed(2) : null;
   const hit = `どの順番・置き方でも通りません。いちばん惜しいのは 曲げ${best.step}本目で ${where}`;
 
   // 普通に曲げられないときの逃げ道。現場の順番は くの字 → 中押し（最終手段）
@@ -219,7 +234,7 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
     }
     if (nk.why) return { ...res, ok: false, why: `${hit}。中押しでも、${nk.why}`, kunoWin: alt.win || null, learn };
   }
-  return { ...res, ok: false, why: hit, kunoWin: alt.win || null, learn };
+  return { ...res, ok: false, why: hit, kunoWin: alt.win || null, learn, gap: worstGap };
 }
 
 // その型・その寸法でシミュレーターを開くリンク。曲がらない型は、当たる所で止まる
@@ -261,7 +276,8 @@ function Result({ r, big, now }) {
         <span className="mark">{r.ok ? '○' : '✕'}</span>
         <span className="verdict">{m ? WORD[m](r) : r.ok ? '曲がります' : '曲がりません'}</span>
         <span className="die">{r.label}（{MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）</span>
-        {r.src === '実績' && <span className={r.clash ? 'tag-clash' : 'tag-act'}>{r.clash ? '⚠ 実績が食い違い' : '実績あり'}</span>}
+        {r.src === '実績' && <span className="tag-act">実績あり</span>}
+        {r.clash && <span className="tag-clash">⚠ 反対の実績あり</span>}
       </div>
       {r.ok && !m && r.src !== '実績' ? (
         <div className="res-body">曲げ順：<b>{seqText(r.seq)}</b></div>
@@ -316,6 +332,8 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
       method: m.startsWith('kuno') ? 'kuno' : m,
       punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
       ok, lenFail: false, note: note.trim(),
+      // そのときの計算（○✕と余裕）も残す。次からの「要る余裕」の学習に使う
+      case: { key: null, sim: !!(best && best.ok), gap: best && typeof best.gap === 'number' ? best.gap : null },
     });
     setNote('');
   };

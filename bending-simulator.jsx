@@ -1709,6 +1709,8 @@ const BendingSimulator = () => {
        effSegs, bends, seq, allOK, recShape, recDims, vHalf, bendLen, nakaOn, worstGap]);
   const recHit = useMemo(() => lookup(records, nowCase), [records, nowCase]);
   const recMiss = useMemo(() => missRate(records, nowCase), [records, nowCase]);
+  // この段取りで「曲がった」と登録済みなら、計算より実績を優先する
+  const bentRec = recHit.exact && recHit.exact.ok ? recHit.exact : null;
   const saveResult = (bent) => {
     const { list, rec } = addRecord(records, nowCase, bent, recNote, who);
     setRecords(list);
@@ -2498,12 +2500,13 @@ const BendingSimulator = () => {
           </div>
         )}
 
-        {/* 総合判定バー */}
+        {/* 総合判定バー。実績で「曲がった」と登録済みの段取りは、計算が✕でも実績を優先する */}
         <div className={`rounded-md px-4 py-2.5 mb-3 border font-bold text-sm flex items-center gap-3 flex-wrap ${
-          allOK ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300'
+          allOK || bentRec ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300'
                 : 'bg-red-950/60 border-red-700 text-red-300'}`}>
-          <span className="text-lg">{allOK ? '○' : '✕'}</span>
-          {allOK ? '全工程 曲げ可能（干渉なし）'
+          <span className="text-lg">{allOK || bentRec ? '○' : '✕'}</span>
+          {bentRec && !allOK ? '実績では曲がりました（計算は当たりと出ていますが、実績を優先します）'
+            : allOK ? '全工程 曲げ可能（干渉なし）'
             : !noHit ? '干渉あり — この段取りでは曲がりません'
             : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
             : lenNG ? `曲げ長さ ${bendLen}mm が上限 ${lenNG.v}mm を超えています — ${lenNG.why}`
@@ -2511,7 +2514,7 @@ const BendingSimulator = () => {
             : downWarn ? `下がりがダイ・台に当たります — 曲げ線から ${downWarn.w.toFixed(0)}mm で ${downWarn.depth.toFixed(0)}mm 下がっています`
             : minOutWarn.length ? `最小フランジ ${minFlange.tbl}mm（折り曲げ表）を下回る辺があります`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
-          {!allOK && (
+          {!allOK && !bentRec && (
             // 曲がらないときは、ここから一押しで曲げ順・突き当て・裏返しを直せるようにする
             <button onClick={autoSetup}
               className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">

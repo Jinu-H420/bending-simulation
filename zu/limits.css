@@ -47,3 +47,18 @@
 .limits .g.ng { color: var(--ng); }
 .limits .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--sub); margin-left: 6px; font-weight: 600; }
 .limits .hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+/* ①いまの寸法での上限 ②曲げるための条件 — 数字を大きく、○✕をはっきり出す */
+.limits .ld-box { border-left: 5px solid var(--line); padding: 8px 12px 9px; }
+.limits .ld-box.yes { border-left-color: var(--ok); background: var(--ok-bg); }
+.limits .ld-box.no { border-left-color: var(--ng); background: var(--ng-bg); }
+.limits .ld-q { font-size: 13px; }
+.limits .ld-a { margin-top: 0; line-height: 1.15; }
+.limits .ld-a .big { font-size: 40px; font-weight: 800; letter-spacing: -.5px; }
+.limits .ld-a .unit { font-size: 17px; font-weight: 700; margin-left: 4px; }
+.limits .ld-a .big2 { font-size: 21px; font-weight: 800; }
+.limits .ld-s { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 3px; }
+.limits .ld-s .mark { font-size: 13.5px; font-weight: 700; }
+.limits .ld-s .mark.ok { color: var(--ok); }
+.limits .ld-s .mark.ng { color: var(--ng); }
+.limits .ld-s .tag { margin-left: 0; }

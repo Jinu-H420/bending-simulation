@@ -195,22 +195,37 @@ export function LimitDetail({ shape, row, x, y, other }) {
     const r = rangesOver(pts, y, lastX);
     need = r.length ? { txt: `${xN} を ${r.join('、または ')}`, src: '計算・10mm刻み' } : { txt: `どの${xN}でも無理。${yN}を短くする`, src: '計算' };
   }
+  // いまの寸法が上限に収まっているか（○＝曲がる）。実績があれば実績の上限で見る
+  const lim = act && act.A != null ? act.A : ex;
+  const fits = lim === undefined ? undefined : lim == null ? false : lim === Infinity ? true : y <= lim;
+  const room = typeof lim === 'number' && Number.isFinite(lim) ? +(lim - y).toFixed(0) : null;
+  const numTxt = (v) => (v == null ? '曲げられない' : v === Infinity ? '上限なし' : `${v}`);
   return (
     <div className="ld">
-      <div className="ld-box">
+      <div className={`ld-box ${fits === undefined ? '' : fits ? 'yes' : 'no'}`}>
         <div className="ld-q">{xN} <b>{x}mm</b> のとき、{yN}は</div>
-        {act ? (
-          <>
-            <div className="ld-a">{act.A == null ? act.why : `${act.A}mm まで`}<span className="tag">実績</span></div>
-            <div className="ld-s">計算では {ex === undefined ? '…' : limTxt(ex)}（この型は計算が甘く出るので実績を使う）</div>
-          </>
-        ) : (
-          <div className="ld-a">{ex === undefined ? '計算中…' : limTxt(ex)}<span className="tag">計算・1mm単位</span></div>
-        )}
+        <div className="ld-a">
+          {ex === undefined && !act ? '計算中…' : (
+            <>
+              <span className="big">{numTxt(act && act.A != null ? act.A : ex)}</span>
+              {(act && act.A != null ? act.A : ex) != null && (act && act.A != null ? act.A : ex) !== Infinity && <span className="unit">mm まで</span>}
+            </>
+          )}
+        </div>
+        <div className="ld-s">
+          {fits === undefined ? '' : (
+            <span className={`mark ${fits ? 'ok' : 'ng'}`}>{fits ? '○' : '✕'} いまは {y}mm{room != null ? (fits ? `（あと ${room}mm いける）` : `（${-room}mm 超えている）`) : ''}</span>
+          )}
+          <span className="tag">{act && act.A != null ? '実績' : '計算・1mm単位'}</span>
+        </div>
       </div>
-      <div className="ld-box">
+      <div className={`ld-box ${fits === undefined ? '' : fits ? 'yes' : 'no'}`}>
         <div className="ld-q">{yN} <b>{y}mm</b> で曲げるには</div>
-        <div className="ld-a">{need.txt}<span className="tag">{need.src}</span></div>
+        <div className="ld-a"><span className="big2">{need.txt}</span></div>
+        <div className="ld-s">
+          <span className={`mark ${fits ? 'ok' : 'ng'}`}>{fits ? '○' : '✕'} いまの {xN} は {x}mm</span>
+          <span className="tag">{need.src}</span>
+        </div>
       </div>
       {!Z && (() => {
         // 曲げ方ごとの、いまの底Wでの立上り上限。現場の順番：普通 → くの字 → 中押し（最終手段）

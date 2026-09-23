@@ -476,11 +476,17 @@ function App() {
 
   // 形や寸法を変えたら、押さなくても判定し直す（前は結果が消えたままだった）
   useEffect(() => {
-    if (!base || !base.sel) { setResult(null); return undefined; }
-    if (dims.some((d) => !(Number(d) > 0)) || !(Number(t) > 0)) { setResult(null); return undefined; }
+    if (dims.some((d) => !(Number(d) > 0)) || !(Number(t) > 0)) {
+      setResult({ note: '寸法と板厚を数字で入れてください' }); setBusy(''); return undefined;
+    }
+    if (!base || !base.sel) {
+      setResult({ note: `折り曲げ表に ${mat}・t${t} の基準金型がありません（板厚を見直してください）` }); setBusy(''); return undefined;
+    }
     setBusy('判定しています…');
     const id = setTimeout(() => {
-      setResult(judge({ ...input(), sel: base.sel }));
+      try { setResult(judge({ ...input(), sel: base.sel })); } catch (e) {
+        setResult({ note: `判定でつまずきました（${e && e.message ? e.message : e}）。寸法を見直すか、この文面を知らせてください` });
+      }
       setBusy('');
     }, 300);
     return () => clearTimeout(id);
@@ -571,7 +577,8 @@ function App() {
         {busy && <div className="busy">{busy}</div>}
       </section>
 
-      {result && (
+      {result && result.note && <section><div className="card">{result.note}</div></section>}
+      {result && !result.note && (
         <section>
           <Result r={result} big now={now} />
           {!others && (
@@ -594,7 +601,7 @@ function App() {
         </section>
       )}
 
-      {result && !result.skip && (
+      {result && !result.skip && !result.note && (
         <RecordPanel shape={shape} mat={mat} t={t} dims={dims} L={Ltext} best={result}
           dies={[result, ...(others || [])].filter((r) => r && r.sel && !r.skip)
             .filter((r, i, a) => a.findIndex((x) => x.sel === r.sel) === i)

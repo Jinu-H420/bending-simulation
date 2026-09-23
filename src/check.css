@@ -58,3 +58,13 @@ h2 { font-size: 17px; margin: 18px 0 8px; }
 footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
 .links { display: flex; gap: 16px; margin-top: 8px; }
 .links a { color: var(--accent); }
+
+/* 入れた寸法がどこの寸法か分かる図（② 寸法） */
+.fig { display: block; width: 100%; max-width: 420px; margin: 2px auto 10px; height: auto; color: var(--sub); }
+.fig .plate { stroke: var(--ink); }
+.fig .dim { stroke: currentColor; }
+.fig text { font: 600 14px system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", sans-serif; fill: var(--sub); }
+.fig .dimg.on .dim { stroke: var(--accent); }
+.fig .dimg.on text { fill: var(--accent); font-weight: 800; }
+.dims label.on span { color: var(--accent); font-weight: 700; }
+.dims label.on input { border-color: var(--accent); }

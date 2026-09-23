@@ -37,6 +37,55 @@ function ShapeIcon({ kind, size = 64 }) {
   );
 }
 
+// 断面の図。入れた数字がどこの寸法かを図の上に出す（入力中の寸法は色を変える）。
+// 形ごとに、板の折れ線（外側の線）と、寸法線の位置を持つ。数字は入力に合わせて変わる。
+const FIG = {
+  L: { plate: [[60, 30], [60, 150], [250, 150]],
+    dims: [
+      { x1: 36, y1: 26, x2: 36, y2: 154, tx: 30, ty: 92, anchor: 'end' },       // A
+      { x1: 56, y1: 176, x2: 254, y2: 176, tx: 155, ty: 194, anchor: 'middle' }, // B
+    ] },
+  U: { plate: [[70, 30], [70, 150], [240, 150], [240, 30]],
+    dims: [
+      { x1: 46, y1: 26, x2: 46, y2: 154, tx: 40, ty: 92, anchor: 'end' },        // H1
+      { x1: 66, y1: 176, x2: 244, y2: 176, tx: 155, ty: 194, anchor: 'middle' }, // W
+      { x1: 264, y1: 26, x2: 264, y2: 154, tx: 270, ty: 92, anchor: 'start' },   // H2
+    ] },
+  Z: { plate: [[40, 50], [150, 50], [150, 130], [270, 130]],
+    dims: [
+      { x1: 36, y1: 28, x2: 154, y2: 28, tx: 95, ty: 20, anchor: 'middle' },     // A
+      { x1: 176, y1: 46, x2: 176, y2: 134, tx: 182, ty: 95, anchor: 'start' },   // S
+      { x1: 146, y1: 156, x2: 274, y2: 156, tx: 210, ty: 174, anchor: 'middle' },// B
+    ] },
+  HAT: { plate: [[20, 150], [80, 150], [80, 50], [230, 50], [230, 150], [290, 150]],
+    dims: [
+      { x1: 16, y1: 176, x2: 84, y2: 176, tx: 50, ty: 194, anchor: 'middle' },   // A
+      { x1: 58, y1: 46, x2: 58, y2: 154, tx: 52, ty: 104, anchor: 'end' },       // H1
+      { x1: 76, y1: 28, x2: 234, y2: 28, tx: 155, ty: 20, anchor: 'middle' },    // W
+      { x1: 252, y1: 46, x2: 252, y2: 154, tx: 258, ty: 104, anchor: 'start' },  // H2
+      { x1: 226, y1: 176, x2: 294, y2: 176, tx: 260, ty: 194, anchor: 'middle' },// B
+    ] },
+};
+function DimFigure({ shape, labels, dims, focus }) {
+  const f = FIG[shape];
+  return (
+    <svg className="fig" viewBox="0 0 330 206" role="img" aria-label="入れた寸法がどこか">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity=".55" />
+        </marker>
+      </defs>
+      <polyline className="plate" points={f.plate.map((q) => q.join(',')).join(' ')} fill="none" strokeWidth="7" strokeLinejoin="miter" />
+      {f.dims.map((d, i) => (
+        <g key={labels[i]} className={`dimg ${focus === i ? 'on' : ''}`}>
+          <line className="dim" x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} strokeWidth="1.5" markerStart="url(#ar)" markerEnd="url(#ar)" />
+          <text x={d.tx} y={d.ty} textAnchor={d.anchor}>{labels[i]} {dims[i]}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 const machineOfSel = (sel) => Object.keys(MACHINE_DIES).find((m) => MACHINE_DIES[m].main.includes(sel));
 const vOf = (info) => Math.round(info.vHalf * 2);
 
@@ -128,6 +177,7 @@ function Result({ r, big }) {
 function App() {
   const [shape, setShape] = useState('U');
   const [dims, setDims] = useState(SHAPES.U.def);
+  const [focus, setFocus] = useState(null);   // いま入力している寸法（図で色を変える）
   const [mat, setMat] = useState('鉄');
   const [t, setT] = useState(4.5);
   const [nobiText, setNobiText] = useState('');
@@ -139,7 +189,7 @@ function App() {
   const base = useMemo(() => pickDie(mat, t), [mat, t]);
   const nobiIn = nobiText.trim() === '' ? null : Number(nobiText);
 
-  const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setResult(null); setOthers(null); };
+  const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setFocus(null); setResult(null); setOthers(null); };
   const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, nobiIn: Number.isFinite(nobiIn) ? nobiIn : null });
 
   const run = () => {
@@ -185,16 +235,19 @@ function App() {
         </div>
 
         <div className="step">② 寸法（外寸 mm）</div>
+        <DimFigure shape={shape} labels={S.labels} dims={dims} focus={focus} />
         <div className="dims">
           {S.labels.map((lb, i) => (
-            <label key={lb}>
+            <label key={lb} className={focus === i ? 'on' : ''}
+              onMouseEnter={() => setFocus(i)} onMouseLeave={() => setFocus((k) => (k === i ? null : k))}>
               <span>{lb}</span>
               <input inputMode="decimal" value={dims[i]}
+                onFocus={() => setFocus(i)} onBlur={() => setFocus((k) => (k === i ? null : k))}
                 onChange={(e) => { const d = [...dims]; d[i] = e.target.value; setDims(d); setResult(null); setOthers(null); }} />
             </label>
           ))}
         </div>
-        <div className="hint">左から順に、{S.labels.join(' → ')}。すべて板の外側で測った寸法です。</div>
+        <div className="hint">図の寸法線が、いま入れている数字の場所です。すべて板の外側で測った寸法です。</div>
 
         <div className="step">③ 材質と板厚</div>
         <div className="row">

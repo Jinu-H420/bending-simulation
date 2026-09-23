@@ -55,8 +55,9 @@ function simLink(shape, r, dims, mat, L) {
 const isNaka = (r) => r.src === '中押し' && r.grade !== 'ng';
 const isAlt = (r) => r.grade === 'alt' && !!r.punch;
 // くの字の特殊ヤゲンのときは「くの字特殊ヤゲン（L ○mm以内）なら曲がります」、普通のヤゲンなら名前を出す
-const altWord = (r) => (r.special ? `くの字特殊ヤゲン（L ${r.special.win}mm以内）なら曲がります` : `ヤゲン ${r.punch} なら曲がります`);
-const altShort = (r) => (r.special ? '○ くの字' : '○ ヤゲン替え');
+const altWord = (r) => (r.special ? `くの字特殊ヤゲン（L ${r.special.win}mm以内）なら曲がります`
+  : /^特殊 くの字/.test(r.punch || '') ? 'くの字特殊ヤゲンなら曲がります' : `ヤゲン ${r.punch} なら曲がります`);
+const altShort = (r) => (r.special || /^特殊 くの字/.test(r.punch || '') ? '○ くの字' : '○ ヤゲン替え');
 function look(r) {
   if (isNaka(r)) return { cls: 'naka', mark: '○', word: GRADE.naka.word, ask: r.grade === 'check' };
   const g = GRADE[r.grade];
@@ -72,10 +73,11 @@ function MethodLadder({ r, L }) {
   const alt = isAlt(r);
   const cells = [
     { name: '普通に曲げる', mark: '✕', note: r.hit ? `${r.hit}に当たる` : '型に当たる' },
-    alt && !r.special
+    alt && !r.special && !/^特殊 くの字/.test(r.punch || '')
       ? { name: `ヤゲン ${r.punch}`, mark: '○', ok: true, note: 'ヤゲンを替える' }
       : { name: 'くの字特殊ヤゲン', mark: alt ? '○' : '✕', ok: alt,
-        note: alt ? `L ${r.special.win}mm 以内（いま ${L}mm）`
+        note: alt && r.special ? `L ${r.special.win}mm 以内（いま ${L}mm）`
+          : alt ? 'くの字で曲げる'
           : kWin != null ? `L ${kWin}mm 以内なら可（いま ${L}mm）` : '形が当たる' },
     alt
       ? { name: '中押し', mark: '—', skip: true, note: 'ここまでしなくてよい' }

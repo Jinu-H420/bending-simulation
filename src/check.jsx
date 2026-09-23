@@ -260,8 +260,8 @@ const seqText = (seq) => seq.map((s) => `曲げ${s.bend + 1}${s.mirror ? '（突
 
 // 曲げ方ごとの見出しと色（Z・コの字判定と同じ：普通＝緑、くの字＝オレンジ、ほかのヤゲン＝青、中押し＝紫）
 const WORD = {
-  kuno: (r) => `くの字特殊ヤゲン（L ${r.special.win}mm以内）なら曲がります`,
-  punch: (r) => `ヤゲン ${r.punch} なら曲がります`,
+  kuno: (r) => (r.special ? `くの字特殊ヤゲン（L ${r.special.win}mm以内）なら曲がります` : 'くの字特殊ヤゲンなら曲がります'),
+  punch: (r) => (r.punch ? `ヤゲン ${r.punch} なら曲がります` : 'ヤゲンを替えれば曲がります'),
   naka: () => '中押しでしか曲がりません',
 };
 function Result({ r, big, now }) {
@@ -297,7 +297,7 @@ function Result({ r, big, now }) {
         {r.ok && r.smallV && r.smallV.maxL == null && (
           <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
         )}
-        {m === 'naka' && r.naka.pending && <span className="caution">⚠ 内-内 {r.naka.inner}mm は現場の決まり {r.naka.sute}mm より狭いので、曲げ屋さんに確かめてください</span>}
+        {m === 'naka' && r.naka && r.naka.pending && <span className="caution">⚠ 内-内 {r.naka.inner}mm は現場の決まり {r.naka.sute}mm より狭いので、曲げ屋さんに確かめてください</span>}
         {!r.ok && r.kunoWin && <span className="caution">くの字特殊ヤゲンなら形は通ります。曲げ長さ L を {r.kunoWin.win}mm 以下にできれば曲げられます</span>}
         {r.ok && warn && <span className="caution">⚠ V{r.V}は、Z曲げの実績でシミュが甘く出た型です。最初の1本で確かめてください</span>}
         {r.ok && good && <span className="trust">● V{r.V}は、Z曲げの実績と合っている型です</span>}

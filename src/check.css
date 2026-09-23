@@ -84,3 +84,19 @@ a.res.link:hover { border-color: var(--accent); }
 .res.naka .mark, .res.naka .verdict { color: var(--naka); }
 .res.punch { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
 .res.punch .mark, .res.punch .verdict { color: var(--accent); }
+
+/* 実績の登録 */
+.rec { margin-top: 14px; }
+.rec select { font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--page); color: var(--ink); width: 100%; }
+.rec-len { display: block; margin-top: 6px; font-size: 14px; color: var(--sub); }
+.rec-note { margin-top: 8px; }
+.rec .more { margin-top: 10px; }
+table.rec-list { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+table.rec-list th, table.rec-list td { border-bottom: 1px solid var(--line); padding: 5px 6px; text-align: left; }
+table.rec-list th { color: var(--sub); font-weight: 600; }
+.g-ok { color: var(--ok); font-weight: 800; } .g-ng { color: var(--ng); font-weight: 800; }
+button.del { font: inherit; font-size: 12px; background: none; border: 0; color: var(--muted); cursor: pointer; }
+button.del:hover { color: var(--ng); }
+.tag-act { font-size: 12px; font-weight: 700; color: var(--ok); border: 1px solid var(--ok); border-radius: 99px; padding: 1px 8px; margin-left: 6px; }
+.res-body .sub { color: var(--sub); font-size: 13.5px; }

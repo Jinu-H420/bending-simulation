@@ -2,14 +2,15 @@
 // 形と寸法（外寸）と板厚を入れると、シミュレーターと同じ干渉判定で ○/✕ を出す。
 // 曲げ順・突き当て（左右）・裏返しは自動で探す。✕ のときは理由（どこに当たるか）と、
 // 通る別の金型を出す。
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck,
 } from '../bending-simulator.jsx';
-import { rescuePunch, nakaPlan } from '../zu/judge.js';
+import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA } from '../zu/judge.js';
+import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
 import './check.css';
 
 const PUNCH = '904061';
@@ -119,8 +120,19 @@ const machineOfSel = (sel) => Object.keys(MACHINE_DIES).find((m) => MACHINE_DIES
 const vOf = (info) => Math.round(info.vHalf * 2);
 
 // 1つの金型で判定する
-function judge({ shape, outer, t, mat, sel, nobiIn, L }) {
-  return withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn, L }), { L, t, mat });
+function judge({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
+  return withRecs(withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn, L }), { L, t, mat }), { shape, outer, L, recs });
+}
+// 曲げ屋さんに確かめて登録した実績があれば、計算より優先する（Z・コの字のみ）
+function withRecs(r, { shape, outer, L, recs }) {
+  if (!recs || !recs.length || r.skip || !r.V || !(shape === 'Z' || shape === 'U')) return r;
+  const m = recMatch({ mat: r.mat || null, t: r.t, V: r.V, sel: r.sel }, shape, outer, L, recs);
+  if (!m.same.length) return r;
+  if (m.ok) return { ...r, ok: true, src: '実績', rec: m.ok, method: m.ok.method === 'normal' ? null : m.ok.method,
+    why: `実績あり：${recText(m.ok)}。いまの寸法はそれと同じか楽です` };
+  if (m.ng && r.ok && !r.method) return { ...r, ok: false, src: '実績', rec: m.ng,
+    why: `実績：${recText(m.ng)}。いまの寸法はそれと同じかきついので曲がりません` };
+  return { ...r, recs: m.same };
 }
 function judgeShape({ shape, outer, t, mat, sel, nobiIn, L }) {
   const S = SHAPES[shape];
@@ -136,7 +148,7 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L }) {
     return { sel, machine, V, label: dieLabel(sel), skip: true, ok: false, why: `折り曲げ表で V${V} に t${t} は使いません` };
   }
   const nobi = nobiIn != null ? nobiIn : nb ? nb.val : null;
-  const res = { sel, machine, V, label: dieLabel(sel), nobi, nobiSrc: nobiIn != null ? '手入力' : nb ? (nb.exact ? '表' : `表（t${nb.tUsed}で代用）`) : '無し' };
+  const res = { sel, machine, V, mat, t, label: dieLabel(sel), nobi, nobiSrc: nobiIn != null ? '手入力' : nb ? (nb.exact ? '表' : `表（t${nb.tUsed}で代用）`) : '無し' };
   if (nobi == null) return { ...res, ok: false, why: `折り曲げ表に ${mat}・V${V}・t${t} の片伸びがありません（手入力してください）` };
 
   // 最小フランジ（折り曲げ表）：両端のフランジがこれより短いとV溝に落ちる
@@ -242,11 +254,12 @@ function Result({ r, big, now }) {
         <span className="mark">{r.ok ? '○' : '✕'}</span>
         <span className="verdict">{m ? WORD[m](r) : r.ok ? '曲がります' : '曲がりません'}</span>
         <span className="die">{r.label}（{MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）</span>
+        {r.src === '実績' && <span className="tag-act">実績あり</span>}
       </div>
-      {r.ok && !m ? (
+      {r.ok && !m && r.src !== '実績' ? (
         <div className="res-body">曲げ順：<b>{seqText(r.seq)}</b></div>
       ) : (
-        <div className="res-body">{r.why}</div>
+        <div className="res-body">{r.why}{r.ok && r.src === '実績' && r.seq && <span className="sub">　曲げ順：{seqText(r.seq)}</span>}</div>
       )}
       <div className="res-foot">
         片伸び {r.nobi != null ? r.nobi : '—'}（{r.nobiSrc}）
@@ -264,6 +277,100 @@ function Result({ r, big, now }) {
   );
 }
 
+// 実績の登録。曲げ屋さんに確かめた結果だけを1件ずつ登録し、次の判定から使う（Z・コの字判定と同じ）
+function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg }) {
+  const [sel, setSel] = useState(best ? best.sel : dies[0] && dies[0].sel);
+  const [method, setMethod] = useState('normal');
+  const [ok, setOk] = useState(true);
+  const [lenFail, setLenFail] = useState(false);
+  const [note, setNote] = useState('');
+  const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
+  useEffect(() => { if (best) { setSel(best.sel); setMethod(best.method === 'punch' ? 'normal' : best.method || 'normal'); } },
+    [best && best.sel, best && best.method]);
+  const die = dies.find((d) => d.sel === sel) || dies[0];
+  const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === Number(t));
+  const S = SHAPES[shape];
+  const submit = () => {
+    if (!who.trim()) { alert('だれに確かめたか（名前）を入れてください'); return; }
+    if (!die) return;
+    try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
+    const punch = method === 'kuno' ? '特殊 くの字165' : method === 'kuno100' ? '特殊 くの字100' : '904061';
+    saveRec({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(),
+      shape, mat, t: Number(t), V: die.V, machine: die.machine === 'hg2203' ? 'HG2203' : 'HD3504NT', sel: die.sel,
+      dims: dims.map(Number), L: Number(L) > 0 ? Number(L) : null,
+      method: method.startsWith('kuno') ? 'kuno' : method, punch, ok, lenFail: !ok && lenFail, note: note.trim(),
+    });
+    setNote('');
+  };
+  return (
+    <section className="card rec">
+      <div className="step">実績を登録（曲げ屋さんに確かめた結果だけ）</div>
+      {!folderSupported() ? (
+        <div className="hint">登録は会社PCの Chrome・Edge でできます（共有フォルダに保存するため）。</div>
+      ) : !dir ? (
+        <div>
+          <button className="more" onClick={connect}>{pendingDir ? '共有フォルダにつなぐ' : '共有フォルダを選ぶ'}</button>
+          <div className="hint">シミュレーターと同じ「曲げシミュレーション」フォルダを選んでください。つなぐと、登録済みの実績も判定に使います。</div>
+        </div>
+      ) : (
+        <>
+          <div className="hint" style={{ marginTop: 0 }}>いまの寸法：{S.labels.map((lb, i) => `${lb} ${dims[i]}`).join('・')}　{mat} t{t}　L{L || '—'}</div>
+          <div className="row">
+            <label className="inl" style={{ width: 210 }}><span>型</span>
+              <select value={sel} onChange={(e) => setSel(e.target.value)}>
+                {dies.map((d) => <option key={d.sel} value={d.sel}>{d.label}</option>)}
+              </select>
+            </label>
+            <label className="inl" style={{ width: 150 }}><span>曲げ方</span>
+              <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="normal">普通（904061）</option>
+                <option value="kuno">くの字165</option>
+                <option value="kuno100">くの字100</option>
+                <option value="naka">中押し</option>
+              </select>
+            </label>
+            <label className="inl" style={{ width: 160 }}><span>確かめた人</span>
+              <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中" />
+            </label>
+          </div>
+          <div className="seg" style={{ marginTop: 8, display: 'inline-flex' }}>
+            <button className={ok ? 'on' : ''} onClick={() => setOk(true)}>○ 曲がった</button>
+            <button className={!ok ? 'on' : ''} onClick={() => setOk(false)}>✕ 曲がらなかった</button>
+          </div>
+          {!ok && (
+            <label className="rec-len"><input type="checkbox" checked={lenFail} onChange={(e) => setLenFail(e.target.checked)} />
+              長さ（力）が足りなかった（形は当たっていない）</label>
+          )}
+          <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所、への字の角度 など）" />
+          <button className="more" onClick={submit}>登録する</button>
+          {msg && <div className="hint">{msg}</div>}
+          {mine.length > 0 && (
+            <table className="rec-list">
+              <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th>確かめた人</th><th /></tr></thead>
+              <tbody>
+                {mine.map((r) => (
+                  <tr key={r.id}>
+                    <td>{String(r.at).slice(5, 10)}</td>
+                    <td>V{r.V}{/^lib:30[56]40:/.test(r.sel || '') ? ' 2溝' : ''}</td>
+                    <td>{r.dims.join('・')}</td>
+                    <td>{r.L || '—'}</td>
+                    <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
+                    <td className={r.ok ? 'g-ok' : 'g-ng'}>{r.ok ? '○' : r.lenFail ? '✕ 長さ' : '✕'}</td>
+                    <td>{r.who}</td>
+                    <td><button className="del" onClick={() => { if (confirm('この実績を消しますか？')) dropRec(r.id); }}>消す</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="hint">登録した実績は、同じ形・材質・板厚・型の判定で計算より優先します（Z・コの字）。シミュレーターと同じ bendsim.json に貯まります。</div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [shape, setShape] = useState('U');
   const [dims, setDims] = useState(SHAPES.U.def);
@@ -275,6 +382,43 @@ function App() {
   const [result, setResult] = useState(null);
   const [others, setOthers] = useState(null);
   const [busy, setBusy] = useState('');
+  // 共有フォルダ（bendsim.json の zuRecords）。シミュレーター・Z・コの字判定と同じファイル
+  const [dir, setDir] = useState(null);
+  const [pendingDir, setPendingDir] = useState(null);
+  const [recs, setRecs] = useState([]);
+  const [recMsg, setRecMsg] = useState('');
+  const openDir = async (d) => {
+    try {
+      const { data } = await folderPull(d);
+      setRecs(data.zuRecords || []); setDir(d); setPendingDir(null);
+      setRecMsg(`共有フォルダの実績 ${(data.zuRecords || []).length} 件を読みました`);
+    } catch (e) { setRecMsg(`共有フォルダを読めませんでした：${e.message}`); }
+  };
+  useEffect(() => {
+    if (!folderSupported()) return;
+    (async () => {
+      const d = await loadFolder();
+      if (!d) return;
+      if (await permission(d, false) === 'granted') openDir(d); else setPendingDir(d);
+    })();
+  }, []);
+  const connect = async () => {
+    try {
+      const d = pendingDir || await pickFolder();
+      if (await permission(d, true) === 'granted') await openDir(d);
+    } catch (e) { if (!(e && e.name === 'AbortError')) setRecMsg(`つながりませんでした：${e.message || e}`); }
+  };
+  const saveRec = async (rec) => {
+    if (!dir) return;
+    try {
+      const d = await folderPush(dir, { zuRecords: [rec] }, rec.who);
+      setRecs(d.zuRecords || []); setRecMsg('実績を登録しました。次の判定から使います');
+    } catch (e) { setRecMsg(`登録できませんでした：${e.message}`); }
+  };
+  const dropRec = async (id) => {
+    if (!dir) return;
+    try { const d = await folderPush(dir, { removeZu: [id] }); setRecs(d.zuRecords || []); } catch (e) { setRecMsg(`消せませんでした：${e.message}`); }
+  };
 
   const S = SHAPES[shape];
   const base = useMemo(() => pickDie(mat, t), [mat, t]);
@@ -283,7 +427,7 @@ function App() {
   const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setFocus(null); setResult(null); setOthers(null); };
   const Lnum = Number(Ltext);
   const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
-    nobiIn: Number.isFinite(nobiIn) ? nobiIn : null });
+    nobiIn: Number.isFinite(nobiIn) ? nobiIn : null, recs });
   const now = { shape, dims, mat, t, L: Ltext };
 
   const run = () => {
@@ -399,6 +543,14 @@ function App() {
             <div className="hint">この板厚を折り曲げ表で使わない型は外しました：{[...new Set(others.filter((r) => r.skip).map((r) => r.V))].map((v) => `V${v}`).join('・')}</div>
           )}
         </section>
+      )}
+
+      {result && !result.skip && (
+        <RecordPanel shape={shape} mat={mat} t={t} dims={dims} L={Ltext} best={result}
+          dies={[result, ...(others || [])].filter((r) => r && r.sel && !r.skip)
+            .filter((r, i, a) => a.findIndex((x) => x.sel === r.sel) === i)
+            .map((r) => ({ sel: r.sel, V: r.V, machine: r.machine, label: `${r.label}（${MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）` }))}
+          recs={recs} dir={dir} pendingDir={pendingDir} connect={connect} saveRec={saveRec} dropRec={dropRec} msg={recMsg} />
       )}
 
       <footer>

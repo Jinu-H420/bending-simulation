@@ -466,6 +466,20 @@ export function judgeAll(rows, shape, mat, t, dims, L, recs = []) {
   return { list: res, best: res[0] || null, baseV };
 }
 
+// 登録した実績のうち、いまの寸法に当てはまるもの（かんたん判定から使う）
+//   ok＝これより楽なので曲がる／ng＝これよりきついので曲がらない
+export function recMatch(row, shape, dims, L, recs) {
+  const k = recKey(shape, row);
+  const same = (recs || []).filter((r) => recKey(r.shape, r) === k && sameDie(r, row));
+  const smallV = !!smallVCheck(row.mat, row.t, row.V);
+  return {
+    same,
+    ok: same.find((r) => r.ok && easierOrSame(shape, dims, L, r, smallV)) || null,
+    ng: same.find((r) => !r.ok && r.method === 'normal' && harderOrSame(shape, dims, L, r, smallV)) || null,
+  };
+}
+export { recText };
+
 // ---------------------------------------------------------------- かんたん判定（check.html）から使う
 // row は { sel, machine:'HG2203'|'HD3504NT', V, mat, t, nobi, minOut }。カーブ（zu-data）は要らない。
 // ① 904061 で当たるとき、ほかのヤゲン（くの字を含む）で曲がるか

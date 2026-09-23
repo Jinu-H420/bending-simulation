@@ -591,6 +591,16 @@ function App() {
       </div>
       <div className="colR">
       {result && result.note && <section><div className="card">{result.note}</div></section>}
+      {result && !result.note && (
+        <section>
+          <Result r={result} big now={now} />
+          {!others && (
+            <button className="more" onClick={runOthers} disabled={!!busy}>
+              {result.ok ? 'ほかの金型でも曲がるか調べる' : '曲がる金型を探す'}
+            </button>
+          )}
+        </section>
+      )}
       {limitRow && (
         <section className="card">
           <div className="step">どこまで曲げられるか（{limitRow.die}・{mat} t{t}）</div>
@@ -605,16 +615,6 @@ function App() {
             {shape === 'Z' ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'
               : '低いほうの立上りを先に曲げる想定。オレンジ＝くの字ヤゲン（曲げ長さ L が窓以内のときだけ）、紫の点線＝中押し。現場の順番は 普通 → くの字 → 中押し。'}
           </div>
-        </section>
-      )}
-      {result && !result.note && (
-        <section>
-          <Result r={result} big now={now} />
-          {!others && (
-            <button className="more" onClick={runOthers} disabled={!!busy}>
-              {result.ok ? 'ほかの金型でも曲がるか調べる' : '曲がる金型を探す'}
-            </button>
-          )}
         </section>
       )}
 

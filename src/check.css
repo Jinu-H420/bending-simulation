@@ -68,3 +68,9 @@ footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
 .fig .dimg.on text { fill: var(--accent); font-weight: 800; }
 .dims label.on span { color: var(--accent); font-weight: 700; }
 .dims label.on input { border-color: var(--accent); }
+
+/* 判定の枠を押すと、その型でシミュレーターが開く */
+a.res.link { display: block; text-decoration: none; color: inherit; }
+a.res.link:hover { border-color: var(--accent); }
+.res-foot .len { color: var(--muted); }
+.res-foot .see { color: var(--accent); font-weight: 700; }

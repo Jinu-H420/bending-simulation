@@ -7,10 +7,13 @@ import ReactDOM from 'react-dom/client';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck,
 } from '../bending-simulator.jsx';
 import './check.css';
 
 const PUNCH = '904061';
+// 曲げ長さ L の目安。ダイ1本（835mm）に収まる長さを最初から入れておく
+const L_DEF = 800;
 // Z曲げの実績と突き合わせて、シミュが実績より甘く出た型（dash/z-dashboard.html）
 const LENIENT = { 12: true, 16: true, 20: true, 25: true };
 const MATCHED = { 8: true, 32: true };
@@ -86,11 +89,39 @@ function DimFigure({ shape, labels, dims, focus }) {
   );
 }
 
+// 一度に曲げられる長さ。ダイの所有台数（1台835mm）と機械の長さの短いほう。
+// 2溝ダイ（30540・30640）は台数を聞いていないので、機械の長さだけで見る。
+function lenLimit(V, t, machine, sel) {
+  const m = MACHINE_LIB[machine];
+  const c = [{ v: m ? m.len : 3000, why: `${m ? m.name.replace('AMADA ', '') : machine}の長さ` }];
+  const n = DIE_STOCK[V];
+  if (n && !/^lib:30[56]40:/.test(sel)) c.push({ v: n * DIE_UNIT_LEN, why: `V${V}のダイ ${n}台×${DIE_UNIT_LEN}mm` });
+  if (t >= 22) c.push({ v: PL22_MAX_LEN, why: 'PL22（金型寸法表の注記）' });
+  return c.reduce((a, b) => (a.v <= b.v ? a : b));
+}
+// 形が通っても、曲げ長さ L で曲げられないことがある。基準より小さいVは最長Lが実績待ち
+function withLength(r, { L, t, mat }) {
+  if (!(L > 0) || r.skip) return r;
+  const lim = lenLimit(r.V, t, r.machine, r.sel);
+  const sv = smallVCheck(mat, t, r.V);
+  const out = { ...r, lenLim: lim, smallV: sv || null };
+  if (L > lim.v) {
+    return { ...out, ok: false, why: `${r.ok ? '' : `${r.why}。さらに`}曲げ長さ L ${L}mm が長すぎます（${lim.why}で ${lim.v}mm まで）` };
+  }
+  if (sv && sv.maxL != null && L > sv.maxL) {
+    return { ...out, ok: false, why: `${r.ok ? '' : `${r.why}。さらに`}板厚 t${t} の基準は V${sv.baseV}。小さい V${r.V} は L ${sv.maxL}mm までです（実績）` };
+  }
+  return out;
+}
+
 const machineOfSel = (sel) => Object.keys(MACHINE_DIES).find((m) => MACHINE_DIES[m].main.includes(sel));
 const vOf = (info) => Math.round(info.vHalf * 2);
 
 // 1つの金型で判定する
-function judge({ shape, outer, t, mat, sel, nobiIn }) {
+function judge({ shape, outer, t, mat, sel, nobiIn, L }) {
+  return withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn }), { L, t, mat });
+}
+function judgeShape({ shape, outer, t, mat, sel, nobiIn }) {
   const S = SHAPES[shape];
   const machine = machineOfSel(sel);
   const info = resolveDie(sel, 20, 30, true, machine);
@@ -149,12 +180,30 @@ function judge({ shape, outer, t, mat, sel, nobiIn }) {
   return { ...res, ok: false, why: `どの順番・置き方でも通りません。いちばん惜しいのは 曲げ${best.step}本目で ${where}` };
 }
 
+// その型・その寸法でシミュレーターを開くリンク。曲がらない型は、当たる所で止まる
+function simLink(r, { shape, dims, mat, t, L }) {
+  const S = SHAPES[shape];
+  const seq = r.seq || S.dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 }));
+  const note = [`かんたん判定から開きました：${S.name}　${mat} t${t}　${S.labels.map((lb, i) => `${lb}=${dims[i]}`).join('・')}（外寸）　L=${L}　${r.label}`];
+  note.push(r.ok ? `判定：曲がります（${seqText(seq)}）。` : `判定：${r.why}。当たる瞬間で止めています（橙の丸が当たる所）。「▶ 全工程再生」で動きも見られます。`);
+  const params = {
+    t: Number(t), matType: mat, inputMode: 'outer', outerSegs: dims.map(Number), nobiOverride: null, bendLen: Number(L) || L_DEF,
+    bends: S.dirs.map((d) => ({ angle: 90, dir: d })),
+    dieSel: r.sel, machineSel: r.machine, dieFlip: false,
+    punchType: PUNCH, punchFlip: false, chukanSel: 'std', dieBase: true, seq, nakaOn: false, nakaAngle: 20,
+  };
+  return `./#open=${encodeURIComponent(JSON.stringify({ params, note: note.join('\n') }))}`;
+}
+
 const seqText = (seq) => seq.map((s) => `曲げ${s.bend + 1}${s.mirror ? '（突き当て反対側）' : ''}${s.valley ? '（裏返し）' : ''}`).join(' → ');
 
-function Result({ r, big }) {
+function Result({ r, big, now }) {
   const warn = LENIENT[r.V], good = MATCHED[r.V];
+  const href = r.sel ? simLink(r, now) : null;
+  const Box = href ? 'a' : 'div';
+  const boxProps = href ? { href, target: '_blank', rel: 'noreferrer' } : {};
   return (
-    <div className={`res ${r.ok ? 'ok' : 'ng'} ${big ? 'big' : ''}`}>
+    <Box {...boxProps} className={`res ${r.ok ? 'ok' : 'ng'} ${big ? 'big' : ''} ${href ? 'link' : ''}`}>
       <div className="res-head">
         <span className="mark">{r.ok ? '○' : '✕'}</span>
         <span className="verdict">{r.ok ? '曲がります' : '曲がりません'}</span>
@@ -167,10 +216,15 @@ function Result({ r, big }) {
       )}
       <div className="res-foot">
         片伸び {r.nobi != null ? r.nobi : '—'}（{r.nobiSrc}）
+        {r.lenLim && <span className="len">曲げ長さは {r.lenLim.v}mm まで（{r.lenLim.why}）</span>}
+        {r.ok && r.smallV && r.smallV.maxL == null && (
+          <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
+        )}
         {r.ok && warn && <span className="caution">⚠ V{r.V}は、Z曲げの実績でシミュが甘く出た型です。最初の1本で確かめてください</span>}
         {r.ok && good && <span className="trust">● V{r.V}は、Z曲げの実績と合っている型です</span>}
+        {href && <span className="see">▶ この型でシミュレーションを見る</span>}
       </div>
-    </div>
+    </Box>
   );
 }
 
@@ -181,6 +235,7 @@ function App() {
   const [mat, setMat] = useState('鉄');
   const [t, setT] = useState(4.5);
   const [nobiText, setNobiText] = useState('');
+  const [Ltext, setLtext] = useState(String(L_DEF));   // 曲げ長さ（奥行き）。ダイ1本835mmに収まる長さを既定に
   const [result, setResult] = useState(null);
   const [others, setOthers] = useState(null);
   const [busy, setBusy] = useState('');
@@ -190,7 +245,10 @@ function App() {
   const nobiIn = nobiText.trim() === '' ? null : Number(nobiText);
 
   const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setFocus(null); setResult(null); setOthers(null); };
-  const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, nobiIn: Number.isFinite(nobiIn) ? nobiIn : null });
+  const Lnum = Number(Ltext);
+  const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
+    nobiIn: Number.isFinite(nobiIn) ? nobiIn : null });
+  const now = { shape, dims, mat, t, L: Ltext };
 
   const run = () => {
     setOthers(null);
@@ -249,7 +307,18 @@ function App() {
         </div>
         <div className="hint">図の寸法線が、いま入れている数字の場所です。すべて板の外側で測った寸法です。</div>
 
-        <div className="step">③ 材質と板厚</div>
+        <div className="step">③ 曲げ長さ L（曲げ線に沿った長さ・mm）</div>
+        <div className="row">
+          <label className="inl"><span>L</span>
+            <input inputMode="decimal" value={Ltext}
+              onChange={(e) => { setLtext(e.target.value); setResult(null); setOthers(null); }} />
+          </label>
+          <div className="hint" style={{ marginTop: 0 }}>
+            ダイは1本 {DIE_UNIT_LEN}mm。まず {L_DEF}mm（1本に収まる長さ）を入れてあります。長いものは、ダイの台数と機械の長さで曲げられないことがあります。
+          </div>
+        </div>
+
+        <div className="step">④ 材質と板厚</div>
         <div className="row">
           <div className="seg">
             {['鉄', '縞'].map((m) => (
@@ -274,7 +343,7 @@ function App() {
 
       {result && (
         <section>
-          <Result r={result} big />
+          <Result r={result} big now={now} />
           {!others && (
             <button className="more" onClick={runOthers} disabled={!!busy}>
               {result.ok ? 'ほかの金型でも曲がるか調べる' : '曲がる金型を探す'}
@@ -287,7 +356,7 @@ function App() {
         <section>
           <h2>ほかの金型（{others.filter((o) => o.ok).length} 型で曲がります）</h2>
           <div className="list">
-            {others.filter((r) => !r.skip).map((r) => <Result key={r.sel} r={r} />)}
+            {others.filter((r) => !r.skip).map((r) => <Result key={r.sel} r={r} now={now} />)}
           </div>
           {others.some((r) => r.skip) && (
             <div className="hint">この板厚を折り曲げ表で使わない型は外しました：{[...new Set(others.filter((r) => r.skip).map((r) => r.V))].map((v) => `V${v}`).join('・')}</div>
@@ -297,6 +366,7 @@ function App() {
 
       <footer>
         判定はシミュレーター（ヤゲン904061・中間板標準・V.dxf で確認した土台）と同じ計算です。曲げ角度は90°で見ています。
+        どの型も押すと、その型でシミュレーターが開きます（曲がらない型は当たる所で止まります）。
         実測ではないので、初めての形は最初の1本で確かめてください。
         <div className="links">
           <a href="./">シミュレーターで詳しく見る</a>

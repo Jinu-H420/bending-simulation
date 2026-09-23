@@ -188,3 +188,6 @@ button.del:hover { color: var(--ng); }
 .verdict.punch .ml-cell.yes .ml-mark { color: var(--s1); }
 .simbtn.punch { color: var(--s1); border-color: var(--s1); }
 .g.punch { color: var(--s1); }
+.rec-done { border: 1px solid var(--ok); background: var(--ok-bg); color: var(--ink); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; font-size: 14px; }
+.rec-done b { color: var(--ok); }
+.rec-done button { margin-top: 6px; }

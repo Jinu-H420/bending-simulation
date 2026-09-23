@@ -1389,6 +1389,7 @@ const BendingSimulator = () => {
   const [records, setRecords] = useState(() => loadRecords());
   const zuRecs = records;
   const [recNote, setRecNote] = useState('');
+  const [recMore, setRecMore] = useState(false);   // 登録済みでも、別の結果を入れたいとき
   const [autoMsg, setAutoMsg] = useState('');   // 自動で段取りを決めたときの説明
   // 中押し（捨て曲げ）でシミュレーションする：底の真ん中をへの字 → 両サイド → 中押しで戻す
   const [nakaOn, setNakaOn] = useState(false);
@@ -3127,11 +3128,19 @@ const BendingSimulator = () => {
 
             {/* 実績の記録：曲げた／曲げられなかったを残し、次に同じ条件が来たら先に出す */}
             <div className="mt-3 rounded border border-slate-700 bg-slate-950/60 px-3 py-2">
-              <div className="text-xs font-bold text-slate-200 mb-1">実際はどうでしたか</div>
+              <div className="text-xs font-bold text-slate-200 mb-1">
+                {recHit.exact && recHit.exact.ok ? '実績あり（登録済み）' : '実際はどうでしたか'}
+              </div>
+              {recHit.exact && recHit.exact.ok && !recMore && (
+                <div className="text-[11px] text-emerald-300 mb-2">
+                  この段取りは「曲がった」と登録済みです（{recHit.exact.at}／{recHit.exact.n}回）。登録しなくて大丈夫です。
+                  <button onClick={() => setRecMore(true)} className="ml-2 underline text-slate-400 hover:text-slate-200">別の結果を登録する</button>
+                </div>
+              )}
               <div className="text-[11px] text-slate-500 mb-2">
                 記録すると、次に同じ段取りを開いたときに判定より先に出ます。かんたん判定・Z曲げ／コの字判定と同じ所（共有フォルダ bendsim.json）に貯まります。{cloudConf ? '共有フォルダにも保存されます。' : 'このPCに保存されます（右上で共有フォルダにつなぐと、ほかのPCでも見られます）。'}
               </div>
-              <div className="flex items-center gap-2 flex-wrap mb-2">
+              <div className={`flex items-center gap-2 flex-wrap mb-2 ${recHit.exact && recHit.exact.ok && !recMore ? 'hidden' : ''}`}>
                 <button onClick={() => saveResult(true)}
                   className="px-3 py-1 text-xs rounded border border-emerald-600 text-emerald-300 hover:bg-emerald-900/40">
                   曲がった

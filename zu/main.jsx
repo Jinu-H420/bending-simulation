@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
-import { METHOD_JA, judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH, Z_ACT_ON } from './judge.js';
+import { METHOD_JA, recMatch, recText, judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH, Z_ACT_ON } from './judge.js';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from '../src/cloud.js';
 import './zu.css';
@@ -507,9 +507,12 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
   const [ok, setOk] = useState(true);
   const [lenFail, setLenFail] = useState(false);
   const [note, setNote] = useState('');
+  const [more, setMore] = useState(false);   // すでに実績があるときは、登録の欄をたたんでおく
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
   useEffect(() => { if (best) setV(best.row.id); }, [best && best.row.id, shape, t]);
   const row = (list.find((r) => r.row.id === V) || list[0]).row;
+  // いまの寸法をもう満たしている「曲がった」実績（あれば登録は要らない）
+  const done = recMatch(row, shape, dims, L, recs).ok;
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === t);
   const submit = () => {
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
@@ -533,6 +536,14 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
         </div>
       ) : (
         <>
+          {done && (
+            <div className="rec-done">
+              <b>実績あり。登録しなくて大丈夫です</b>
+              <div>{recText(done)}</div>
+              {!more && <button className="copy" onClick={() => setMore(true)}>別の結果を登録する</button>}
+            </div>
+          )}
+          {(!done || more) && (<>
           <div className="rec-now">いまの寸法：{shape === 'Z' ? `A${dims[0]}・S${dims[1]}・B${dims[2]}` : `H${dims[0]}・W${dims[1]}・H${dims[2]}`}　{mat} t{t}　L{L || '—'}</div>
           <div className="rec-grid">
             <label className="f"><span>型</span>
@@ -562,6 +573,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
           )}
           <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所、への字の角度 など）" />
           <button className="copy" onClick={submit}>登録する</button>
+          </>)}
           {msg && <div className="hint">{msg}</div>}
           {mine.length > 0 && (
             <table className="kt rec-list">

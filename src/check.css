@@ -101,3 +101,6 @@ button.del:hover { color: var(--ng); }
 .tag-act { font-size: 12px; font-weight: 700; color: var(--ok); border: 1px solid var(--ok); border-radius: 99px; padding: 1px 8px; margin-left: 6px; }
 .res-body .sub { color: var(--sub); font-size: 13.5px; }
 .res-foot .learn { color: var(--accent); }
+.rec-done { border: 1px solid var(--ok); background: var(--ok-bg); border-radius: 10px; padding: 8px 10px; margin: 6px 0 8px; font-size: 14px; }
+.rec-done b { color: var(--ok); }
+.rec-done .more { margin-top: 6px; width: auto; padding: 6px 12px; }

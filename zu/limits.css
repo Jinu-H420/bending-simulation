@@ -1,0 +1,49 @@
+/* 「どこまで曲げられるか」（グラフ・数字・早見表）の見た目。
+   Z曲げ・コの字判定（zu/）と かんたん判定（check.html）の両方で使うので、
+   ここだけで色も決める（.limits の中だけに効く）。 */
+.limits {
+  --s1: #2a78d6; --s2: #eb6834; --s3: #7b4fd0;   /* 普通・くの字・中押し */
+  --grid: #ecebe6; --okzone: rgba(10, 125, 10, .08);
+}
+@media (prefers-color-scheme: dark) {
+  .limits { --s1: #3987e5; --s2: #d95926; --s3: #a98ae8; --grid: #262624; --okzone: rgba(60, 196, 60, .10); }
+}
+
+.limits .chart { width: 100%; height: auto; display: block; }
+.limits .chart .ax { stroke: var(--line); }
+.limits .chart .gl { stroke: var(--grid); }
+.limits .chart text { fill: var(--muted); font-size: 12px; }
+.limits .chart .tt { fill: var(--sub); font-size: 13px; font-weight: 600; }
+.limits .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--sub); margin-top: 4px; }
+.limits .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.limits .legend i.dot { width: 9px; height: 9px; border-radius: 50%; }
+.limits .tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px 8px; font-size: 12.5px; color: var(--ink); white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+
+.limits .ld { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-bottom: 10px; }
+@media (max-width: 560px) { .limits .ld { grid-template-columns: minmax(0, 1fr); } }
+.limits .ld-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--page); }
+.limits .ld-q { font-size: 14px; color: var(--sub); }
+.limits .ld-q b { color: var(--ink); font-size: 16px; }
+.limits .ld-a { font-size: 22px; font-weight: 800; margin-top: 2px; line-height: 1.35; }
+.limits .ld-s { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.limits .ld-naka { grid-column: 1 / -1; font-size: 13.5px; color: var(--sub); padding: 6px 12px; border-radius: 8px; border: 1px dashed var(--line); }
+.limits .ld-naka b { color: var(--ink); }
+
+.limits .qt-wrap { overflow-x: auto; margin-top: 8px; }
+.limits table.qt { border-collapse: collapse; font-size: 14px; white-space: nowrap; }
+.limits table.qt th { text-align: left; font-weight: 600; color: var(--sub); padding: 4px 10px 4px 0; font-size: 12.5px; }
+.limits table.qt td { text-align: center; padding: 4px 8px; border-left: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+.limits table.qt tr:first-child td { color: var(--muted); font-size: 12.5px; }
+.limits table.qt td.now { background: var(--ok-bg); font-weight: 800; color: var(--ink); }
+
+.limits table.kt { border-collapse: collapse; margin-top: 4px; font-size: 14px; }
+.limits table.kt th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 2px 14px 2px 0; }
+.limits table.kt td { padding: 3px 14px 3px 0; border-top: 1px solid var(--grid); }
+.limits table.kt td.cond { color: var(--sub); font-size: 12.5px; }
+
+.limits .g { font-weight: 800; white-space: nowrap; }
+.limits .g.ok-sim, .limits .g.ok-act { color: var(--ok); }
+.limits .g.ng { color: var(--ng); }
+.limits .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--sub); margin-left: 6px; font-weight: 600; }
+.limits .hint { font-size: 13px; color: var(--muted); margin-top: 6px; }

@@ -11,6 +11,8 @@ import {
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA } from '../zu/judge.js';
 import { learned, gapLimit } from './records.js';
+import { LimitChart, LimitDetail, QuickTable } from '../zu/limits.jsx';
+import ZU_DATA from '../zu/data/zu-data.json';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
 import './check.css';
 
@@ -466,6 +468,13 @@ function App() {
   const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
     nobiIn: Number.isFinite(nobiIn) ? nobiIn : null, recs });
   const now = { shape, dims, mat, t, L: Ltext };
+  // Z・コの字のときは「どこまで曲げられるか」を出す（Z曲げ・コの字判定と同じグラフ）。
+  // カーブは型ごとに作りだめしてある（zu/data/zu-data.json）ので、いま使う型の行を探す。
+  const limitRow = useMemo(() => {
+    if (!(shape === 'Z' || shape === 'U') || !result || result.note || result.skip || !result.sel) return null;
+    if (dims.some((d) => !(Number(d) > 0))) return null;
+    return ZU_DATA.rows.find((r) => r.sel === result.sel && r.mat === mat && Number(r.t) === Number(t)) || null;
+  }, [shape, result && result.sel, mat, t, dims.join('|')]);
 
   const run = () => {
     setOthers(null);
@@ -582,6 +591,22 @@ function App() {
       </div>
       <div className="colR">
       {result && result.note && <section><div className="card">{result.note}</div></section>}
+      {limitRow && (
+        <section className="card">
+          <div className="step">どこまで曲げられるか（{limitRow.die}・{mat} t{t}）</div>
+          <div className="limits">
+            <LimitDetail shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
+              other={Math.max(Number(dims[0]), Number(dims[2]))} />
+            <LimitChart shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
+              grade={result && result.ok ? 'ok-sim' : 'ng'} />
+            <QuickTable shape={shape} row={limitRow} x={Number(dims[1])} />
+          </div>
+          <div className="hint">
+            {shape === 'Z' ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'
+              : '低いほうの立上りを先に曲げる想定。オレンジ＝くの字ヤゲン（曲げ長さ L が窓以内のときだけ）、紫の点線＝中押し。現場の順番は 普通 → くの字 → 中押し。'}
+          </div>
+        </section>
+      )}
       {result && !result.note && (
         <section>
           <Result r={result} big now={now} />

@@ -296,7 +296,6 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
   const [ok, setOk] = useState(true);
   const [lenFail, setLenFail] = useState(false);
   const [note, setNote] = useState('');
-  const [more, setMore] = useState(false);   // すでに実績があるときは、登録の欄をたたんでおく
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
   useEffect(() => { if (best) { setSel(best.sel); setMethod(best.method === 'punch' ? 'normal' : best.method || 'normal'); } },
     [best && best.sel, best && best.method]);
@@ -332,12 +331,10 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
         <>
           {done && (
             <div className="rec-done">
-              <b>実績あり。登録しなくて大丈夫です</b>
+              <b>登録済みです（登録しなくて大丈夫）</b>
               <div>{recText(done)}</div>
-              {!more && <button className="more" onClick={() => setMore(true)}>別の結果を登録する</button>}
             </div>
           )}
-          {(!done || more) && (<>
           <div className="hint" style={{ marginTop: 0 }}>いまの寸法：{S.labels.map((lb, i) => `${lb} ${dims[i]}`).join('・')}　{mat} t{t}　L{L || '—'}</div>
           <div className="row">
             <label className="inl" style={{ width: 210 }}><span>型</span>
@@ -367,7 +364,6 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
           )}
           <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所、への字の角度 など）" />
           <button className="more" onClick={submit}>登録する</button>
-          </>)}
           {msg && <div className="hint">{msg}</div>}
           {mine.length > 0 && (
             <table className="rec-list">

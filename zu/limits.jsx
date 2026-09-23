@@ -188,12 +188,13 @@ export function LimitDetail({ shape, row, x, y, other }) {
   let need;
   if (Z && Z_ACT_ON && row.zAct) {
     const a = row.zAct;
-    if (y <= a.A) need = { txt: `${xN} を ${a.S}mm 以上`, src: '実績' };
-    else if (a.far && y <= a.far.A) need = { txt: `${xN} を ${a.far.S}mm 以上`, src: '実績' };
-    else need = { txt: `実績では ${a.far ? a.far.A : a.A}mm まで。${yN}を短くする`, src: '実績' };
+    if (y <= a.A) need = { pre: `${xN} を`, big: `${a.S}mm 以上`, src: '実績' };
+    else if (a.far && y <= a.far.A) need = { pre: `${xN} を`, big: `${a.far.S}mm 以上`, src: '実績' };
+    else need = { big: `${yN}を短くする`, sub: `実績では ${a.far ? a.far.A : a.A}mm まで`, src: '実績' };
   } else {
     const r = rangesOver(pts, y, lastX);
-    need = r.length ? { txt: `${xN} を ${r.join('、または ')}`, src: '計算・10mm刻み' } : { txt: `どの${xN}でも無理。${yN}を短くする`, src: '計算' };
+    need = r.length ? { pre: `${xN} を`, big: r.join('、または '), src: '計算・10mm刻み' }
+      : { big: `${yN}を短くする`, sub: `どの${xN}でも曲がらない`, src: '計算' };
   }
   // いまの寸法が上限に収まっているか（○＝曲がる）。実績があれば実績の上限で見る
   const lim = act && act.A != null ? act.A : ex;
@@ -221,7 +222,11 @@ export function LimitDetail({ shape, row, x, y, other }) {
       </div>
       <div className={`ld-box ${fits === undefined ? '' : fits ? 'yes' : 'no'}`}>
         <div className="ld-q">{yN} <b>{y}mm</b> で曲げるには</div>
-        <div className="ld-a"><span className="big2">{need.txt}</span></div>
+        <div className="ld-a">
+          {need.pre && <span className="pre">{need.pre}</span>}
+          <span className="big2">{need.big}</span>
+        </div>
+        {need.sub && <div className="ld-s2">{need.sub}</div>}
         <div className="ld-s">
           <span className={`mark ${fits ? 'ok' : 'ng'}`}>{fits ? '○' : '✕'} いまの {xN} は {x}mm</span>
           <span className="tag">{need.src}</span>

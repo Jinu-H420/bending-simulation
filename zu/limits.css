@@ -62,3 +62,7 @@
 .limits .ld-s .mark.ok { color: var(--ok); }
 .limits .ld-s .mark.ng { color: var(--ng); }
 .limits .ld-s .tag { margin-left: 0; }
+.limits .ld-a .pre { font-size: 15px; font-weight: 700; color: var(--sub); margin-right: 6px; }
+.limits .ld-a .big2 { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
+.limits .ld-s2 { font-size: 13px; color: var(--sub); margin-top: 2px; }
+@media (max-width: 560px) { .limits .ld-a .big { font-size: 34px; } .limits .ld-a .big2 { font-size: 26px; } }

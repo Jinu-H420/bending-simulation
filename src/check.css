@@ -118,3 +118,13 @@ button.big { font: inherit; font-size: 16px; font-weight: 700; padding: 12px 18p
 button.big.ok { border: 2px solid var(--ok); color: var(--ok); }
 button.big.ng { border: 2px solid var(--ng); color: var(--ng); }
 button.linkish { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 8px 0 0; }
+
+/* 画面が広いときは、左＝入力・右＝判定の2列で使う */
+.cols { display: grid; gap: 14px; }
+.colR section:first-child { margin-top: 0; }
+@media (min-width: 1000px) {
+  .wrap { max-width: 1180px; }
+  .cols { grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); align-items: start; gap: 18px; }
+  .colL { position: sticky; top: 14px; }
+  .dims { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); }
+}

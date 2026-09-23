@@ -518,6 +518,8 @@ function App() {
         <p>形と寸法を入れて「判定する」を押すだけ。曲げ順と突き当ての向きは自動で探します。</p>
       </header>
 
+      <div className="cols">
+      <div className="colL">
       <section className="card">
         <div className="step">① 形</div>
         <div className="shapes">
@@ -577,6 +579,8 @@ function App() {
         {busy && <div className="busy">{busy}</div>}
       </section>
 
+      </div>
+      <div className="colR">
       {result && result.note && <section><div className="card">{result.note}</div></section>}
       {result && !result.note && (
         <section>
@@ -608,6 +612,9 @@ function App() {
             .map((r) => ({ sel: r.sel, V: r.V, machine: r.machine, label: `${r.label}（${MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）` }))}
           recs={recs} dir={dir} pendingDir={pendingDir} connect={connect} saveRec={saveRec} dropRec={dropRec} msg={recMsg} />
       )}
+
+      </div>
+      </div>
 
       <footer>
         判定はシミュレーター（ヤゲン904061・中間板標準・V.dxf で確認した土台）と同じ計算です。曲げ角度は90°で見ています。

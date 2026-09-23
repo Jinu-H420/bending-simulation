@@ -466,5 +466,33 @@ export function judgeAll(rows, shape, mat, t, dims, L, recs = []) {
   return { list: res, best: res[0] || null, baseV };
 }
 
+// ---------------------------------------------------------------- かんたん判定（check.html）から使う
+// row は { sel, machine:'HG2203'|'HD3504NT', V, mat, t, nobi, minOut }。カーブ（zu-data）は要らない。
+// ① 904061 で当たるとき、ほかのヤゲン（くの字を含む）で曲がるか
+export function rescuePunch(row, outer, dirs, L) {
+  const a = altPunch(row, outer, dirs, L);
+  return a.ok ? { punch: a.ok.punch, flip: a.ok.flip, seq: a.ok.seq, special: a.ok.special || null, win: a.win } : { win: a.win };
+}
+// ② コの字で、中押し（捨て曲げ）なら曲がるか。上型に当たるときだけ効く
+export function nakaPlan(row, H1, W, H2) {
+  const where = firstHitWhere(row, [H1, W, H2], [1, 1]);
+  if (!where || !UPPER.includes(where)) return { ok: false, where };
+  if (W / 2 < row.minOut) {
+    return { ok: false, where, why: `底の半分 ${W / 2}mm が最小フランジ ${row.minOut}mm より短く、への字に曲げられません` };
+  }
+  const inner = +(W - 2 * row.t).toFixed(1);
+  const n = nakaOshi(PUNCH, false, 'std', inner, Math.max(H1, H2) - row.t);
+  if (!n.ok) {
+    return { ok: false, where, inner,
+      why: `押し切ったとき、刃先から ${n.at}mm の高さで上型が立上りに当たります（そこには内-内 ${n.needW}mm 要る。いま ${inner}mm）` };
+  }
+  const a = nakaMinAngle(row, H1, W, H2);
+  if (a.angle == null) {
+    const f = a.fail || {};
+    return { ok: false, where, inner, why: `への字を${NAKA_ANGLES[NAKA_ANGLES.length - 1]}°にしても ${STEP_NAME[f.step] || ''}で${f.where || '工具'}に当たります` };
+  }
+  return { ok: true, where, inner, angle: a.angle, pending: inner < SUTE_MIN_INNER, sute: SUTE_MIN_INNER };
+}
+
 export const seqText = (seq) => (seq || []).map((s) => `曲げ${s.bend + 1}${s.mirror ? '（突き当て反対）' : ''}${s.valley ? '（裏返し）' : ''}`).join(' → ');
 export const machineLabel = (m) => (MACHINE_LIB[m] ? MACHINE_LIB[m].name : m);

@@ -74,3 +74,13 @@ a.res.link { display: block; text-decoration: none; color: inherit; }
 a.res.link:hover { border-color: var(--accent); }
 .res-foot .len { color: var(--muted); }
 .res-foot .see { color: var(--accent); font-weight: 700; }
+
+/* 曲げ方ごとの色（Z・コの字判定とそろえる）：くの字＝オレンジ、ほかのヤゲン＝青、中押し＝紫 */
+:root { --kuno: #eb6834; --naka: #7b4fd0; }
+@media (prefers-color-scheme: dark) { :root { --kuno: #d95926; --naka: #a98ae8; } }
+.res.kuno { border-color: var(--kuno); background: color-mix(in srgb, var(--kuno) 9%, var(--card)); }
+.res.kuno .mark, .res.kuno .verdict { color: var(--kuno); }
+.res.naka { border-color: var(--naka); background: color-mix(in srgb, var(--naka) 9%, var(--card)); }
+.res.naka .mark, .res.naka .verdict { color: var(--naka); }
+.res.punch { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
+.res.punch .mark, .res.punch .verdict { color: var(--accent); }

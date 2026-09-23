@@ -9,6 +9,7 @@ import {
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck,
 } from '../bending-simulator.jsx';
+import { rescuePunch, nakaPlan } from '../zu/judge.js';
 import './check.css';
 
 const PUNCH = '904061';
@@ -119,9 +120,9 @@ const vOf = (info) => Math.round(info.vHalf * 2);
 
 // 1つの金型で判定する
 function judge({ shape, outer, t, mat, sel, nobiIn, L }) {
-  return withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn }), { L, t, mat });
+  return withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn, L }), { L, t, mat });
 }
-function judgeShape({ shape, outer, t, mat, sel, nobiIn }) {
+function judgeShape({ shape, outer, t, mat, sel, nobiIn, L }) {
   const S = SHAPES[shape];
   const machine = machineOfSel(sel);
   const info = resolveDie(sel, 20, 30, true, machine);
@@ -177,7 +178,29 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn }) {
     if (!best || worst.gap > best.gap) best = worst;
   }
   const where = best.gap <= -999 ? best.name : `${best.name}に ${(-best.gap).toFixed(1)}mm 当たる`;
-  return { ...res, ok: false, why: `どの順番・置き方でも通りません。いちばん惜しいのは 曲げ${best.step}本目で ${where}` };
+  const hit = `どの順番・置き方でも通りません。いちばん惜しいのは 曲げ${best.step}本目で ${where}`;
+
+  // 普通に曲げられないときの逃げ道。現場の順番は くの字 → 中押し（最終手段）
+  const row = { sel, machine: machine === 'hg2203' ? 'HG2203' : 'HD3504NT', V, mat, t, nobi, minOut: (mo && mo.val) || 0,
+    two: /^lib:30[56]40:/.test(sel) };
+  const alt = rescuePunch(row, outer, S.dirs, L || 0);
+  if (alt.punch) {
+    return { ...res, ok: true, method: alt.special ? 'kuno' : 'punch', punch: alt.punch, punchFlip: alt.flip,
+      special: alt.special, seq: alt.seq, minOut: mo && mo.val, hit,
+      why: alt.special
+        ? `普通のヤゲン 904061 では当たりますが、くの字特殊ヤゲン${alt.punch.replace('特殊 くの字', '')}なら曲がります（曲げ長さ ${alt.special.win}mm まで）`
+        : `普通のヤゲン 904061 では当たりますが、ヤゲン ${alt.punch}${alt.flip ? '（反転）' : ''} なら曲がります` };
+  }
+  if (shape === 'U') {
+    const nk = nakaPlan(row, outer[0], outer[1], outer[2]);
+    if (nk.ok) {
+      return { ...res, ok: true, method: 'naka', naka: nk, minOut: mo && mo.val, hit,
+        why: `普通の曲げ方では${nk.where}に当たります。中押し（捨て曲げ）なら曲がります（への字 ${nk.angle}°以上、底の内-内 ${nk.inner}mm）`
+          + (nk.pending ? `。内-内 ${nk.inner}mm は現場の決まり ${nk.sute}mm より狭く、まだ確かめていません` : '') };
+    }
+    if (nk.why) return { ...res, ok: false, why: `${hit}。中押しでも、${nk.why}`, kunoWin: alt.win || null };
+  }
+  return { ...res, ok: false, why: hit, kunoWin: alt.win || null };
 }
 
 // その型・その寸法でシミュレーターを開くリンク。曲がらない型は、当たる所で止まる
@@ -185,31 +208,42 @@ function simLink(r, { shape, dims, mat, t, L }) {
   const S = SHAPES[shape];
   const seq = r.seq || S.dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 }));
   const note = [`かんたん判定から開きました：${S.name}　${mat} t${t}　${S.labels.map((lb, i) => `${lb}=${dims[i]}`).join('・')}（外寸）　L=${L}　${r.label}`];
-  note.push(r.ok ? `判定：曲がります（${seqText(seq)}）。` : `判定：${r.why}。当たる瞬間で止めています（橙の丸が当たる所）。「▶ 全工程再生」で動きも見られます。`);
+  note.push(r.ok
+    ? (r.method === 'naka' ? `判定：${r.why}。中押し（への字 → 両サイド90° → 中押し）の工程で開いています。「▶ 全工程再生」で動きが見られます。`
+      : r.method ? `判定：${r.why}。このヤゲンに替えて開いています。` : `判定：曲がります（${seqText(seq)}）。`)
+    : `判定：${r.why}。当たる瞬間で止めています（橙の丸が当たる所）。「▶ 全工程再生」で動きも見られます。`);
   const params = {
     t: Number(t), matType: mat, inputMode: 'outer', outerSegs: dims.map(Number), nobiOverride: null, bendLen: Number(L) || L_DEF,
     bends: S.dirs.map((d) => ({ angle: 90, dir: d })),
     dieSel: r.sel, machineSel: r.machine, dieFlip: false,
-    punchType: PUNCH, punchFlip: false, chukanSel: 'std', dieBase: true, seq, nakaOn: false, nakaAngle: 20,
+    punchType: r.punch || PUNCH, punchFlip: !!r.punchFlip, chukanSel: 'std', dieBase: true, seq,
+    nakaOn: r.method === 'naka', nakaAngle: (r.naka && r.naka.angle) || 20,
   };
   return `./#open=${encodeURIComponent(JSON.stringify({ params, note: note.join('\n') }))}`;
 }
 
 const seqText = (seq) => seq.map((s) => `曲げ${s.bend + 1}${s.mirror ? '（突き当て反対側）' : ''}${s.valley ? '（裏返し）' : ''}`).join(' → ');
 
+// 曲げ方ごとの見出しと色（Z・コの字判定と同じ：普通＝緑、くの字＝オレンジ、ほかのヤゲン＝青、中押し＝紫）
+const WORD = {
+  kuno: (r) => `くの字特殊ヤゲン（L ${r.special.win}mm以内）なら曲がります`,
+  punch: (r) => `ヤゲン ${r.punch} なら曲がります`,
+  naka: () => '中押しでしか曲がりません',
+};
 function Result({ r, big, now }) {
   const warn = LENIENT[r.V], good = MATCHED[r.V];
+  const m = r.ok && r.method ? r.method : null;
   const href = r.sel ? simLink(r, now) : null;
   const Box = href ? 'a' : 'div';
   const boxProps = href ? { href, target: '_blank', rel: 'noreferrer' } : {};
   return (
-    <Box {...boxProps} className={`res ${r.ok ? 'ok' : 'ng'} ${big ? 'big' : ''} ${href ? 'link' : ''}`}>
+    <Box {...boxProps} className={`res ${r.ok ? 'ok' : 'ng'} ${m || ''} ${big ? 'big' : ''} ${href ? 'link' : ''}`}>
       <div className="res-head">
         <span className="mark">{r.ok ? '○' : '✕'}</span>
-        <span className="verdict">{r.ok ? '曲がります' : '曲がりません'}</span>
+        <span className="verdict">{m ? WORD[m](r) : r.ok ? '曲がります' : '曲がりません'}</span>
         <span className="die">{r.label}（{MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）</span>
       </div>
-      {r.ok ? (
+      {r.ok && !m ? (
         <div className="res-body">曲げ順：<b>{seqText(r.seq)}</b></div>
       ) : (
         <div className="res-body">{r.why}</div>
@@ -220,6 +254,8 @@ function Result({ r, big, now }) {
         {r.ok && r.smallV && r.smallV.maxL == null && (
           <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
         )}
+        {m === 'naka' && r.naka.pending && <span className="caution">⚠ 内-内 {r.naka.inner}mm は現場の決まり {r.naka.sute}mm より狭いので、曲げ屋さんに確かめてください</span>}
+        {!r.ok && r.kunoWin && <span className="caution">くの字特殊ヤゲンなら形は通ります。曲げ長さ L を {r.kunoWin.win}mm 以下にできれば曲げられます</span>}
         {r.ok && warn && <span className="caution">⚠ V{r.V}は、Z曲げの実績でシミュが甘く出た型です。最初の1本で確かめてください</span>}
         {r.ok && good && <span className="trust">● V{r.V}は、Z曲げの実績と合っている型です</span>}
         {href && <span className="see">▶ この型でシミュレーションを見る</span>}
@@ -268,7 +304,8 @@ function App() {
       setTimeout(() => {
         const r = judge({ ...input(), sel: all[i], nobiIn: null });
         out.push(r);
-        setOthers([...out].sort((a, b) => (b.ok - a.ok) || (a.V - b.V)));
+        const rank = (x) => (!x.ok ? 9 : x.method === 'kuno' ? 1 : x.method === 'punch' ? 2 : x.method === 'naka' ? 3 : 0);
+        setOthers([...out].sort((a, b) => (rank(a) - rank(b)) || (a.V - b.V)));
         step(i + 1);
       }, 10);
     };

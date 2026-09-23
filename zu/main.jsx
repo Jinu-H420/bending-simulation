@@ -500,80 +500,81 @@ function QuickTable({ shape, row, x }) {
   );
 }
 
-// 実績の登録。曲げ屋さんに聞いて確かな結果だけを1件ずつ登録する。登録したものは次の判定から使う
+// 実績の登録。曲がると分かっているものはボタン1つで登録できる（型・曲げ方は判定の答えから入れる）。
 function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg }) {
+  const [open, setOpen] = useState(false);           // 型や曲げ方を自分で選びたいとき
   const [V, setV] = useState(best ? best.row.id : list[0].row.id);
   const [method, setMethod] = useState('normal');
-  const [ok, setOk] = useState(true);
-  const [lenFail, setLenFail] = useState(false);
   const [note, setNote] = useState('');
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
-  useEffect(() => { if (best) setV(best.row.id); }, [best && best.row.id, shape, t]);
+  // 判定の答えの曲げ方を、そのまま既定にする
+  const autoMethod = best && best.src === '中押し' ? 'naka' : best && best.special ? 'kuno' : 'normal';
+  useEffect(() => { if (best) { setV(best.row.id); setMethod(autoMethod); } }, [best && best.row.id, autoMethod, shape, t]);
   const row = (list.find((r) => r.row.id === V) || list[0]).row;
-  // いまの寸法をもう満たしている「曲がった」実績（あれば登録は要らない）
-  const done = recMatch(row, shape, dims, L, recs).ok;
+  const done = recMatch(row, shape, dims, L, recs).ok;     // すでに実績がある寸法
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === t);
-  const submit = () => {
+  const save = (ok) => {
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
-    const punch = method === 'kuno' ? '特殊 くの字165' : method === 'kuno100' ? '特殊 くの字100' : '904061';
+    const m = open ? method : autoMethod;
     saveRec({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(),
       shape, mat, t, V: row.V, machine: row.machine, sel: row.sel, dims: dims.map(Number), L: L > 0 ? L : null,
-      method: method.startsWith('kuno') ? 'kuno' : method, punch, ok, lenFail: !ok && lenFail, note: note.trim(),
+      method: m.startsWith('kuno') ? 'kuno' : m,
+      punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
+      ok, lenFail: false, note: note.trim(),
     });
     setNote('');
   };
+  const dieName = `${(list.find((r) => r.row.id === V) || list[0]).die}（${row.machine}）`;
+  const size = shape === 'Z' ? `A${dims[0]}・S${dims[1]}・B${dims[2]}` : `H${dims[0]}・W${dims[1]}・H${dims[2]}`;
   return (
     <div className="card rec" style={{ marginTop: 12 }}>
-      <h2>実績を登録（曲げ屋さんに確かめた結果だけ）</h2>
+      <h2>実績を登録</h2>
       {!folderSupported() ? (
         <div className="hint">登録は会社PCの Chrome・Edge でできます（共有フォルダに保存するため）。</div>
       ) : !dir ? (
         <div>
           <button className="copy" onClick={connect}>{pendingDir ? '共有フォルダにつなぐ' : '共有フォルダを選ぶ'}</button>
-          <div className="hint">シミュレーターと同じ「曲げシミュレーション」フォルダを選んでください。つなぐと、登録済みの実績も判定に使います。</div>
+          <div className="hint">シミュレーターと同じ「曲げシミュレーション」フォルダを選んでください。</div>
         </div>
       ) : (
         <>
-          {done && (
-            <div className="rec-done">
-              <b>登録済みです（登録しなくて大丈夫）</b>
-              <div>{recText(done)}</div>
+          {done ? (
+            <div className="rec-done"><b>登録済みです</b><div>{recText(done)}</div></div>
+          ) : (
+            <div className="rec-now">{size}　{mat} t{t}　L{L || '—'}　／　{dieName}</div>
+          )}
+          <div className="rec-ask">実際はどうでしたか</div>
+          <div className="rec-btns">
+            <button className="big ok" onClick={() => save(true)}>○ 曲がった（登録）</button>
+            <button className="big ng" onClick={() => save(false)}>✕ 曲がらなかった</button>
+          </div>
+          <button className="linkish" onClick={() => setOpen(!open)}>{open ? '閉じる' : '型・曲げ方・名前を変える'}</button>
+          {open && (
+            <div className="rec-grid">
+              <label className="f"><span>型</span>
+                <select value={V} onChange={(e) => setV(e.target.value)}>
+                  {list.map((r) => <option key={r.row.id} value={r.row.id}>{r.die}（{r.row.machine}）</option>)}
+                </select>
+              </label>
+              <label className="f"><span>曲げ方</span>
+                <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                  <option value="normal">普通（904061）</option>
+                  <option value="kuno">くの字165</option>
+                  <option value="kuno100">くの字100</option>
+                  <option value="naka">中押し</option>
+                </select>
+              </label>
+              <label className="f"><span>確かめた人（任意）</span>
+                <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中" />
+              </label>
             </div>
           )}
-          <div className="rec-now">いまの寸法：{shape === 'Z' ? `A${dims[0]}・S${dims[1]}・B${dims[2]}` : `H${dims[0]}・W${dims[1]}・H${dims[2]}`}　{mat} t{t}　L{L || '—'}</div>
-          <div className="rec-grid">
-            <label className="f"><span>型</span>
-              <select value={V} onChange={(e) => setV(e.target.value)}>
-                {list.map((r) => <option key={r.row.id} value={r.row.id}>{r.die}（{r.row.machine}）</option>)}
-              </select>
-            </label>
-            <label className="f"><span>曲げ方</span>
-              <select value={method} onChange={(e) => setMethod(e.target.value)}>
-                <option value="normal">普通（904061）</option>
-                <option value="kuno">くの字165</option>
-                <option value="kuno100">くの字100</option>
-                <option value="naka">中押し</option>
-              </select>
-            </label>
-            <label className="f"><span>確かめた人（任意）</span>
-              <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中（入れなくてよい）" />
-            </label>
-          </div>
-          <div className="seg" style={{ marginTop: 8, display: 'inline-flex' }}>
-            <button className={ok ? 'on' : ''} onClick={() => setOk(true)}>○ 曲がった</button>
-            <button className={!ok ? 'on' : ''} onClick={() => setOk(false)}>✕ 曲がらなかった</button>
-          </div>
-          {!ok && (
-            <label className="rec-len"><input type="checkbox" checked={lenFail} onChange={(e) => setLenFail(e.target.checked)} />
-              長さ（力）が足りなかった（形は当たっていない）</label>
-          )}
-          <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所、への字の角度 など）" />
-          <button className="copy" onClick={submit}>登録する</button>
+          {open && <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所 など）" />}
           {msg && <div className="hint">{msg}</div>}
           {mine.length > 0 && (
             <table className="kt rec-list">
-              <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th>確かめた人</th><th></th></tr></thead>
+              <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th></th></tr></thead>
               <tbody>
                 {mine.map((r) => (
                   <tr key={r.id}>
@@ -582,18 +583,13 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
                     <td>{r.dims.join('・')}</td>
                     <td>{r.L || '—'}</td>
                     <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
-                    <td className={r.ok ? 'g ok-sim' : 'g ng'}>{r.ok ? '○' : r.lenFail ? '✕ 長さ' : '✕'}</td>
-                    <td>{r.who}</td>
+                    <td className={r.ok ? 'g ok-sim' : 'g ng'}>{r.ok ? '○' : '✕'}</td>
                     <td><button className="del" onClick={() => { if (confirm('この実績を消しますか？')) dropRec(r.id); }}>消す</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          <div className="hint">
-            登録した実績は、同じ形・材質・板厚・型の判定で計算より優先します（Z：段差が広く・短いほうのフランジが短いほど楽／コ：底がほぼ同じで立上りが低いほど楽）。
-            小さいVでは、曲がった一番長い L が最長Lになります。
-          </div>
         </>
       )}
     </div>

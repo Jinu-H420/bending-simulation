@@ -291,85 +291,84 @@ function Result({ r, big, now }) {
   );
 }
 
-// 実績の登録。曲げ屋さんに確かめた結果だけを1件ずつ登録し、次の判定から使う（Z・コの字判定と同じ）
+// 実績の登録。曲がると分かっているものはボタン1つで登録できる（型・曲げ方は判定の答えから入れる）。
 function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg }) {
+  const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(best ? best.sel : dies[0] && dies[0].sel);
   const [method, setMethod] = useState('normal');
-  const [ok, setOk] = useState(true);
-  const [lenFail, setLenFail] = useState(false);
   const [note, setNote] = useState('');
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
-  useEffect(() => { if (best) { setSel(best.sel); setMethod(best.method === 'punch' ? 'normal' : best.method || 'normal'); } },
-    [best && best.sel, best && best.method]);
+  const autoMethod = best && best.method === 'naka' ? 'naka' : best && best.method === 'kuno' ? 'kuno' : 'normal';
+  useEffect(() => { if (best) { setSel(best.sel); setMethod(autoMethod); } }, [best && best.sel, autoMethod]);
   const die = dies.find((d) => d.sel === sel) || dies[0];
-  // いまの寸法をもう満たしている「曲がった」実績（あれば登録は要らない）
   const done = die && (shape === 'Z' || shape === 'U')
     ? recMatch({ mat, t: Number(t), V: die.V, sel: die.sel }, shape, dims.map(Number), Number(L) || 0, recs).ok : null;
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === Number(t));
   const S = SHAPES[shape];
-  const submit = () => {
+  const save = (ok) => {
     if (!die) return;
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
-    const punch = method === 'kuno' ? '特殊 くの字165' : method === 'kuno100' ? '特殊 くの字100' : '904061';
+    const m = open ? method : autoMethod;
     saveRec({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(),
       shape, mat, t: Number(t), V: die.V, machine: die.machine === 'hg2203' ? 'HG2203' : 'HD3504NT', sel: die.sel,
       dims: dims.map(Number), L: Number(L) > 0 ? Number(L) : null,
-      method: method.startsWith('kuno') ? 'kuno' : method, punch, ok, lenFail: !ok && lenFail, note: note.trim(),
+      method: m.startsWith('kuno') ? 'kuno' : m,
+      punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
+      ok, lenFail: false, note: note.trim(),
     });
     setNote('');
   };
   return (
     <section className="card rec">
-      <div className="step">実績を登録（曲げ屋さんに確かめた結果だけ）</div>
+      <div className="step">実績を登録</div>
       {!folderSupported() ? (
         <div className="hint">登録は会社PCの Chrome・Edge でできます（共有フォルダに保存するため）。</div>
       ) : !dir ? (
         <div>
           <button className="more" onClick={connect}>{pendingDir ? '共有フォルダにつなぐ' : '共有フォルダを選ぶ'}</button>
-          <div className="hint">シミュレーターと同じ「曲げシミュレーション」フォルダを選んでください。つなぐと、登録済みの実績も判定に使います。</div>
+          <div className="hint">シミュレーターと同じ「曲げシミュレーション」フォルダを選んでください。</div>
         </div>
       ) : (
         <>
-          {done && (
-            <div className="rec-done">
-              <b>登録済みです（登録しなくて大丈夫）</b>
-              <div>{recText(done)}</div>
+          {done ? (
+            <div className="rec-done"><b>登録済みです</b><div>{recText(done)}</div></div>
+          ) : (
+            <div className="hint" style={{ marginTop: 0 }}>
+              {S.labels.map((lb, i) => `${lb} ${dims[i]}`).join('・')}　{mat} t{t}　L{L || '—'}　／　{die ? die.label : ''}
             </div>
           )}
-          <div className="hint" style={{ marginTop: 0 }}>いまの寸法：{S.labels.map((lb, i) => `${lb} ${dims[i]}`).join('・')}　{mat} t{t}　L{L || '—'}</div>
-          <div className="row">
-            <label className="inl" style={{ width: 210 }}><span>型</span>
-              <select value={sel} onChange={(e) => setSel(e.target.value)}>
-                {dies.map((d) => <option key={d.sel} value={d.sel}>{d.label}</option>)}
-              </select>
-            </label>
-            <label className="inl" style={{ width: 150 }}><span>曲げ方</span>
-              <select value={method} onChange={(e) => setMethod(e.target.value)}>
-                <option value="normal">普通（904061）</option>
-                <option value="kuno">くの字165</option>
-                <option value="kuno100">くの字100</option>
-                <option value="naka">中押し</option>
-              </select>
-            </label>
-            <label className="inl" style={{ width: 160 }}><span>確かめた人（任意）</span>
-              <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中（入れなくてよい）" />
-            </label>
+          <div className="rec-ask">実際はどうでしたか</div>
+          <div className="rec-btns">
+            <button className="big ok" onClick={() => save(true)}>○ 曲がった（登録）</button>
+            <button className="big ng" onClick={() => save(false)}>✕ 曲がらなかった</button>
           </div>
-          <div className="seg" style={{ marginTop: 8, display: 'inline-flex' }}>
-            <button className={ok ? 'on' : ''} onClick={() => setOk(true)}>○ 曲がった</button>
-            <button className={!ok ? 'on' : ''} onClick={() => setOk(false)}>✕ 曲がらなかった</button>
-          </div>
-          {!ok && (
-            <label className="rec-len"><input type="checkbox" checked={lenFail} onChange={(e) => setLenFail(e.target.checked)} />
-              長さ（力）が足りなかった（形は当たっていない）</label>
+          <button className="linkish" onClick={() => setOpen(!open)}>{open ? '閉じる' : '型・曲げ方・名前を変える'}</button>
+          {open && (
+            <div className="row">
+              <label className="inl" style={{ width: 210 }}><span>型</span>
+                <select value={sel} onChange={(e) => setSel(e.target.value)}>
+                  {dies.map((d) => <option key={d.sel} value={d.sel}>{d.label}</option>)}
+                </select>
+              </label>
+              <label className="inl" style={{ width: 150 }}><span>曲げ方</span>
+                <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                  <option value="normal">普通（904061）</option>
+                  <option value="kuno">くの字165</option>
+                  <option value="kuno100">くの字100</option>
+                  <option value="naka">中押し</option>
+                </select>
+              </label>
+              <label className="inl" style={{ width: 160 }}><span>確かめた人（任意）</span>
+                <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中" />
+              </label>
+            </div>
           )}
-          <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所、への字の角度 など）" />
-          <button className="more" onClick={submit}>登録する</button>
+          {open && <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所 など）" />}
           {msg && <div className="hint">{msg}</div>}
           {mine.length > 0 && (
             <table className="rec-list">
-              <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th>確かめた人</th><th /></tr></thead>
+              <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th /></tr></thead>
               <tbody>
                 {mine.map((r) => (
                   <tr key={r.id}>
@@ -378,15 +377,13 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
                     <td>{r.dims.join('・')}</td>
                     <td>{r.L || '—'}</td>
                     <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
-                    <td className={r.ok ? 'g-ok' : 'g-ng'}>{r.ok ? '○' : r.lenFail ? '✕ 長さ' : '✕'}</td>
-                    <td>{r.who}</td>
+                    <td className={r.ok ? 'g-ok' : 'g-ng'}>{r.ok ? '○' : '✕'}</td>
                     <td><button className="del" onClick={() => { if (confirm('この実績を消しますか？')) dropRec(r.id); }}>消す</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          <div className="hint">登録した実績は、同じ形・材質・板厚・型の判定で計算より優先します（Z・コの字）。シミュレーターと同じ bendsim.json に貯まります。</div>
         </>
       )}
     </section>

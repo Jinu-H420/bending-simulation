@@ -424,6 +424,14 @@ function withRecords(res, shape, dims, L, recs) {
   if (okR.length) {
     // 曲げ方の順番（普通 → くの字 → 中押し）で一番楽なもの
     const pick = ['normal', 'kuno', 'naka'].map((m) => okR.find((r) => r.method === m)).find(Boolean) || okR[0];
+    // 「中押しで曲げた」実績は“中押しなら曲がる”という意味。計算で普通に曲がる寸法なら、普通のままにする
+    // （例：コ 100・100・100 を中押しで曲げた実績があっても、90・100・90 は普通に曲がる）
+    const calcEasier = (pick.method === 'naka' && res.src !== '中押し' && res.grade !== 'ng' && !res.punch)
+      || (pick.method === 'kuno' && res.geo && res.geo.ok && !res.punch && res.grade !== 'ng');
+    if (calcEasier) {
+      return { ...res, recs: same, clash,
+        why: `${res.why}（この型では ${recText(pick)} という実績もあります）` };
+    }
     const grade = pick.method === 'kuno' ? 'alt' : pick.method === 'naka' ? 'naka' : 'ok-act';
     return { ...res, grade, src: '実績', recs: same, clash, punch: pick.method === 'kuno' ? (pick.punch || res.punch) : res.punch,
       why: `実績あり：${recText(pick)}。いまの寸法はそれと同じか楽です${clash ? `（ただし ${recText(clash.ng)} という実績もあります。どちらかが間違いのはずなので確かめてください）` : ''}`,

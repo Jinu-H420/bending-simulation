@@ -131,10 +131,18 @@ function withRecs(r, { shape, outer, L, recs }) {
   if (!recs || !recs.length || r.skip || !r.V || !(shape === 'Z' || shape === 'U')) return r;
   const m = recMatch({ mat: r.mat || null, t: r.t, V: r.V, sel: r.sel }, shape, outer, L, recs);
   if (!m.same.length) return r;
-  // 登録した「曲がった」実績は必ず勝たせる（反対の実績があるときは注意書きを足す）
-  if (m.ok) return { ...r, ok: true, src: '実績', rec: m.ok, clash: !!m.ng, method: m.ok.method === 'normal' ? null : m.ok.method,
-    why: `実績あり：${recText(m.ok)}。いまの寸法はそれと同じか楽です`
-      + (m.ng ? `（ただし ${recText(m.ng)} という実績もあります。確かめてください）` : '') };
+  // 登録した「曲がった」実績は必ず勝たせる（反対の実績があるときは注意書きを足す）。
+  // ただし「中押し・くの字で曲げた」実績は“その方法なら曲がる”という意味なので、
+  // 計算で普通に曲がる寸法（いまの r.ok かつ逃げ道を使っていない）は、普通のままにする。
+  if (m.ok) {
+    const calcEasier = r.ok && !r.method && m.ok.method !== 'normal';
+    if (calcEasier) {
+      return { ...r, clash: !!m.ng, why: `${r.why || '計算で通ります'}（この型では ${recText(m.ok)} という実績もあります）` };
+    }
+    return { ...r, ok: true, src: '実績', rec: m.ok, clash: !!m.ng, method: m.ok.method === 'normal' ? null : m.ok.method,
+      why: `実績あり：${recText(m.ok)}。いまの寸法はそれと同じか楽です`
+        + (m.ng ? `（ただし ${recText(m.ng)} という実績もあります。確かめてください）` : '') };
+  }
   if (m.ng && r.ok && !r.method) return { ...r, ok: false, src: '実績', rec: m.ng,
     why: `実績：${recText(m.ng)}。いまの寸法はそれと同じかきついので曲がりません` };
   return { ...r, recs: m.same };

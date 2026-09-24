@@ -25,7 +25,7 @@ const UPPER = ['ヤゲン', '中間板', 'ホルダ', '柱（機械上部）', '
 
 // 普通の曲げ順（入力どおり・突き当てそのまま）で、最初に何に当たるか。
 // 中押しが効くのは上型に当たるときだけなので、それを見分けるのに使う。
-function firstHitWhere(row, outer, dirs, need = -0.05) {
+export function firstHitWhere(row, outer, dirs, need = -0.05) {
   const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
   const nobi = row.nobi, t = row.t;
   const flat = outer.map((L, i) => L - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));

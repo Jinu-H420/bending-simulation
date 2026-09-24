@@ -6,7 +6,7 @@
 // row は zu/data/zu-data.json の1行（型ごとのカーブ・最小フランジ・片伸び）。
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
-import { zLimitA, uLimitH, uKunoH, uNakaH, exactLimit, actLimit, Z_ACT_ON } from './judge.js';
+import { zLimitA, uLimitH, uKunoH, uNakaH, exactLimit, actLimit, firstHitWhere, Z_ACT_ON } from './judge.js';
 import './limits.css';
 
 // 限界のグラフ。Z：段差S（横）と短いほうのフランジ上限（縦）／コの字：底W（横）と立上り上限（縦）
@@ -175,7 +175,8 @@ function rangesOver(pts, y, lastX) {
     if (from != null && to != null && to - from > 0) gaps.push([from + 10, to - 10]);
   }
   const txt = ([a, b]) => (b == null || b >= lastX ? `${a}mm 以上` : a === b ? `${a}mm` : `${a}〜${b}mm`);
-  return { list: ok.map(txt), gaps: gaps.filter(([a, b]) => b >= a).map(([a, b]) => (a === b ? `${a}mm` : `${a}〜${b}mm`)) };
+  return { list: ok.map(txt), gapNums: gaps.filter(([a, b]) => b >= a),
+    gaps: gaps.filter(([a, b]) => b >= a).map(([a, b]) => (a === b ? `${a}mm` : `${a}〜${b}mm`)) };
 }
 const limTxt = (v) => (v == null ? '曲げられない' : v === Infinity ? '上限なし' : `${v}mm まで`);
 
@@ -204,7 +205,14 @@ export function LimitDetail({ shape, row, x, y, other }) {
     const r = rangesOver(pts, y, lastX);
     need = r.list.length
       ? { pre: `使える ${xN}：`, big: r.list.join('　または　'), src: '計算・10mm刻み',
-        sub: r.gaps.length ? `${xN} を変えるなら、${r.gaps.join('、')} は避ける（当たります）` : null }
+        sub: r.gaps.length ? `${xN} を変えるなら、${r.gaps.map((g, i) => {
+          // その範囲の真ん中で、何に当たるかを調べて 足す
+          const [a, b] = r.gapNums[i];
+          const mid = Math.round((a + b) / 2 / 10) * 10;
+          const where = Z ? firstHitWhere(row, [y, mid, Math.max(other, y)], [1, -1])
+            : firstHitWhere(row, [y, mid, y], [1, 1]);
+          return `${g}${where ? `（${where}に当たる）` : ''}`;
+        }).join('、')} は避ける（先に立てた側が当たります）` : null }
       : { big: `${yN}を短くする`, sub: `どの${xN}でも曲がらない`, src: '計算' };
   }
   // いまの寸法が上限に収まっているか（○＝曲がる）。実績があれば実績の上限で見る

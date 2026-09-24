@@ -156,17 +156,26 @@ export function LimitChart({ shape, row, x, y, grade }) {
 }
 
 // カーブ（計算）で、縦の値が y 以上になる横の範囲。「約 90〜110mm、約 220mm 以上」
+// カーブ（計算）で、縦の値が y 以上になる横の範囲（曲がる範囲）と、その間の曲がらない範囲。
+// 例：底W 100 は曲がる／110〜170 は当たる／180 以上は曲がる、のように途切れることがある。
 function rangesOver(pts, y, lastX) {
-  const out = [];
+  const ok = [];
   let st = null, prev = null;
   for (const p of pts) {
-    const ok = p.y != null && p.y >= y;
-    if (ok && st == null) st = p.x;
-    if (!ok && st != null) { out.push([st, prev]); st = null; }
+    const good = p.y != null && p.y >= y;
+    if (good && st == null) st = p.x;
+    if (!good && st != null) { ok.push([st, prev]); st = null; }
     prev = p.x;
   }
-  if (st != null) out.push([st, null]);
-  return out.map(([a, b]) => (b == null || b >= lastX ? `約 ${a}mm 以上` : a === b ? `約 ${a}mm` : `約 ${a}〜${b}mm`));
+  if (st != null) ok.push([st, null]);
+  // 曲がる範囲の「すきま」＝曲がらない範囲
+  const gaps = [];
+  for (let i = 1; i < ok.length; i++) {
+    const from = ok[i - 1][1], to = ok[i][0];
+    if (from != null && to != null && to - from > 0) gaps.push([from + 10, to - 10]);
+  }
+  const txt = ([a, b]) => (b == null || b >= lastX ? `${a}mm 以上` : a === b ? `${a}mm` : `${a}〜${b}mm`);
+  return { list: ok.map(txt), gaps: gaps.filter(([a, b]) => b >= a).map(([a, b]) => (a === b ? `${a}mm` : `${a}〜${b}mm`)) };
 }
 const limTxt = (v) => (v == null ? '曲げられない' : v === Infinity ? '上限なし' : `${v}mm まで`);
 
@@ -193,7 +202,9 @@ export function LimitDetail({ shape, row, x, y, other }) {
     else need = { big: `${yN}を短くする`, sub: `実績では ${a.far ? a.far.A : a.A}mm まで`, src: '実績' };
   } else {
     const r = rangesOver(pts, y, lastX);
-    need = r.length ? { pre: `${xN} を`, big: r.join('、または '), src: '計算・10mm刻み' }
+    need = r.list.length
+      ? { pre: `${xN} を`, big: r.list.join('　または　'), src: '計算・10mm刻み',
+        sub: r.gaps.length ? `${r.gaps.join('、')} は当たって曲がりません` : null }
       : { big: `${yN}を短くする`, sub: `どの${xN}でも曲がらない`, src: '計算' };
   }
   // いまの寸法が上限に収まっているか（○＝曲がる）。実績があれば実績の上限で見る

@@ -66,3 +66,5 @@
 .limits .ld-a .big2 { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
 .limits .ld-s2 { font-size: 13px; color: var(--sub); margin-top: 2px; }
 @media (max-width: 560px) { .limits .ld-a .big { font-size: 34px; } .limits .ld-a .big2 { font-size: 26px; } }
+.limits .ld-s2 { color: var(--ng); font-weight: 700; }
+.limits .ld-a .big2 { line-height: 1.2; }

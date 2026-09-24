@@ -203,8 +203,8 @@ export function LimitDetail({ shape, row, x, y, other }) {
   } else {
     const r = rangesOver(pts, y, lastX);
     need = r.list.length
-      ? { pre: `${xN} を`, big: r.list.join('　または　'), src: '計算・10mm刻み',
-        sub: r.gaps.length ? `${r.gaps.join('、')} は当たって曲がりません` : null }
+      ? { pre: `使える ${xN}：`, big: r.list.join('　または　'), src: '計算・10mm刻み',
+        sub: r.gaps.length ? `${xN} を変えるなら、${r.gaps.join('、')} は避ける（当たります）` : null }
       : { big: `${yN}を短くする`, sub: `どの${xN}でも曲がらない`, src: '計算' };
   }
   // いまの寸法が上限に収まっているか（○＝曲がる）。実績があれば実績の上限で見る
@@ -232,14 +232,14 @@ export function LimitDetail({ shape, row, x, y, other }) {
         </div>
       </div>
       <div className={`ld-box ${fits === undefined ? '' : fits ? 'yes' : 'no'}`}>
-        <div className="ld-q">{yN} <b>{y}mm</b> で曲げるには</div>
+        <div className="ld-q">{yN} <b>{y}mm</b> のままにするなら</div>
         <div className="ld-a">
           {need.pre && <span className="pre">{need.pre}</span>}
           <span className="big2">{need.big}</span>
         </div>
         {need.sub && <div className="ld-s2">{need.sub}</div>}
         <div className="ld-s">
-          <span className={`mark ${fits ? 'ok' : 'ng'}`}>{fits ? '○' : '✕'} いまの {xN} は {x}mm</span>
+          <span className={`mark ${fits ? 'ok' : 'ng'}`}>{fits ? `○ いまの ${xN} ${x}mm は使えます` : `✕ いまの ${xN} ${x}mm では曲がりません`}</span>
           <span className="tag">{need.src}</span>
         </div>
       </div>

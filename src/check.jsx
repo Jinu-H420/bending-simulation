@@ -7,7 +7,7 @@ import ReactDOM from 'react-dom/client';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, matDies,
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA } from '../zu/judge.js';
 import { learned, gapLimit } from './records.js';
@@ -503,7 +503,10 @@ function App() {
 
   // 使えるほかの金型を全部試す（1型ずつ画面に出す）
   const runOthers = () => {
-    const all = [...MACHINE_DIES.hg2203.main, ...MACHINE_DIES.hd3504nt.main].filter((s) => s !== (base && base.sel));
+    // 縞板は V25・V40・V80（HD3504NT）だけ（金型寸法表・2026-09-24 ユーザー確認）
+    const allow = matDies(mat);
+    const all = [...MACHINE_DIES.hg2203.main, ...MACHINE_DIES.hd3504nt.main]
+      .filter((s) => (!allow || allow.includes(s)) && s !== (base && base.sel));
     const out = [];
     setOthers([]);
     const step = (i) => {
@@ -580,6 +583,7 @@ function App() {
           </label>
         </div>
         <div className="hint">
+          {mat === '縞' && <><b>縞板は V25・V40・V80（HD3504NT）だけ</b>使えます。<br /></>}
           金型：<b>{base && base.sel ? dieLabel(base.sel) : '該当なし'}</b>（折り曲げ表の基準金型{base && !base.exact ? `・t${base.tUsed}の行で代用` : ''}）
           。片伸びは表に無いときだけ入れてください（例：V20・t6 は実績 4.5）。
         </div>

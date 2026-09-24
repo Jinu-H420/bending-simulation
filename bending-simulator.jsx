@@ -1231,6 +1231,13 @@ const BASEV_SEL = {
   V32: 'lib:03500:0', V40: 'lib:03600:0', V50: 'lib:03700:0', V63: 'lib:03800:0',
   V80: 'lib:01360:0', V100: 'lib:01860:0', V125: 'lib:03900:0', V160: 'lib:01400:0',
 };
+// 縞板で使える型（2026-09-24 ユーザー確認／ベンダー折り曲げ金型寸法表）。
+// 縞は V25・V40・V80 だけ、機械は HD3504NT だけ。V25 は HD の2溝ダイ 30640 の V25溝を使う。
+const SHIMA_SEL = { V25: 'lib:30640:1', V40: 'lib:03600:0', V80: 'lib:01360:0' };
+const SHIMA_DIES = Object.values(SHIMA_SEL);
+// その材質で使える型（sel）の一覧。制限が無ければ null
+const matDies = (mat) => (mat === '縞' ? SHIMA_DIES.slice() : null);
+
 // 表に無い板厚は最も近い行で代用し、代用したことを exact:false で伝える
 function pickDie(material, t) {
   const tbl = BASEV[material];
@@ -1240,7 +1247,8 @@ function pickDie(material, t) {
   const exact = k != null;
   if (!exact) k = keys.reduce((best, x) => (Math.abs(x - t) < Math.abs(best - t) ? x : best), keys[0]);
   const v = tbl[k];
-  return { v, sel: BASEV_SEL[v] || null, exact, tUsed: k };
+  const sel = material === '縞' ? SHIMA_SEL[v] || null : BASEV_SEL[v] || null;
+  return { v, sel, exact, tUsed: k };
 }
 
 // 入力した山谷どおりの「出来上がり形状」の断面。
@@ -2840,6 +2848,12 @@ const BendingSimulator = () => {
                   : `✗ 上死点でも部品が抜けません（${(-machineCheck.loadMargin).toFixed(1)}mm干渉）`}
               </span>
             </div>
+            {/* 縞板は使える型が決まっている（V25・V40・V80／HD3504NT。2026-09-24 ユーザー確認） */}
+            {matDies(matType) && !matDies(matType).includes(dieSel) && (
+              <div className="text-[11px] mb-2 px-2 py-1 rounded border border-amber-600 bg-amber-950/40 text-amber-200">
+                ⚠ 縞板で使えるのは V25・V40・V80（HD3504NT）だけです。いまの金型は縞では使いません
+              </div>
+            )}
             {/* どの金型が「表どおり」なのかを示す。手で替えたときに戻し方が分かるように */}
             <div className="text-[11px] font-mono mb-2">
               {baseDie
@@ -3213,5 +3227,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
 };

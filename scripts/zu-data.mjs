@@ -23,6 +23,9 @@ const SEL = {
   80: 'lib:01360:0', 100: 'lib:01860:0', 125: 'lib:03900:0', 160: 'lib:01400:0',
 };
 const machineOf = (V) => (V <= 25 ? 'hg2203' : 'hd3504nt');
+// 縞板は V25・V40・V80 だけ、機械は HD3504NT だけ（金型寸法表・2026-09-24 ユーザー確認）。
+// V25 は HD の2溝ダイ 30640 の V25溝を使う。
+const SHIMA_SEL = { 25: 'lib:30640:1', 40: 'lib:03600:0', 80: 'lib:01360:0' };
 // V12〜V25 は HD3504NT の2溝ダイでも曲げられる（30540＝V12/V20、30640＝V16/V25。同じ台）。
 // HG のインサートで当たっても、こちらなら通る形がある（ダイが細い）ので、別の型として判定に入れる。
 const TWO = { 12: 'lib:30540:0', 20: 'lib:30540:1', 16: 'lib:30640:0', 25: 'lib:30640:1' };
@@ -75,10 +78,13 @@ const KUNO = '特殊 くの字165';
 const S_GRID = [];
 for (let s = 10; s <= 250; s += 5) S_GRID.push(s);
 
-const plan = zRows.flatMap((r) => [
-  { r, sel: SEL[r.V], mach: machineOf(r.V), two: false },
-  ...(TWO[r.V] ? [{ r, sel: TWO[r.V], mach: 'hd3504nt', two: true }] : []),
-]);
+const plan = zRows.flatMap((r) => (r.mat === '縞'
+  // 縞は使える型が決まっている。その型ひとつだけ
+  ? (SHIMA_SEL[r.V] ? [{ r, sel: SHIMA_SEL[r.V], mach: 'hd3504nt', two: SHIMA_SEL[r.V].startsWith('lib:30') }] : [])
+  : [
+    { r, sel: SEL[r.V], mach: machineOf(r.V), two: false },
+    ...(TWO[r.V] ? [{ r, sel: TWO[r.V], mach: 'hd3504nt', two: true }] : []),
+  ]));
 const rows = [];
 for (const { r, sel, mach, two } of plan) {
   const info = E.resolveDie(sel, r.V, 30, true, mach);
@@ -162,8 +168,8 @@ for (const { r, sel, mach, two } of plan) {
   }
   const firstS = zCurve ? (zCurve.find((q) => q.A != null) || {}).S ?? null : null;
   rows.push({
-    id: sel, V: r.V, mat: r.mat, t: r.t, machine: two ? 'HD3504NT' : r.machine,
-    die: two ? `${sel.split(':')[1]} 2溝ダイ（HD3504NT）` : r.dieName || info.note.split('｜')[0].trim(),
+    id: sel, V: r.V, mat: r.mat, t: r.t, machine: r.mat === '縞' ? 'HD3504NT' : two ? 'HD3504NT' : r.machine,
+    die: r.mat === '縞' ? `V${r.V}（HD3504NT）` : two ? `${sel.split(':')[1]} 2溝ダイ（HD3504NT）` : r.dieName || info.note.split('｜')[0].trim(),
     sel, two, minOut, nobi,
     // Z 実績（記入シートの「実際の値」）。実績は HG のインサートで取ったものなので、2溝ダイには付けない
     zAct: !two && r.actK != null ? { S: r.actK, A: r.actI, far: memoPoint(r.memo) } : null,

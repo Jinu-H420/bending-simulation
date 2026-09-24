@@ -2699,6 +2699,12 @@ const BendingSimulator = () => {
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className={lbl}>板厚 t</span>
               <NumField value={t} min={0.5} max={22} onChange={(v) => { setT(v); applyBaseDie(matType, v); }} className={inp} />
+              {/* 曲げ長さ L（奥行き）。金型の欄にもあるが、寸法を入れる所にも出す（2026-09-24 ユーザー指摘） */}
+              <span className={`${lbl} ml-3`}>曲げ長さ L</span>
+              <NumField value={bendLen} min={1} onChange={setBendLen} className={inp} />
+              <span className={`${lbl} ${lenNG || winNG || smallVNG ? 'text-rose-400' : 'text-emerald-400'}`}>
+                mm{lenLimit ? ` ／ 上限 ${lenLimit.v}mm` : ''}{lenNG ? ' を超過' : winNG ? ' の窓を超過' : smallVNG ? ' は長すぎ' : ''}
+              </span>
               <span className={`${lbl} ml-3`}>展開長 {effSegs.reduce((a, b) => a + b, 0).toFixed(1)} mm</span>
               {/* 片伸びは外寸法モード以外でも使う（Z段差の外寸換算・最小フランジ）ので、常に出す */}
               <span className={`${lbl} ml-3`}>材質</span>

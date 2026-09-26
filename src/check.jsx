@@ -551,6 +551,7 @@ function App() {
         </div>
 
         <div className="step">② 寸法（外寸 mm）</div>
+        <div className="fig-row">
         <DimFigure shape={shape} labels={S.labels} dims={dims} focus={focus} />
         <div className="dims">
           {S.labels.map((lb, i) => (
@@ -563,41 +564,35 @@ function App() {
             </label>
           ))}
         </div>
-        <div className="hint">図の寸法線が、いま入れている数字の場所です。すべて板の外側で測った寸法です。</div>
+        </div>
+        <div className="hint">図の寸法線が、いま入れている数字の場所です。板の外側で測った寸法。</div>
 
-        <div className="step">③ 曲げ長さ L（曲げ線に沿った長さ・mm）</div>
+        <div className="step">③ 曲げ長さ L・材質・板厚</div>
         <div className="row">
-          <label className="inl"><span>L</span>
+          <label className="inl" style={{ width: 104 }}><span>曲げ長さ L</span>
             <input inputMode="decimal" value={Ltext}
               onChange={(e) => { setLtext(e.target.value); setOthers(null); }} />
           </label>
-          <div className="hint" style={{ marginTop: 0 }}>
-            ダイは1本 {DIE_UNIT_LEN}mm。まず {L_DEF}mm（1本に収まる長さ）を入れてあります。長いものは、ダイの台数と機械の長さで曲げられないことがあります。
-          </div>
-        </div>
-
-        <div className="step">④ 材質と板厚</div>
-        <div className="row">
           <div className="seg">
             {['鉄', '縞'].map((m) => (
               <button key={m} className={mat === m ? 'on' : ''} onClick={() => { setMat(m); setOthers(null); }}>{m}</button>
             ))}
           </div>
-          <label className="inl"><span>板厚 t</span>
+          <label className="inl" style={{ width: 84 }}><span>板厚 t</span>
             <input inputMode="decimal" value={t} onChange={(e) => { setT(e.target.value); setOthers(null); }} />
           </label>
-          <label className="inl"><span>片伸び</span>
+          <label className="inl" style={{ width: 104 }}><span>片伸び</span>
             <input inputMode="decimal" placeholder="表から自動" value={nobiText} onChange={(e) => { setNobiText(e.target.value); }} />
           </label>
-        </div>
-        <div className="hint">
-          {mat === '縞' && <><b>縞板は V25・V40・V80（HD3504NT）だけ</b>使えます。<br /></>}
-          金型：<b>{base && base.sel ? dieLabel(base.sel) : '該当なし'}</b>（折り曲げ表の基準金型{base && !base.exact ? `・t${base.tUsed}の行で代用` : ''}）
-          。片伸びは表に無いときだけ入れてください（例：V20・t6 は実績 4.5）。
         </div>
 
         <button className="go" onClick={run} disabled={!!busy}>判定する</button>
         {busy && <div className="busy">{busy}</div>}
+        <div className="hint">
+          {mat === '縞' && <><b>縞板は V25・V40・V80（HD3504NT）だけ</b>使えます。<br /></>}
+          金型：<b>{base && base.sel ? dieLabel(base.sel) : '該当なし'}</b>（折り曲げ表の基準金型{base && !base.exact ? `・t${base.tUsed}の行で代用` : ''}）
+          。L はダイ1本 {DIE_UNIT_LEN}mm。片伸びは表に無いときだけ入れてください。
+        </div>
       </section>
 
       </div>

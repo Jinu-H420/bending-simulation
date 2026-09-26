@@ -573,7 +573,8 @@ function App() {
         <section className="card" style={{ marginTop: 12 }}>
           <h2>③ どこまで曲げられるか（{shown.die}・{mat} t{t}）</h2>
           <div className="limits">
-            <LimitDetail shape={shape} row={shown.row} x={x} y={y} other={Math.max(dims[0], dims[2])} />
+            <LimitDetail shape={shape} row={shown.row} x={x} y={y} other={Math.max(dims[0], dims[2])}
+              punch={shown.punch} punchFlip={shown.punchFlip} />
             <LimitChart shape={shape} row={shown.row} x={x} y={y} grade={shown.grade} />
             <QuickTable shape={shape} row={shown.row} x={x} />
           </div>

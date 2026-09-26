@@ -618,12 +618,13 @@ function App() {
           <div className="step">どこまで曲げられるか（{limitRow.die}・{mat} t{t}）</div>
           <div className="limits">
             <LimitDetail shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
-              other={Math.max(Number(dims[0]), Number(dims[2]))} />
+              other={Math.max(Number(dims[0]), Number(dims[2]))} punch={result.punch} punchFlip={result.punchFlip} />
             <LimitChart shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
               grade={result && result.ok ? 'ok-sim' : 'ng'} />
             <QuickTable shape={shape} row={limitRow} x={Number(dims[1])} />
           </div>
           <div className="hint">
+            {result.punch && result.punch !== '904061' && <><b>グラフと早見表は、普通のヤゲン 904061 の値です</b>（上の2つは {result.punch} の値）。<br /></>}
             {shape === 'Z' ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'
               : '低いほうの立上りを先に曲げる想定。オレンジ＝くの字ヤゲン（曲げ長さ L が窓以内のときだけ）、紫の点線＝中押し。現場の順番は 普通 → くの字 → 中押し。'}
           </div>

@@ -104,14 +104,14 @@ function seqGap(part, info, seq, punch, flip, t) {
 }
 
 // 干渉判定（曲げ順・突き当て・裏返しを自動で探す）
-function geoCheck(row, outer, dirs, need = -0.05) {
+function geoCheck(row, outer, dirs, need = -0.05, punch = PUNCH, flip = false) {
   const info = resolveDie(row.sel, 20, 30, true, row.machine === 'HG2203' ? 'hg2203' : 'hd3504nt');
   const nobi = row.nobi;
   const flat = outer.map((L, i) => L - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
   if (flat.some((x) => x <= 0.5)) return { ok: false, why: '寸法が短すぎて形になりません' };
   const part = { t: row.t, segs: flat, bends: dirs.map((d) => ({ angle: 90, dir: d })), grow: dirs.map(() => nobi - row.t / 2) };
-  const r = searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, Math.max(0, 170 - row.t), need);
-  return r.sols.length ? { ok: true, seq: r.sols[0], gap: seqGap(part, info, r.sols[0], PUNCH, false, row.t) } : { ok: false };
+  const r = searchSequences(part, info.vHalf, info.polys, punch, flip, 'std', 1, Math.max(0, 170 - row.t), need);
+  return r.sols.length ? { ok: true, seq: r.sols[0], gap: seqGap(part, info, r.sols[0], punch, flip, row.t) } : { ok: false };
 }
 
 const f1 = (x) => (Math.round(x * 10) / 10).toString();
@@ -288,17 +288,40 @@ export function judgeU(row, H1, W, H2, L, need = -0.05) {
 //   Z  ：段差S＝x、長いほうのフランジ＝other のとき、短いほうのフランジの上限
 //   コ ：底W＝x のとき、立上りの上限（左右同じ高さで見る。グラフと同じ条件）
 // 返り値：数値／Infinity（上限なし）／null（その x では最短でも曲げられない）
-export function exactLimit(row, shape, x, other) {
+export function exactLimit(row, shape, x, other, opt = {}) {
   if (row.nobi == null) return null;
+  const { punch = PUNCH, flip = false, need = -0.05 } = opt;
   const lo = Math.max(row.minOut, 5);
   const ok = shape === 'Z'
-    ? (a) => geoCheck(row, [a, x, Math.max(other, a)], [1, -1]).ok
-    : (h) => geoCheck(row, [h, x, h], [1, 1]).ok;
+    ? (a) => geoCheck(row, [a, x, Math.max(other, a)], [1, -1], need, punch, flip).ok
+    : (h) => geoCheck(row, [h, x, h], [1, 1], need, punch, flip).ok;
   if (!ok(lo)) return null;
   if (ok(400)) return Infinity;
   let a = lo, b = 400;
   while (b - a > 0.5) { const m = (a + b) / 2; if (ok(m)) a = m; else b = m; }
   return Math.floor(a);
+}
+
+// いまの立上り（フランジ）で曲がる、横の寸法（Z：段差S／コ：底W）の範囲。
+// ヤゲンを替えたときは作りだめのカーブが使えないので、その場で 1つずつ試す。
+export function limitRanges(row, shape, y, other, opt = {}) {
+  if (row.nobi == null) return [];
+  const { punch = PUNCH, flip = false, need = -0.05 } = opt;
+  const step = shape === 'Z' ? 5 : 10;
+  const from = shape === 'Z' ? 10 : 20, to = shape === 'Z' ? 250 : 300;
+  const ok = (x) => (shape === 'Z'
+    ? geoCheck(row, [y, x, Math.max(other, y)], [1, -1], need, punch, flip).ok
+    : geoCheck(row, [y, x, y], [1, 1], need, punch, flip).ok);
+  const out = [];
+  let st = null, prev = null;
+  for (let x = from; x <= to; x += step) {
+    const good = ok(x);
+    if (good && st == null) st = x;
+    if (!good && st != null) { out.push([st, prev]); st = null; }
+    prev = x;
+  }
+  if (st != null) out.push([st, null]);
+  return out;
 }
 
 // 実績の上限（Z）。段差Sで決まる。実績が無ければ null

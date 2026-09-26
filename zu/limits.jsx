@@ -6,7 +6,7 @@
 // row は zu/data/zu-data.json の1行（型ごとのカーブ・最小フランジ・片伸び）。
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
-import { zLimitA, uLimitH, uKunoH, uNakaH, exactLimit, actLimit, firstHitWhere, Z_ACT_ON } from './judge.js';
+import { zLimitA, uLimitH, uKunoH, uNakaH, exactLimit, limitRanges, actLimit, firstHitWhere, Z_ACT_ON } from './judge.js';
 import './limits.css';
 
 // 限界のグラフ。Z：段差S（横）と短いほうのフランジ上限（縦）／コの字：底W（横）と立上り上限（縦）
@@ -181,13 +181,20 @@ function rangesOver(pts, y, lastX) {
 const limTxt = (v) => (v == null ? '曲げられない' : v === Infinity ? '上限なし' : `${v}mm まで`);
 
 // ③の上：いまの寸法での上限と、いまの寸法で曲げるための条件を、数字で言い切る
-export function LimitDetail({ shape, row, x, y, other }) {
+export function LimitDetail({ shape, row, x, y, other, punch, punchFlip }) {
+  // 判定で使うヤゲン。904061 以外（くの字・別のヤゲン）のときは、その型の数字で出す
+  const alt = !!punch && punch !== '904061';
+  const opt = { punch: punch || '904061', flip: !!punchFlip };
   const [ex, setEx] = useState(undefined);   // undefined＝計算中
+  const [alts, setAlts] = useState(null);    // ヤゲンを替えたときの「使える範囲」
   useEffect(() => {
-    setEx(undefined);
-    const id = setTimeout(() => setEx(exactLimit(row, shape, x, other)), 30);
+    setEx(undefined); setAlts(null);
+    const id = setTimeout(() => {
+      setEx(exactLimit(row, shape, x, other, opt));
+      if (alt) setAlts(limitRanges(row, shape, y, other, opt));
+    }, 30);
     return () => clearTimeout(id);
-  }, [row, shape, x, other]);
+  }, [row, shape, x, y, other, punch, punchFlip]);
   const Z = shape === 'Z';
   const pts = Z ? (row.zCurve || []).map((p) => ({ x: p.S, y: p.A })) : (row.uCurve || []).map((p) => ({ x: p.W, y: p.H }));
   const lastX = pts.length ? pts[pts.length - 1].x : 0;
@@ -201,6 +208,12 @@ export function LimitDetail({ shape, row, x, y, other }) {
     if (y <= a.A) need = { pre: `${xN} を`, big: `${a.S}mm 以上`, src: '実績' };
     else if (a.far && y <= a.far.A) need = { pre: `${xN} を`, big: `${a.far.S}mm 以上`, src: '実績' };
     else need = { big: `${yN}を短くする`, sub: `実績では ${a.far ? a.far.A : a.A}mm まで`, src: '実績' };
+  } else if (alt) {
+    // ヤゲンを替えたときは、その場で調べた範囲を出す
+    const lst = (alts || []).map(([a, b]) => (b == null ? `${a}mm 以上` : a === b ? `${a}mm` : `${a}〜${b}mm`));
+    need = alts == null ? { pre: `使える ${xN}：`, big: '計算中…', src: `ヤゲン ${punch}` }
+      : lst.length ? { pre: `使える ${xN}：`, big: lst.join('　または　'), src: `ヤゲン ${punch}・${shape === 'Z' ? 5 : 10}mm刻み` }
+        : { big: `${yN}を短くする`, sub: `どの${xN}でも曲がらない`, src: `ヤゲン ${punch}` };
   } else {
     const r = rangesOver(pts, y, lastX);
     need = r.list.length
@@ -223,7 +236,7 @@ export function LimitDetail({ shape, row, x, y, other }) {
   return (
     <div className="ld">
       <div className={`ld-box ${fits === undefined ? '' : fits ? 'yes' : 'no'}`}>
-        <div className="ld-q">{xN} <b>{x}mm</b> のとき、{yN}は</div>
+        <div className="ld-q">{xN} <b>{x}mm</b> のとき、{yN}は{alt ? `（ヤゲン ${punch}）` : ''}</div>
         <div className="ld-a">
           {ex === undefined && !act ? '計算中…' : (
             <>

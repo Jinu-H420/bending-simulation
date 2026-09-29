@@ -97,10 +97,9 @@ else:
              '「中押しが要る範囲」のいちばん下の数字から試して、中押しなしで曲がったら「記入」に書いてください。'
              '内-内が120mm未満の中押しは現場で未確認です。')
     ent = [('中押しなしで\n曲がった最大H', 22), ('中押しが要った\n最小H', 22), ('備考（底W・当たった所）', 30)]
-    sims = [('なし 最小\n立上りH', 'minH'), ('なし 最小\n底W', 'minW'),
-            ('なし 最大\n立上りH', 'maxH'), ('その\n底W', 'maxW'),
-            ('あり 最小\n底W', 'nkMinW'), ('あり 最大\n立上りH', 'nkMaxH'),
-            ('そのまま\nW=100', 'n100'), ('中押しが要る\nW=100', 'z100')]
+    sims = [('中押しなし\n最小 立上りH', 'minH'), ('中押しなし\n最小 底W', 'minW'),
+            ('中押しなし\n最大 立上りH', 'maxH'), ('中押しあり\n最小 底W', 'nkMinW'),
+            ('中押しあり\n最大 立上りH', 'nkMaxH'), ('中押しが要る\n範囲（W=100）', 'z100')]
 
 for ax in axs:
     ax.set_aspect('equal')
@@ -122,7 +121,7 @@ ENTRY = PatternFill('solid', fgColor='FFF7E6')     # 記入欄＝うすい黄
 SIMF = PatternFill('solid', fgColor='EAF1FB')      # シミュレーション＝うすい青
 MATF = PatternFill('solid', fgColor='F0F0EC')
 
-base_cols = [('下型', 9), ('V幅', 6.5), ('曲げ内R', 7), ('材質', 6.5), ('板厚 t', 7.5), ('最小フランジ\n外寸（表）', 11), ('機械', 17)]
+base_cols = [('下型', 10), ('材質', 8), ('板厚 t', 9), ('最小フランジ\n外寸（表）', 13), ('機械', 17)]
 cols = [(h, w * 1.5) for h, w in base_cols] + [(h, w * 1.5) for h, w in ent] + [(h, 19) for h, _ in sims]
 # A3横（余白込み）に収まる文字数の目安。合計がこれになるよう、列幅をまとめて伸ばす
 TARGET_UNITS = 158
@@ -132,7 +131,7 @@ for i, (_, w) in enumerate(cols, start=1):
 last = len(cols)
 
 
-def put(r, c, v, *, bold=False, size=11, fill=None, wrap=True, align='center'):
+def put(r, c, v, *, bold=False, size=13, fill=None, wrap=True, align='center'):
     cell = ws.cell(r, c, v)
     cell.font = Font(name=FONT, size=size, bold=bold)
     cell.alignment = Alignment(horizontal=align, vertical='center', wrap_text=wrap)
@@ -184,8 +183,8 @@ ws.row_dimensions[HEAD_ROW].height = 17
 
 for i, (h, _) in enumerate(cols, start=1):
     fill = HEAD if i <= len(base_cols) else ENTRY if i < c1 else SIMF
-    put(SUB_ROW, i, h, bold=True, size=9, fill=fill)
-ws.row_dimensions[SUB_ROW].height = 44
+    put(SUB_ROW, i, h, bold=True, size=10.5, fill=fill)
+ws.row_dimensions[SUB_ROW].height = 50
 
 # 中押しが要る範囲＝「そのまま曲がる上限」を超えてから「中押しの上限」まで
 def zone(row, W):
@@ -218,62 +217,20 @@ for row in rows:
         cur_mat = row['mat']
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=last)
         put(r, 1, f'材質：{cur_mat}', bold=True, fill=MATF, align='left')
-        ws.row_dimensions[r].height = 15
+        ws.row_dimensions[r].height = 18
         r += 1
     put(r, 1, f"V{row['V']}", bold=True)
-    put(r, 2, row['V'])
-    put(r, 3, row.get('r'))
-    put(r, 4, row['mat'])
-    put(r, 5, row['t'])
-    put(r, 6, row['minOut'])
-    put(r, 7, row.get('machine'), size=9.5)
+    put(r, 2, row['mat'])
+    put(r, 3, row['t'])
+    put(r, 4, row['minOut'])
+    put(r, 5, row.get('machine'), size=11)
     for i in range(len(ent)):
         put(r, len(base_cols) + 1 + i, None, fill=ENTRY)
     for i, (_, key) in enumerate(sims):
         v = row.get(key)
-        put(r, c1 + i, ('不可' if v == '曲げられない' else v) if v is not None else '—', size=10.5, fill=SIMF)
-    ws.row_dimensions[r].height = 13
+        put(r, c1 + i, ('不可' if v == '曲げられない' else v) if v is not None else '—', size=12.5, fill=SIMF)
+    ws.row_dimensions[r].height = 16
     r += 1
-
-# 下の余白（品物ごとの実例）
-r += 1
-ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=last)
-put(r, 1, '品物ごとの実例（曲がった／曲がらなかった、どちらも書いてください）', bold=True, fill=HEAD, align='left')
-r += 1
-# 見出しごとに何列分を使うか（合計が表の列数になるように最後で調整）
-ex = ([('日付', 1), ('品名・図番', 2), ('材質', 1), ('板厚', 1), ('下型(V)', 1), ('立上りH・底W（外寸）', 2),
-       ('曲げ長さ L', 1), ('中押しなし ○／✕', 2), ('中押し ○／✕', 1), ('当たった所・ひとこと', None)]
-      if kind == 'UNAKA' else
-      [('日付', 1), ('品名・図番', 2), ('材質', 1), ('板厚', 1), ('下型(V)', 1), ('寸法（外寸）', 2),
-       ('曲げ長さ L', 1), ('曲げ方（普通／くの字／中押し）', 2), ('結果（○／✕）', 1), ('当たった所・ひとこと', None)])
-spans = []
-used = 0
-for name, sp in ex:
-    n = (last - used) if sp is None else sp
-    spans.append((name, max(1, n)))
-    used += max(1, n)
-c = 1
-for name, sp in spans:
-    if c > last:
-        break
-    end = min(last, c + sp - 1)
-    if end > c:
-        ws.merge_cells(start_row=r, start_column=c, end_row=r, end_column=end)
-    put(r, c, name, bold=True, size=9.5, fill=HEAD)
-    c = end + 1
-ws.row_dimensions[r].height = 20
-for rr in range(r + 1, r + 7):
-    c = 1
-    for _, sp in spans:
-        if c > last:
-            break
-        end = min(last, c + sp - 1)
-        if end > c:
-            ws.merge_cells(start_row=rr, start_column=c, end_row=rr, end_column=end)
-        for cc in range(c, end + 1):
-            put(rr, cc, None, fill=ENTRY)
-        c = end + 1
-    ws.row_dimensions[rr].height = 30
 
 # 印刷設定：A3横・1ページに収める
 ws.page_setup.paperSize = 8          # A3

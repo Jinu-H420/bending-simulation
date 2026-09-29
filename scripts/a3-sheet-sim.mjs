@@ -111,9 +111,10 @@ for (const mat of ['鉄', '縞']) {
           segs.push([st, prev]);
           return segs.map(([x, y]) => (y >= 250 ? `${x}〜` : x === y ? `${x}` : `${x}〜${y}`)).join('、');
         };
+        // 上面W最小：立上り50mmで、通るいちばん狭い上面（5mm刻み）
         let wMin = null;
         for (let W = Math.ceil(2 * nobi + 1); W <= 300; W += 5) {
-          if (span(W) !== '曲げられない') { wMin = W; break; }
+          if (ok(info, nobi, t, [A, Math.max(50, lo), W, Math.max(50, lo), A])) { wMin = W; break; }
         }
         row.wMin = wMin;
         for (const W of [50, 100, 200]) row[`h${W}`] = W < Math.ceil(2 * nobi + 1) ? '—' : span(W);

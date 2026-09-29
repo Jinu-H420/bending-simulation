@@ -142,3 +142,12 @@ header p { margin-bottom: 10px; font-size: 13.5px; }
 .hint { line-height: 1.55; }
 .dims label { font-size: 12px; }
 .dims input, .inl input { padding: 6px 9px; font-size: 16px; }
+
+/* スマホ（iPhone）で横にはみ出さないように。列は画面より広くしない */
+.cols { grid-template-columns: minmax(0, 1fr); }
+.colL, .colR, .card, section { min-width: 0; }
+.res-head, .res-body, .res-foot, .hint, .die { overflow-wrap: anywhere; }
+.limits .ld-a .big2 { overflow-wrap: anywhere; }
+.shapes { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); }
+.shape svg { max-width: 100%; height: auto; }
+@media (max-width: 480px) { .shapes { grid-template-columns: repeat(2, 1fr); } }

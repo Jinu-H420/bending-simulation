@@ -14,6 +14,7 @@ from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
+from openpyxl.utils import get_column_letter
 
 kind, sim_path, out_path, fig_path = sys.argv[1].upper(), sys.argv[2], sys.argv[3], sys.argv[4]
 rows = json.load(open(sim_path, encoding='utf-8'))
@@ -47,7 +48,7 @@ if kind == 'Z':
     title = 'Z曲げ 実績記入シート'
     intro = ('書き方　① 寸法はすべて外寸（左の絵）。A と B は同じ長さで見ます。'
              '② 「記入」の列に、実際に曲げられた値を書いてください。③ 曲げられなかったときは、当たった所（ヤゲン・中間板・ホルダ・柱・ダイ）を備考に。')
-    ent = [('段差S 最小\n（実際）', 13), ('そのSでの\nフランジA上限', 14), ('フランジA 最大\nS=100', 13), ('備考（当たった所）', 20)]
+    ent = [('段差S 最小\n（実際）', 19), ('そのSでの\nフランジA上限', 20), ('フランジA 最大\nS=100', 19), ('備考（当たった所）', 26)]
     sims = [('段差S 最小', 'sMin'), ('フランジA上限\nS=30', 'a30'), ('フランジA上限\nS=50', 'a50'), ('フランジA上限\nS=100', 'a100')]
 elif kind == 'HAT':
     fig, axs = plt.subplots(1, 2, figsize=(9.2, 2.3), gridspec_kw={'width_ratios': [1.5, 1]})
@@ -70,7 +71,7 @@ elif kind == 'HAT':
     intro = ('書き方　① 寸法はすべて外寸（左の絵）。左右同じ寸法（A=B、H1=H2）で見ます。外フランジは 50mm で計算しています。'
              '② ハットは立上りが低すぎても（上面が上型に近づいて）当たるので、曲げられる立上りは「下限〜上限」の範囲で出しています。'
              '③ 実際に曲げられた値を「記入」に。曲げられなかったときは当たった所を備考に。')
-    ent = [('上面W 最小\n（実際）', 13), ('立上りH 下限\nW=100', 13), ('立上りH 上限\nW=100', 13), ('備考（当たった所）', 20)]
+    ent = [('上面W 最小\n（実際）', 19), ('立上りH 下限\nW=100', 19), ('立上りH 上限\nW=100', 19), ('備考（当たった所）', 26)]
     sims = [('上面W 最小\nH=50', 'wMin'), ('立上りH の範囲\nW=50', 'h50'), ('立上りH の範囲\nW=100', 'h100'), ('立上りH の範囲\nW=200', 'h200')]
 else:
     fig, axs = plt.subplots(1, 3, figsize=(9.6, 2.3))
@@ -95,7 +96,7 @@ else:
     intro = ('見方　立上りを高くしていくと ① そのまま曲がる → ② 中押し（捨て曲げ）が要る → ③ どちらでも曲がらない、の順になります。'
              '「中押しが要る範囲」のいちばん下の数字から試して、中押しなしで曲がったら「記入」に書いてください。'
              '内-内が120mm未満の中押しは現場で未確認です。')
-    ent = [('中押しなしで\n曲がった最大H', 15), ('中押しが要った\n最小H', 15), ('備考（底W・当たった所）', 20)]
+    ent = [('中押しなしで\n曲がった最大H', 22), ('中押しが要った\n最小H', 22), ('備考（底W・当たった所）', 30)]
     sims = [('なし 最小\n立上りH', 'minH'), ('なし 最小\n底W', 'minW'),
             ('なし 最大\n立上りH', 'maxH'), ('その\n底W', 'maxW'),
             ('あり 最小\n底W', 'nkMinW'), ('あり 最大\n立上りH', 'nkMaxH'),
@@ -163,8 +164,10 @@ ws.row_dimensions[3].height = 19
 
 # 図（3〜12行目）
 img = XLImage(fig_path)
-img.width, img.height = (620, 126) if kind != 'UNAKA' else (660, 126)
-ws.add_image(img, 'A4')
+img.width, img.height = (560, 100) if kind != 'UNAKA' else (600, 100)
+# 右のあいている所に置く（左は「確かめた人・日付」を書く場所）
+fig_col = get_column_letter(max(1, int(last * 0.5)))
+ws.add_image(img, f'{fig_col}4')
 for r in range(4, 12):
     ws.row_dimensions[r].height = 13
 

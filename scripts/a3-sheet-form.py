@@ -31,7 +31,7 @@ def arrow(ax, x1, y1, x2, y2, txt, tx, ty):
 
 
 if kind == 'Z':
-    fig, axs = plt.subplots(1, 2, figsize=(9.2, 2.3), gridspec_kw={'width_ratios': [1.3, 1]})
+    fig, axs = plt.subplots(2, 1, figsize=(3.4, 4.4))
     a = axs[0]
     a.plot([0, 60, 60, 130], [60, 60, 0, 0], color='#111', lw=5, solid_joinstyle='miter')
     arrow(a, 0, 74, 60, 74, 'フランジA', 30, 86)
@@ -51,7 +51,7 @@ if kind == 'Z':
     ent = [('段差S 最小\n（実際）', 19), ('そのSでの\nフランジA上限', 20), ('フランジA 最大\nS=100', 19), ('備考（当たった所）', 26)]
     sims = [('段差S 最小', 'sMin'), ('フランジA上限\nS=30', 'a30'), ('フランジA上限\nS=50', 'a50'), ('フランジA上限\nS=100', 'a100')]
 elif kind == 'HAT':
-    fig, axs = plt.subplots(1, 2, figsize=(9.2, 2.3), gridspec_kw={'width_ratios': [1.5, 1]})
+    fig, axs = plt.subplots(2, 1, figsize=(3.4, 4.4))
     a = axs[0]
     a.plot([0, 40, 40, 110, 110, 150], [0, 0, 60, 60, 0, 0], color='#111', lw=5, solid_joinstyle='miter')
     arrow(a, 0, -16, 40, -16, '外フランジA', 20, -30)
@@ -59,8 +59,8 @@ elif kind == 'HAT':
     arrow(a, 26, 0, 26, 60, '立上りH1', 8, 30)
     arrow(a, 124, 0, 124, 60, '立上りH2', 142, 30)
     arrow(a, 40, 74, 110, 74, '上面W', 75, 86)
-    a.text(75, 30, 'すべて外寸。左右同じ寸法で見ます', fontsize=9, color='#444', ha='center')
-    a.set_xlim(-20, 170); a.set_ylim(-42, 100)
+    a.text(75, -46, 'すべて外寸・左右同じ寸法', fontsize=9, color='#444', ha='center')
+    a.set_xlim(-20, 170); a.set_ylim(-56, 100)
     b = axs[1]
     b.plot([0, 40, 40, 110, 110, 150], [0, 0, 60, 60, 0, 0], color='#bbb', lw=5, solid_joinstyle='miter')
     b.plot([40, 40], [0, 60], color='#c00', lw=5)
@@ -74,7 +74,7 @@ elif kind == 'HAT':
     ent = [('上面W 最小\n（実際）', 19), ('立上りH 下限\nW=100', 19), ('立上りH 上限\nW=100', 19), ('備考（当たった所）', 26)]
     sims = [('上面W 最小\nH=50', 'wMin'), ('立上りH の範囲\nW=50', 'h50'), ('立上りH の範囲\nW=100', 'h100'), ('立上りH の範囲\nW=200', 'h200')]
 else:
-    fig, axs = plt.subplots(1, 3, figsize=(9.6, 2.3))
+    fig, axs = plt.subplots(3, 1, figsize=(3.4, 6.2))
     a = axs[0]
     a.plot([0, 0, 90, 90], [70, 0, 0, 70], color='#111', lw=5, solid_joinstyle='miter')
     arrow(a, -16, 0, -16, 70, '立上りH', -40, 35)
@@ -122,13 +122,13 @@ ENTRY = PatternFill('solid', fgColor='FFF7E6')     # 記入欄＝うすい黄
 SIMF = PatternFill('solid', fgColor='EAF1FB')      # シミュレーション＝うすい青
 MATF = PatternFill('solid', fgColor='F0F0EC')
 
-base_cols = [('下型', 9), ('V幅', 6.5), ('曲げ内R', 7), ('材質', 6.5), ('板厚 t', 7.5), ('最小フランジ\n外寸（表）', 11), ('機械', 15)]
+base_cols = [('下型', 9), ('V幅', 6.5), ('曲げ内R', 7), ('材質', 6.5), ('板厚 t', 7.5), ('最小フランジ\n外寸（表）', 11), ('機械', 17)]
 cols = [(h, w * 1.5) for h, w in base_cols] + [(h, w * 1.5) for h, w in ent] + [(h, 19) for h, _ in sims]
 # A3横（余白込み）に収まる文字数の目安。合計がこれになるよう、列幅をまとめて伸ばす
-TARGET_UNITS = 168
+TARGET_UNITS = 158
 scale = TARGET_UNITS / sum(w for _, w in cols)
 for i, (_, w) in enumerate(cols, start=1):
-    ws.column_dimensions[ws.cell(1, i).column_letter].width = max(4.5, w * scale)
+    ws.column_dimensions[get_column_letter(i)].width = max(7.5 if i == 1 else 4.5, w * scale)
 last = len(cols)
 
 
@@ -143,19 +143,19 @@ def put(r, c, v, *, bold=False, size=11, fill=None, wrap=True, align='center'):
 
 
 # 見出し
-ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last)
+ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last + 2)
 t = ws.cell(1, 1, f'{title}　―　株式会社高橋鉄骨')
 t.font = Font(name=FONT, size=17, bold=True)
 t.alignment = Alignment(horizontal='left', vertical='center')
 ws.row_dimensions[1].height = 23
 
-ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last)
+ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last + 2)
 n = ws.cell(2, 1, f'{intro}　（シミュレーションの値は {TODAY} 時点・ヤゲン904061・中間板標準。うすい青＝参考、うすい黄＝記入欄）')
 n.font = Font(name=FONT, size=9.5)
 n.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 ws.row_dimensions[2].height = 24
 # 確かめた人・日付は1か所だけ（列を減らして表の文字を大きくするため）
-ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=max(4, last // 3))
+ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=max(6, last // 2))
 who = ws.cell(3, 1, '確かめた人：　　　　　　　　　　　　　　　日付：　　　　年　　月　　日')
 who.font = Font(name=FONT, size=11, bold=True)
 who.alignment = Alignment(horizontal='left', vertical='center')
@@ -164,15 +164,14 @@ ws.row_dimensions[3].height = 19
 
 # 図（3〜12行目）
 img = XLImage(fig_path)
-img.width, img.height = (560, 100) if kind != 'UNAKA' else (600, 100)
-# 右のあいている所に置く（左は「確かめた人・日付」を書く場所）
-fig_col = get_column_letter(max(1, int(last * 0.5)))
-ws.add_image(img, f'{fig_col}4')
-for r in range(4, 12):
-    ws.row_dimensions[r].height = 13
+img.width, img.height = (170, 220) if kind != 'UNAKA' else (170, 310)
+# 表の右の帯に置く（表の上はあけない）
+ws.column_dimensions[get_column_letter(last + 1)].width = 2
+ws.column_dimensions[get_column_letter(last + 2)].width = 25
+ws.add_image(img, f'{get_column_letter(last + 2)}4')
 
 # 表の見出し（14行目＝大見出し、15行目＝小見出し）
-HEAD_ROW, SUB_ROW = 12, 13
+HEAD_ROW, SUB_ROW = 4, 5
 ws.merge_cells(start_row=HEAD_ROW, start_column=1, end_row=HEAD_ROW, end_column=len(base_cols))
 put(HEAD_ROW, 1, '金型・材質・板厚', bold=True, fill=HEAD, align='left')
 c0 = len(base_cols) + 1
@@ -232,7 +231,7 @@ for row in rows:
         put(r, len(base_cols) + 1 + i, None, fill=ENTRY)
     for i, (_, key) in enumerate(sims):
         v = row.get(key)
-        put(r, c1 + i, v if v is not None else '—', size=10.5, fill=SIMF)
+        put(r, c1 + i, ('不可' if v == '曲げられない' else v) if v is not None else '—', size=10.5, fill=SIMF)
     ws.row_dimensions[r].height = 13
     r += 1
 
@@ -263,7 +262,7 @@ for name, sp in spans:
     put(r, c, name, bold=True, size=9.5, fill=HEAD)
     c = end + 1
 ws.row_dimensions[r].height = 20
-for rr in range(r + 1, r + 5):
+for rr in range(r + 1, r + 7):
     c = 1
     for _, sp in spans:
         if c > last:
@@ -274,7 +273,7 @@ for rr in range(r + 1, r + 5):
         for cc in range(c, end + 1):
             put(rr, cc, None, fill=ENTRY)
         c = end + 1
-    ws.row_dimensions[rr].height = 19
+    ws.row_dimensions[rr].height = 30
 
 # 印刷設定：A3横・1ページに収める
 ws.page_setup.paperSize = 8          # A3

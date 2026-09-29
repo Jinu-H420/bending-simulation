@@ -79,6 +79,30 @@ for (const mat of ['鉄', '縞']) {
           row[`a${S}`] = sMin == null || S < sMin ? null : num(upper((a) => ok(info, nobi, t, [a, S, a]), lo));
         }
       } else if (shape === 'UNAKA') {
+        // 中押しなし・ありの「いちばん小さい形」と「いちばん大きい立上り」
+        row.minH = +lo.toFixed(1);
+        let wMin = null;
+        for (let W = Math.ceil(2 * nobi + 1); W <= 300; W += 1) if (ok(info, nobi, t, [lo, W, lo])) { wMin = W; break; }
+        row.minW = wMin;
+        let maxH = 0, maxW = null;
+        for (let W = 20; W <= 300; W += 10) {
+          if (!ok(info, nobi, t, [lo, W, lo])) continue;
+          const h = upper((x) => ok(info, nobi, t, [x, W, x]), lo);
+          if (h === Infinity) { maxH = Infinity; maxW = W; break; }
+          if (h != null && h > maxH) { maxH = h; maxW = W; }
+        }
+        row.maxH = maxH === Infinity ? '上限なし' : maxH || null;
+        row.maxW = maxW;
+        // 中押し：への字が曲げられて（底の半分≧最小フランジ）、押し切ったとき上型が入る最小の底W
+        let nkW = null;
+        for (let W = Math.ceil(2 * minOut); W <= 300; W += 1) {
+          const n = E.nakaOshi(PUNCH, false, 'std', +(W - 2 * t).toFixed(1), 0);
+          if (n.ok) { nkW = W; break; }
+        }
+        row.nkMinW = nkW;
+        row.nkMinInner = nkW == null ? null : +(nkW - 2 * t).toFixed(1);
+        const nBig = E.nakaOshi(PUNCH, false, 'std', +(300 - 2 * t).toFixed(1), 0);
+        row.nkMaxH = nBig.ok ? (Number.isFinite(nBig.maxH) ? Math.round(nBig.maxH + t) : '上限なし') : null;
         // コの字：底Wごとに「普通に曲げられる立上り上限」と「中押しなら曲げられる立上り上限」
         for (const W of [50, 100, 150, 200]) {
           const inner = +(W - 2 * t).toFixed(1);

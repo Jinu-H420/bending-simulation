@@ -187,10 +187,13 @@ export function LimitDetail({ shape, row, x, y, other, punch, punchFlip }) {
   const opt = { punch: punch || '904061', flip: !!punchFlip };
   const [ex, setEx] = useState(undefined);   // undefined＝計算中
   const [alts, setAlts] = useState(null);    // ヤゲンを替えたときの「使える範囲」
+  const [exStd, setExStd] = useState(undefined);   // 普通のヤゲン 904061 での上限（下の表の「普通に曲げる」用）
   useEffect(() => {
-    setEx(undefined); setAlts(null);
+    setEx(undefined); setAlts(null); setExStd(undefined);
     const id = setTimeout(() => {
       setEx(exactLimit(row, shape, x, other, opt));
+      // 下の表の「普通に曲げる」は、いつも普通のヤゲン 904061 の数字で出す
+      setExStd(alt ? exactLimit(row, shape, x, other, { punch: '904061', flip: false }) : undefined);
       if (alt) setAlts(limitRanges(row, shape, y, other, opt));
     }, 30);
     return () => clearTimeout(id);
@@ -272,7 +275,7 @@ export function LimitDetail({ shape, row, x, y, other, punch, punchFlip }) {
         const ok = (v) => v != null && (v === Infinity || y <= v);
         const inner = x - 2 * row.t;
         const rowsT = [
-          ['普通に曲げる', ex === undefined ? undefined : ex, '904061'],
+          ['普通に曲げる', alt ? exStd : ex, '904061'],
           ['くの字ヤゲン', kv, 'L 200mm まで（くの字165）・70mm まで（くの字100）'],
           ['中押し（最終手段）', nv, inner < SUTE_MIN_INNER ? `内-内 ${inner}mm。${SUTE_MIN_INNER}mm 未満は現場で未確認` : `内-内 ${inner}mm`],
         ];

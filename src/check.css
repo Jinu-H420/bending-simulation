@@ -53,6 +53,10 @@ h2 { font-size: 17px; margin: 18px 0 8px; }
 .res-foot { margin-top: 6px; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
 .caution { color: var(--warn); font-weight: 600; }
 .trust { color: var(--ok); }
+/* 基準金型では曲がらないが、ほかの金型で曲がる段取りが見つかったとき */
+.rescue { margin-top: 10px; }
+.rescue-head { font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+.rescue-head b { color: var(--ok); font-size: 16px; }
 .more { width: 100%; padding: 12px; font: inherit; font-weight: 700; border-radius: 10px; cursor: pointer;
   background: transparent; color: var(--accent); border: 2px solid var(--accent); }
 footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
@@ -143,8 +147,9 @@ header p { margin-bottom: 10px; font-size: 13.5px; }
 .dims label { font-size: 12px; }
 .dims input, .inl input { padding: 6px 9px; font-size: 16px; }
 
-/* スマホ（iPhone）で横にはみ出さないように。列は画面より広くしない */
-.cols { grid-template-columns: minmax(0, 1fr); }
+/* スマホ（iPhone）で横にはみ出さないように。列は画面より広くしない
+   （2列は上の 1000px 以上の指定。ここで打ち消さないように狭い画面だけにする） */
+@media (max-width: 999px) { .cols { grid-template-columns: minmax(0, 1fr); } }
 .colL, .colR, .card, section { min-width: 0; }
 .res-head, .res-body, .res-foot, .hint, .die { overflow-wrap: anywhere; }
 .limits .ld-a .big2 { overflow-wrap: anywhere; }

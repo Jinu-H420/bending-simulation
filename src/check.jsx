@@ -2,7 +2,7 @@
 // 形と寸法（外寸）と板厚を入れると、シミュレーターと同じ干渉判定で ○/✕ を出す。
 // 曲げ順・突き当て（左右）・裏返しは自動で探す。✕ のときは理由（どこに当たるか）と、
 // 通る別の金型を出す。
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
@@ -476,13 +476,9 @@ function App() {
   const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
     nobiIn: Number.isFinite(nobiIn) ? nobiIn : null, recs });
   const now = { shape, dims, mat, t, L: Ltext };
-  // Z・コの字のときは「どこまで曲げられるか」を出す（Z曲げ・コの字判定と同じグラフ）。
-  // カーブは型ごとに作りだめしてある（zu/data/zu-data.json）ので、いま使う型の行を探す。
-  const limitRow = useMemo(() => {
-    if (!(shape === 'Z' || shape === 'U') || !result || result.note || result.skip || !result.sel) return null;
-    if (dims.some((d) => !(Number(d) > 0))) return null;
-    return ZU_DATA.rows.find((r) => r.sel === result.sel && r.mat === mat && Number(r.t) === Number(t)) || null;
-  }, [shape, result && result.sel, mat, t, dims.join('|')]);
+
+  // いま画面に入っている条件。判定の答えがこの条件のものかを見分けるのに使う
+  const inKey = `${shape}|${dims.join('|')}|${t}|${mat}|${Ltext}|${nobiText}`;
 
   const run = () => {
     setOthers(null);
@@ -501,7 +497,7 @@ function App() {
     }
     setBusy('判定しています…');
     const id = setTimeout(() => {
-      try { setResult(judge({ ...input(), sel: base.sel })); } catch (e) {
+      try { setResult({ ...judge({ ...input(), sel: base.sel }), key: inKey }); } catch (e) {
         setResult({ note: `判定でつまずきました（${e && e.message ? e.message : e}）。寸法を見直すか、この文面を知らせてください` });
       }
       setBusy('');
@@ -510,18 +506,23 @@ function App() {
   }, [shape, dims.join('|'), t, mat, nobiText, Ltext, recs]);
 
   // 使えるほかの金型を全部試す（1型ずつ画面に出す）
+  const scanId = useRef(0);
   const runOthers = () => {
     // 縞板は V25・V40・V80（HD3504NT）だけ（金型寸法表・2026-09-24 ユーザー確認）
     const allow = matDies(mat);
     const all = [...MACHINE_DIES.hg2203.main, ...MACHINE_DIES.hd3504nt.main]
       .filter((s) => (!allow || allow.includes(s)) && s !== (base && base.sel));
+    const inp = input();
+    const my = ++scanId.current;
     const out = [];
     setOthers([]);
     const step = (i) => {
+      if (my !== scanId.current) return;
       if (i >= all.length) { setBusy(''); return; }
       setBusy(`ほかの金型を調べています… ${i + 1}/${all.length}`);
       setTimeout(() => {
-        const r = judge({ ...input(), sel: all[i], nobiIn: null });
+        if (my !== scanId.current) return;
+        const r = judge({ ...inp, sel: all[i], nobiIn: null });
         out.push(r);
         const rank = (x) => (!x.ok ? 9 : x.method === 'kuno' ? 1 : x.method === 'punch' ? 2 : x.method === 'naka' ? 3 : 0);
         setOthers([...out].sort((a, b) => (rank(a) - rank(b)) || (a.V - b.V)));
@@ -530,6 +531,26 @@ function App() {
     };
     step(0);
   };
+
+  // 基準金型で曲がらない（または中押し・くの字が要る）ときは、押さなくても自動でほかの金型を探す。
+  // （V12 では当たるが V8 なら普通に曲がる、のような段取りを見落とさないため）
+  const needScan = !!(result && !result.note && !result.skip && (!result.ok || result.method));
+  useEffect(() => {
+    if (!needScan || !result || result.key !== inKey) return;
+    runOthers();
+  }, [needScan, result && result.key, inKey]);
+  // ほかの金型で見つかった、いまより良い段取り（曲がらない→曲がる／中押し→普通に曲がる）
+  const rescue = !needScan ? null
+    : ((others || []).find((o) => o.ok && (!result.ok ? true : !o.method)) || null);
+  // 画面の主役になる答え（基準金型で曲がらないときは、見つかった型の答え）
+  const shown = rescue || result;
+  // Z・コの字のときは「どこまで曲げられるか」を出す（Z曲げ・コの字判定と同じグラフ）。
+  // カーブは型ごとに作りだめしてある（zu/data/zu-data.json）ので、いま使う型の行を探す。
+  const limitRow = useMemo(() => {
+    if (!(shape === 'Z' || shape === 'U') || !shown || shown.note || shown.skip || !shown.sel) return null;
+    if (dims.some((d) => !(Number(d) > 0))) return null;
+    return ZU_DATA.rows.find((r) => r.sel === shown.sel && r.mat === mat && Number(r.t) === Number(t)) || null;
+  }, [shape, shown && shown.sel, mat, t, dims.join('|')]);
 
   return (
     <div className="wrap">
@@ -600,11 +621,25 @@ function App() {
       {result && result.note && <section><div className="card">{result.note}</div></section>}
       {result && !result.note && (
         <section>
-          <Result r={result} big now={now} />
-          {!others && (
-            <button className="more" onClick={runOthers} disabled={!!busy}>
-              {result.ok ? 'ほかの金型でも曲がるか調べる' : '曲がる金型を探す'}
-            </button>
+          <Result r={result} big={!rescue} now={now} />
+          {needScan && !rescue && busy && <div className="hint">ほかの金型を自動で調べています…</div>}
+          {needScan && !rescue && !busy && others && (
+            <div className="hint">
+              {result.ok ? 'ほかの金型でも、普通に曲がる型はありませんでした。'
+                : `ほかの金型（${others.filter((r) => !r.skip).length}型）でも曲がりませんでした。`}
+            </div>
+          )}
+          {rescue && (
+            <div className="rescue">
+              <div className="rescue-head">
+                {result.ok ? <>ほかの金型なら、<b>普通に曲がります</b>（自動で探しました）</>
+                  : <>この金型では曲がりませんが、<b>ほかの金型なら曲がります</b>（自動で探しました）</>}
+              </div>
+              <Result r={rescue} big now={now} />
+            </div>
+          )}
+          {!needScan && !others && (
+            <button className="more" onClick={runOthers} disabled={!!busy}>ほかの金型でも曲がるか調べる</button>
           )}
         </section>
       )}
@@ -613,13 +648,13 @@ function App() {
           <div className="step">どこまで曲げられるか（{limitRow.die}・{mat} t{t}）</div>
           <div className="limits">
             <LimitDetail shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
-              other={Math.max(Number(dims[0]), Number(dims[2]))} punch={result.punch} punchFlip={result.punchFlip} />
+              other={Math.max(Number(dims[0]), Number(dims[2]))} punch={shown.punch} punchFlip={shown.punchFlip} />
             <LimitChart shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
-              grade={result && result.ok ? 'ok-sim' : 'ng'} />
+              grade={shown && shown.ok ? 'ok-sim' : 'ng'} />
             <QuickTable shape={shape} row={limitRow} x={Number(dims[1])} />
           </div>
           <div className="hint">
-            {result.punch && result.punch !== '904061' && <><b>グラフと早見表は、普通のヤゲン 904061 の値です</b>（上の2つは {result.punch} の値）。<br /></>}
+            {shown.punch && shown.punch !== '904061' && <><b>グラフと早見表は、普通のヤゲン 904061 の値です</b>（上の2つは {shown.punch} の値）。<br /></>}
             {shape === 'Z' ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'
               : '低いほうの立上りを先に曲げる想定。オレンジ＝くの字ヤゲン（曲げ長さ L が窓以内のときだけ）、紫の点線＝中押し。現場の順番は 普通 → くの字 → 中押し。'}
           </div>
@@ -639,7 +674,7 @@ function App() {
       )}
 
       {result && !result.skip && !result.note && (
-        <RecordPanel shape={shape} mat={mat} t={t} dims={dims} L={Ltext} best={result}
+        <RecordPanel shape={shape} mat={mat} t={t} dims={dims} L={Ltext} best={rescue || result}
           dies={[result, ...(others || [])].filter((r) => r && r.sel && !r.skip)
             .filter((r, i, a) => a.findIndex((x) => x.sel === r.sel) === i)
             .map((r) => ({ sel: r.sel, V: r.V, machine: r.machine, label: `${r.label}（${MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）` }))}

@@ -469,6 +469,12 @@ function App() {
 
   const S = SHAPES[shape];
   const base = useMemo(() => pickDie(mat, t), [mat, t]);
+  // 表から自動で引いている片伸び（いくつ引いているか画面に出す）
+  const autoNobi = useMemo(() => {
+    if (!base || !base.sel) return null;
+    const info = resolveDie(base.sel, 20, 30, true, machineOfSel(base.sel));
+    return lookupTable(NOBI_TABLE, mat, vOf(info), Number(t)) || null;
+  }, [base && base.sel, mat, t]);
   const nobiIn = nobiText.trim() === '' ? null : Number(nobiText);
 
   const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setFocus(null); setOthers(null); };
@@ -484,7 +490,7 @@ function App() {
     setOthers(null);
     if (!base || !base.sel) { setResult({ ok: false, label: '—', why: 'この板厚の基準金型が折り曲げ表にありません' }); return; }
     setBusy('判定しています…');
-    setTimeout(() => { setResult(judge({ ...input(), sel: base.sel })); setBusy(''); }, 20);
+    setTimeout(() => { setResult({ ...judge({ ...input(), sel: base.sel }), key: inKey }); setBusy(''); }, 20);
   };
 
   // 形や寸法を変えたら、押さなくても判定し直す（前は結果が消えたままだった）
@@ -603,7 +609,8 @@ function App() {
             <input inputMode="decimal" value={t} onChange={(e) => { setT(e.target.value); setOthers(null); }} />
           </label>
           <label className="inl" style={{ width: 104 }}><span>片伸び</span>
-            <input inputMode="decimal" placeholder="表から自動" value={nobiText} onChange={(e) => { setNobiText(e.target.value); }} />
+            <input inputMode="decimal" placeholder={autoNobi ? `自動 ${autoNobi.val}` : '表から自動'}
+              value={nobiText} onChange={(e) => { setNobiText(e.target.value); }} />
           </label>
         </div>
 
@@ -612,7 +619,10 @@ function App() {
         <div className="hint">
           {mat === '縞' && <><b>縞板は V25・V40・V80（HD3504NT）だけ</b>使えます。<br /></>}
           金型：<b>{base && base.sel ? dieLabel(base.sel) : '該当なし'}</b>（折り曲げ表の基準金型{base && !base.exact ? `・t${base.tUsed}の行で代用` : ''}）
-          。L はダイ1本 {DIE_UNIT_LEN}mm。片伸びは表に無いときだけ入れてください。
+          。L はダイ1本 {DIE_UNIT_LEN}mm。<br />
+          片伸び：{nobiText.trim() !== '' ? <>手入力の <b>{nobiText}mm</b> を辺ごとに引いています</>
+            : autoNobi ? <>表から <b>{autoNobi.val}mm</b> を辺ごとに引いています（{mat} V{base && base.v ? base.v.replace('V', '') : ''}・t{autoNobi.tUsed}{autoNobi.exact ? '' : ' で代用'} の表）</>
+              : <>表に無いので、自分で入れてください</>}。ほかの金型で判定したときは、その型の片伸びを使います。
         </div>
       </section>
 
@@ -638,8 +648,10 @@ function App() {
               <Result r={rescue} big now={now} />
             </div>
           )}
-          {!needScan && !others && (
-            <button className="more" onClick={runOthers} disabled={!!busy}>ほかの金型でも曲がるか調べる</button>
+          {!others && !busy && (
+            <button className="more" onClick={runOthers}>
+              {needScan ? '曲がる金型を探す' : 'ほかの金型でも曲がるか調べる'}
+            </button>
           )}
         </section>
       )}

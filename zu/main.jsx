@@ -7,6 +7,7 @@ import { LimitChart, LimitDetail, QuickTable } from './limits.jsx';
 import { METHOD_JA, recMatch, recText, judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH, Z_ACT_ON } from './judge.js';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from '../src/cloud.js';
+import { deviceId } from '../src/records.js';
 import './zu.css';
 
 const ROWS = DATA.rows;
@@ -255,7 +256,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
     const m = open ? method : autoMethod;
     saveRec({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(), dev: deviceId(),
       shape, mat, t, V: row.V, machine: row.machine, sel: row.sel, dims: dims.map(Number), L: L > 0 ? L : null,
       method: m.startsWith('kuno') ? 'kuno' : m,
       punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
@@ -312,6 +313,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
           )}
           {open && <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所 など）" />}
           {msg && <div className="hint">{msg}</div>}
+          <div className="hint">登録には、このPCの番号 <b>{deviceId() || '—'}</b> が自動で付きます（どのPCから登録したか分かるように）。</div>
           {mine.length > 0 && (
             <table className="kt rec-list">
               <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th></th></tr></thead>

@@ -5,11 +5,12 @@
 // 共有フォルダにつないでいない間は、このPCのブラウザにも同じ形で控えを置き、つないだときに送る。
 //
 // 1件の形（zuRecord）
-//   { id, at, who, shape, mat, t, V, machine, sel, dims, L, method, punch, ok, lenFail, note,
+//   { id, at, who, dev（登録したPCの番号・自動）, shape, mat, t, V, machine, sel, dims, L, method, punch, ok, lenFail, note,
 //     n（同じ段取りで記録した回数）, case: { key, sim, segs, bends, seq, dieFlip, punchFlip } }
 //   case はシミュレーターで記録したときだけ入る（同じ段取りを開いたら、その実績を先に出すため）。
 
 const KEY = 'bendsim.zurecords.v1';
+const DEV = 'bendsim.device.v1';    // このPCの番号（自動）
 const OLD = 'bendsim.records.v2';   // 前の形（このPCだけに残っているもの）。読むときに新しい形へ直す
 
 // 記録を引くときの鍵。ここに入れた項目が一致したものを「同じ条件」とみなす。
@@ -31,10 +32,23 @@ const looseOf = (r) => [r.sel, r.case && r.case.dieFlip ? 'F' : '-', r.mat, `t${
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+// このPCの番号。ブラウザは Windows の PC 名を読めないので、初めて開いたときに
+// 番号を自動で作ってそのブラウザに覚えさせ、実績に付ける（名前を入れなくても「どのPCから」が分かる）。
+// ブラウザの保存を消すと新しい番号になる。
+export function deviceId() {
+  try {
+    const cur = localStorage.getItem(DEV);
+    if (cur) return cur;
+    const id = `PC-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    localStorage.setItem(DEV, id);
+    return id;
+  } catch { return ''; }
+}
+
 // 前の形（key・bent・die…）を、いまの形（zuRecord）に直す
 function fromOld(r) {
   return {
-    id: r.id || newId(), at: r.at || '', who: r.who || '', shape: r.shape || 'free',
+    id: r.id || newId(), at: r.at || '', who: r.who || '', dev: r.dev || '', shape: r.shape || 'free',
     mat: r.mat, t: r.t, V: r.V || null, machine: r.machine, sel: r.die, dims: r.segs || [],
     L: r.L || null, method: 'normal', punch: r.punch, ok: !!r.bent, lenFail: false, note: r.note || '', n: r.n || 1,
     case: { key: r.key, sim: r.sim, segs: r.segs, bends: r.bends, seq: r.seq, dieFlip: !!r.dieFlip, punchFlip: !!r.punchFlip },
@@ -77,7 +91,7 @@ export function addRecord(list, c, bent, note, who) {
   const next = list.slice();
   const i = next.findIndex((r) => r.case && r.case.key === key);
   const one = {
-    id: i >= 0 ? next[i].id : newId(), at: now, who: (who || '').trim(), shape: c.shape || 'free',
+    id: i >= 0 ? next[i].id : newId(), at: now, who: (who || '').trim(), dev: deviceId(), shape: c.shape || 'free',
     mat: c.mat, t: c.t, V: c.V || null, machine: c.machine === 'hg2203' ? 'HG2203' : 'HD3504NT', sel: c.die,
     dims: (c.dims || c.segs).map((x) => +Number(x).toFixed(1)), L: c.L || null,
     method: c.method || 'normal', punch: c.punch, ok: !!bent, lenFail: false, note: note || '', n: 1,

@@ -10,7 +10,7 @@ import {
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, matDies,
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA } from '../zu/judge.js';
-import { learned, gapLimit } from './records.js';
+import { learned, gapLimit, deviceId } from './records.js';
 import { LimitChart, LimitDetail, QuickTable } from '../zu/limits.jsx';
 import ZU_DATA from '../zu/data/zu-data.json';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
@@ -336,7 +336,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
     const m = open ? method : autoMethod;
     saveRec({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(), dev: deviceId(),
       shape, mat, t: Number(t), V: die.V, machine: die.machine === 'hg2203' ? 'HG2203' : 'HD3504NT', sel: die.sel,
       dims: dims.map(Number), L: Number(L) > 0 ? Number(L) : null,
       method: m.startsWith('kuno') ? 'kuno' : m,
@@ -394,6 +394,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
           )}
           {open && <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ひとこと（当たった所 など）" />}
           {msg && <div className="hint">{msg}</div>}
+          <div className="hint">登録には、このPCの番号 <b>{deviceId() || '—'}</b> が自動で付きます（どのPCから登録したか分かるように）。</div>
           {mine.length > 0 && (
             <table className="rec-list">
               <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th /></tr></thead>

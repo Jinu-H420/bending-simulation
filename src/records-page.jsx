@@ -133,7 +133,7 @@ function App() {
         <section>
           <table className="rec-list">
             <thead>
-              <tr><th>日付</th><th>形</th><th>材質・板厚</th><th>型</th><th>寸法（外寸）</th><th>L</th><th>曲げ方</th><th>結果</th><th>確かめた人</th><th>ひとこと</th><th /></tr>
+              <tr><th>日付</th><th>形</th><th>材質・板厚</th><th>型</th><th>寸法（外寸）</th><th>L</th><th>曲げ方</th><th>結果</th><th>確かめた人</th><th>登録PC</th><th>ひとこと</th><th /></tr>
             </thead>
             <tbody>
               {list.map((r) => (
@@ -149,6 +149,7 @@ function App() {
                     {r.case && typeof r.case.gap === 'number' && <div className="sub2">余裕 {r.case.gap}mm</div>}
                   </td>
                   <td>{r.who || '—'}</td>
+                  <td>{r.dev || '—'}</td>
                   <td>{r.note || ''}</td>
                   <td><button className="del" onClick={() => { if (confirm('この実績を消しますか？')) drop(r.id); }}>消す</button></td>
                 </tr>

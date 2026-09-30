@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { loadRecords, addRecord, removeRecord, lookup, missRate, mergeRecords, learned, gapLimit, exportJSON, importJSON } from './src/records.js';
+import { loadRecords, addRecord, removeRecord, lookup, missRate, mergeRecords, learned, gapLimit, exportJSON, importJSON, deviceId } from './src/records.js';
 import { folderSupported, loadFolder, pickFolder, forgetFolder, permission, pull as cloudPull, push as cloudPush } from './src/cloud.js';
 
 // ============================================================================
@@ -3173,6 +3173,7 @@ const BendingSimulator = () => {
                 <input value={who} onChange={(e) => { setWho(e.target.value); try { localStorage.setItem('bendsim.who', e.target.value); } catch { /* 無視 */ } }}
                   placeholder="確かめた人（任意）"
                   className="w-40 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+                <span className="text-[11px] text-slate-400 self-center">このPC：{deviceId() || '—'}</span>
                 <input value={recNote} onChange={(e) => setRecNote(e.target.value)}
                   placeholder="ひとこと（当たった場所など）"
                   className="flex-1 min-w-40 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />

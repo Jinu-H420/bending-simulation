@@ -12,7 +12,7 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
-  SUTE_MIN_INNER, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck,
+  SUTE_MIN_INNER, SUTE_MAX_H, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck,
 } from '../bending-simulator.jsx';
 import { learned, gapLimit } from '../src/records.js';
 export { Z_ACT_ON };
@@ -64,11 +64,13 @@ function interp(p, x, kx, ky) {
 }
 // コの字をくの字ヤゲンで曲げたときの立上り上限（底Wごとの計算カーブ）
 export const uKunoH = (row, W) => (row.uKuno ? interp(row.uKuno, W, 'W', 'H') : null);
-// 中押しで押し切ったとき上型が入る立上り（外寸）の上限。底の半分が最小フランジ未満なら null（への字が曲がらない）
+// 中押しで押し切ったとき上型が入る立上り（外寸）の上限。底の半分が最小フランジ未満なら null（への字が曲がらない）。
+// 現場で確かめてあるのは立上り 120mm まで（2026-09-30 ユーザー確認）なので、そこで頭打ちにする。
 export function uNakaH(row, W) {
   if (W / 2 < row.minOut) return null;
   const n = nakaOshi(PUNCH, false, 'std', W - 2 * row.t, 0);
-  return Number.isFinite(n.maxH) ? n.maxH + row.t : Infinity;
+  const v = Number.isFinite(n.maxH) ? n.maxH + row.t : Infinity;
+  return Math.min(v, SUTE_MAX_H);
 }
 export const zLimitA = (row, S) => (row.zCurve ? interp(row.zCurve, S, 'S', 'A') : null);
 export const uLimitH = (row, W) => (row.uCurve ? interp(row.uCurve, W, 'W', 'H') : null);
@@ -235,7 +237,7 @@ export function judgeU(row, H1, W, H2, L, need = -0.05) {
   const winFix = alt.win ? `${alt.win.punch}を使い、曲げ長さ L を ${alt.win.win}mm 以下に` : null;
 
   // 中押し（捨て曲げ）：底をへの字に曲げ → 両サイドを90° → 底を中押しで戻す。上型に当たるときだけ効く。
-  // 押し切った瞬間に上型がコの字の内側に入るかを計算で見る。現場の決まりは内-内120mm以上
+  // 押し切った瞬間に上型がコの字の内側に入るかを計算で見る。現場で確かめてあるのは内-内30mm以上・立上り120mm以内
   // （経緯まとめ第17章）なので、それより狭くて計算では入るものは △ にする。
   const where = firstHitWhere(row, [H1, W, H2], [1, 1], need);
   if (where && UPPER.includes(where)) {
@@ -259,14 +261,19 @@ export function judgeU(row, H1, W, H2, L, need = -0.05) {
           fix: [winFix, `底Wを広くするか、立上りを低く`].filter(Boolean).join('、または') };
       }
       naka.angle = a.angle;
-      if (inner >= SUTE_MIN_INNER) {
+      // 現場で確かめてある範囲：立上り 120mm 以内・内-内 30mm 以上（904061 で中押しできる）
+      const tall = Math.max(H1, H2);
+      if (inner >= SUTE_MIN_INNER && tall <= SUTE_MAX_H) {
         return { ...base, grade: 'naka', src: '中押し', geo, naka, hit: where,
-          why: `普通の曲げ方では${where}に当たります。中押しなら曲げられます（への字 ${a.angle}°以上、内-内 ${inner}mm）` };
+          why: `普通の曲げ方では${where}に当たります。中押しなら曲げられます（への字 ${a.angle}°以上、内-内 ${inner}mm・立上り ${tall}mm）` };
       }
-      // 計算では通るが、現場の決まり（内-内120mm）より狭い。確かめてから
+      // 計算では通るが、現場で確かめてある範囲の外。確かめてから
+      const out = inner < SUTE_MIN_INNER
+        ? `内-内 ${inner}mm が 現場で確かめてある ${SUTE_MIN_INNER}mm より狭い`
+        : `立上り ${tall}mm が 現場で確かめてある ${SUTE_MAX_H}mm より高い`;
       return { ...base, grade: 'check', src: '中押し', geo, naka, hit: where,
-        why: `普通の曲げ方では${where}に当たります。中押しは計算では通ります（への字 ${a.angle}°以上）が、内-内 ${inner}mm は現場の決まり ${SUTE_MIN_INNER}mm より狭く、まだ確かめていません`,
-        fix: [winFix, `底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に`].filter(Boolean).join('、または') };
+        why: `普通の曲げ方では${where}に当たります。中押しは計算では通ります（への字 ${a.angle}°以上）が、${out}ので、まだ確かめていません`,
+        fix: [winFix, inner < SUTE_MIN_INNER ? `底Wを ${Math.ceil(SUTE_MIN_INNER + 2 * row.t)}mm 以上に` : `立上りを ${SUTE_MAX_H}mm 以下に`].filter(Boolean).join('、または') };
     }
     const lim = uLimitH(row, W);
     const hFix = lim != null && Number.isFinite(lim) && short > lim ? `低いほうの立上りを ${Math.floor(lim)}mm 以下に（普通に曲げる）` : null;
@@ -566,7 +573,9 @@ export function nakaPlan(row, H1, W, H2, need = -0.05) {
     const f = a.fail || {};
     return { ok: false, where, inner, why: `への字を${NAKA_ANGLES[NAKA_ANGLES.length - 1]}°にしても ${STEP_NAME[f.step] || ''}で${f.where || '工具'}に当たります` };
   }
-  return { ok: true, where, inner, angle: a.angle, pending: inner < SUTE_MIN_INNER, sute: SUTE_MIN_INNER };
+  const tall = Math.max(H1, H2);
+  return { ok: true, where, inner, angle: a.angle, tall,
+    pending: inner < SUTE_MIN_INNER || tall > SUTE_MAX_H, sute: SUTE_MIN_INNER, maxH: SUTE_MAX_H };
 }
 
 export const seqText = (seq) => (seq || []).map((s) => `曲げ${s.bend + 1}${s.mirror ? '（突き当て反対）' : ''}${s.valley ? '（裏返し）' : ''}`).join(' → ');

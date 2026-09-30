@@ -995,7 +995,12 @@ const ZMIN = {
 // 捨て曲げ＝底を一旦への字に曲げ、両サイドを90°まで曲げてから、底を曲げ戻す手。
 // 上型に当たって普通には曲がらない形でも、底の内-内がこれ以上あれば曲げ戻せるので作れる。
 // 曲げ戻すときに底がダイの上で開ける必要があるため、この寸法が要る（経緯まとめ 第17章）。
-const SUTE_MIN_INNER = 120;
+//
+// 現場で確かめてある範囲（2026-09-30 ユーザー確認）：
+//   中押しが要るコの字曲げは、立上り 120mm 以内・底の内-内 30mm 以上なら ヤゲン904061 で曲げられる。
+//   この外側は計算で通っても「確かめが必要」にする。
+const SUTE_MIN_INNER = 30;
+const SUTE_MAX_H = 120;
 
 // 中押し（捨て曲げの最後に底を平らに戻す工程）で、上型がコの字の内側に入れるか。
 // いちばん苦しいのは押し切った瞬間：底は平ら、両側の立上りは垂直、刃先は底の内面の中央。
@@ -2598,7 +2603,7 @@ const BendingSimulator = () => {
             suteHint.ok ? 'bg-amber-950/50 border-amber-700 text-amber-200'
                         : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
             {suteHint.ok
-              ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）${suteHint.inner < SUTE_MIN_INNER ? `。ただし内-内 ${SUTE_MIN_INNER}mm 未満は現場でまだ確かめていない` : ''}`
+              ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）${suteHint.inner < SUTE_MIN_INNER ? `。ただし内-内 ${SUTE_MIN_INNER}mm 未満は現場でまだ確かめていない` : `。現場で確かめてあるのは 内-内 ${SUTE_MIN_INNER}mm 以上・立上り ${SUTE_MAX_H}mm 以内`}`
               : suteHint.shortHalf
               ? `◇ 中押し（捨て曲げ）も不可 — 底の半分 ${suteHint.shortHalf.half.toFixed(1)}mm が最小フランジ ${suteHint.shortHalf.need}mm より短く、への字に曲げられません`
               : `◇ 中押し（捨て曲げ）も不可 — 押し切ったとき、刃先から ${suteHint.at}mm の高さで上型が立上りに当たります（内-内 ${suteHint.inner.toFixed(1)}mm、この高さの立上りには ${suteHint.needW}mm 要る。この内-内なら立上りの内側 ${suteHint.maxH}mm まで）`}
@@ -3234,5 +3239,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, SUTE_MAX_H, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
 };

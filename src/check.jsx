@@ -240,7 +240,7 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
     if (nk.ok) {
       return { ...res, ok: true, method: 'naka', naka: nk, minOut: mo && mo.val, hit, learn,
         why: `普通の曲げ方では${nk.where}に当たります。中押し（捨て曲げ）なら曲がります（への字 ${nk.angle}°以上、底の内-内 ${nk.inner}mm）`
-          + (nk.pending ? `。内-内 ${nk.inner}mm は現場の決まり ${nk.sute}mm より狭く、まだ確かめていません` : '') };
+          + (nk.pending ? `。ただし ${nk.inner < nk.sute ? `内-内 ${nk.inner}mm は 現場で確かめてある ${nk.sute}mm より狭い` : `立上り ${nk.tall}mm は 現場で確かめてある ${nk.maxH}mm より高い`}ので、まだ確かめていません` : '') };
     }
     if (nk.why) return { ...res, ok: false, why: `${hit}。中押しでも、${nk.why}`, kunoWin: alt.win || null, learn };
   }
@@ -307,7 +307,11 @@ function Result({ r, big, now }) {
         {r.ok && r.smallV && r.smallV.maxL == null && (
           <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
         )}
-        {m === 'naka' && r.naka && r.naka.pending && <span className="caution">⚠ 内-内 {r.naka.inner}mm は現場の決まり {r.naka.sute}mm より狭いので、曲げ屋さんに確かめてください</span>}
+        {m === 'naka' && r.naka && r.naka.pending && (
+          <span className="caution">⚠ {r.naka.inner < r.naka.sute
+            ? `内-内 ${r.naka.inner}mm は、現場で確かめてある ${r.naka.sute}mm より狭い`
+            : `立上り ${r.naka.tall}mm は、現場で確かめてある ${r.naka.maxH}mm より高い`}ので、曲げ屋さんに確かめてください</span>
+        )}
         {!r.ok && r.kunoWin && <span className="caution">くの字特殊ヤゲンなら形は通ります。曲げ長さ L を {r.kunoWin.win}mm 以下にできれば曲げられます</span>}
         {r.ok && warn && <span className="caution">⚠ V{r.V}は、Z曲げの実績でシミュが甘く出た型です。最初の1本で確かめてください</span>}
         {r.ok && good && <span className="trust">● V{r.V}は、Z曲げの実績と合っている型です</span>}

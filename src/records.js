@@ -5,7 +5,7 @@
 // 共有フォルダにつないでいない間は、このPCのブラウザにも同じ形で控えを置き、つないだときに送る。
 //
 // 1件の形（zuRecord）
-//   { id, at, who, dev（登録したPCの番号・自動）, shape, mat, t, V, machine, sel, dims, L, method, punch, ok, lenFail, note,
+//   { id, at, who, slip（伝票番号・任意）, dev（登録したPCの番号・自動）, shape, mat, t, V, machine, sel, dims, L, method, punch, ok, lenFail, note,
 //     n（同じ段取りで記録した回数）, case: { key, sim, segs, bends, seq, dieFlip, punchFlip } }
 //   case はシミュレーターで記録したときだけ入る（同じ段取りを開いたら、その実績を先に出すため）。
 
@@ -48,7 +48,7 @@ export function deviceId() {
 // 前の形（key・bent・die…）を、いまの形（zuRecord）に直す
 function fromOld(r) {
   return {
-    id: r.id || newId(), at: r.at || '', who: r.who || '', dev: r.dev || '', shape: r.shape || 'free',
+    id: r.id || newId(), at: r.at || '', who: r.who || '', slip: r.slip || '', dev: r.dev || '', shape: r.shape || 'free',
     mat: r.mat, t: r.t, V: r.V || null, machine: r.machine, sel: r.die, dims: r.segs || [],
     L: r.L || null, method: 'normal', punch: r.punch, ok: !!r.bent, lenFail: false, note: r.note || '', n: r.n || 1,
     case: { key: r.key, sim: r.sim, segs: r.segs, bends: r.bends, seq: r.seq, dieFlip: !!r.dieFlip, punchFlip: !!r.punchFlip },
@@ -83,7 +83,7 @@ export function mergeRecords(a, b) {
 
 // シミュレーターの「実際はどうでしたか」から1件足す。
 // 同じ段取り（case.key が同じ）の記録があれば、回数を足して最新の結果で上書きする。
-export function addRecord(list, c, bent, note, who) {
+export function addRecord(list, c, bent, note, who, slip) {
   const key = caseKey(c);
   const d = new Date();   // 記録の日時は日本時間（端末の時刻）で残す
   const p2 = (n) => String(n).padStart(2, '0');
@@ -91,7 +91,7 @@ export function addRecord(list, c, bent, note, who) {
   const next = list.slice();
   const i = next.findIndex((r) => r.case && r.case.key === key);
   const one = {
-    id: i >= 0 ? next[i].id : newId(), at: now, who: (who || '').trim(), dev: deviceId(), shape: c.shape || 'free',
+    id: i >= 0 ? next[i].id : newId(), at: now, who: (who || '').trim(), slip: (slip || '').trim(), dev: deviceId(), shape: c.shape || 'free',
     mat: c.mat, t: c.t, V: c.V || null, machine: c.machine === 'hg2203' ? 'HG2203' : 'HD3504NT', sel: c.die,
     dims: (c.dims || c.segs).map((x) => +Number(x).toFixed(1)), L: c.L || null,
     method: c.method || 'normal', punch: c.punch, ok: !!bent, lenFail: false, note: note || '', n: 1,

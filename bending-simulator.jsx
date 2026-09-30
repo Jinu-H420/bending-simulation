@@ -998,16 +998,17 @@ const ZMIN = {
 //
 // 現場で確かめてある範囲（2026-09-30 ユーザー確認）：
 //   中押しが要るコの字曲げは、ヤゲン904061 で
-//     ① 底の内-内 30mm 以上 … 立上り（外寸）120mm まで
-//     ② 底の内-内 120mm 以上 … 立上り 内寸 250mm まで（＝外寸 250＋t）
+//     ① 底の内-内 30mm 以上 … 立上り 内寸 120mm まで
+//     ② 底の内-内 120mm 以上 … 立上り 内寸 250mm まで
 //   250mm を超えると、中押しで底を平らに戻すときの曲げがきつくなり、戻せない。
+//   立上りはどちらも内寸なので、画面の外寸と比べるときは板厚 t を足す。
 //   この外側は計算で通っても「確かめが必要」にする。
 const SUTE_MIN_INNER = 30;
-const SUTE_MAX_H = 120;
+const SUTE_MAX_H = 120;         // 立上り内寸
 const SUTE_WIDE_INNER = 120;    // 底の内-内がこれ以上なら
 const SUTE_WIDE_MAX_H = 250;    // 立上りは内寸でここまで
 // 底の内-内から、中押しで曲げられる立上り（外寸）の上限
-const suteMaxH = (inner, t) => (inner >= SUTE_WIDE_INNER ? SUTE_WIDE_MAX_H + t : SUTE_MAX_H);
+const suteMaxH = (inner, t) => (inner >= SUTE_WIDE_INNER ? SUTE_WIDE_MAX_H : SUTE_MAX_H) + t;
 
 // 中押し（捨て曲げの最後に底を平らに戻す工程）で、上型がコの字の内側に入れるか。
 // いちばん苦しいのは押し切った瞬間：底は平ら、両側の立上りは垂直、刃先は底の内面の中央。
@@ -1409,6 +1410,7 @@ const BendingSimulator = () => {
   const [records, setRecords] = useState(() => loadRecords());
   const zuRecs = records;
   const [recNote, setRecNote] = useState('');
+  const [recSlip, setRecSlip] = useState('');   // 伝票番号（任意）
   const [autoMsg, setAutoMsg] = useState('');   // 自動で段取りを決めたときの説明
   // 中押し（捨て曲げ）でシミュレーションする：底の真ん中をへの字 → 両サイド → 中押しで戻す
   const [nakaOn, setNakaOn] = useState(false);
@@ -1732,9 +1734,9 @@ const BendingSimulator = () => {
   // この段取りで「曲がった」と登録済みなら、計算より実績を優先する
   const bentRec = recHit.exact && recHit.exact.ok ? recHit.exact : null;
   const saveResult = (bent) => {
-    const { list, rec } = addRecord(records, nowCase, bent, recNote, who);
+    const { list, rec } = addRecord(records, nowCase, bent, recNote, who, recSlip);
     setRecords(list);
-    setRecNote('');
+    setRecNote(''); setRecSlip('');
     cloudSend({ zuRecords: [rec] });   // 実績はすぐ共有フォルダの zuRecords に残す（登録先は1か所）
   };
   const dropRecord = (id) => {
@@ -3185,6 +3187,9 @@ const BendingSimulator = () => {
                 <input value={who} onChange={(e) => { setWho(e.target.value); try { localStorage.setItem('bendsim.who', e.target.value); } catch { /* 無視 */ } }}
                   placeholder="確かめた人（任意）"
                   className="w-40 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+                <input value={recSlip} onChange={(e) => setRecSlip(e.target.value)}
+                  placeholder="伝票番号（任意）"
+                  className="w-32 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
                 <span className="text-[11px] text-slate-400 self-center">このPC：{deviceId() || '—'}</span>
                 <input value={recNote} onChange={(e) => setRecNote(e.target.value)}
                   placeholder="ひとこと（当たった場所など）"

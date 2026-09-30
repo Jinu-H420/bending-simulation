@@ -23,7 +23,7 @@ const hist = join(DIR, '履歴', `bendsim_${ymd}.json`);
 if (existsSync(FILE) && !existsSync(hist)) copyFileSync(FILE, hist);
 const one = {
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: d.toISOString(),
-  sel: null, L: null, method: 'normal', punch: '904061', lenFail: false, note: '', dev: 'Claude', ...rec,
+  sel: null, L: null, method: 'normal', punch: '904061', lenFail: false, note: '', slip: '', dev: 'Claude', ...rec,
   dims: rec.dims.map(Number),
 };
 data.zuRecords = [one, ...(data.zuRecords || [])];

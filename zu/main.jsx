@@ -245,6 +245,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
   const [method, setMethod] = useState('normal');
   const [note, setNote] = useState('');
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
+  const [slip, setSlip] = useState('');   // 伝票番号（任意）
   // 判定の答えの曲げ方を、そのまま既定にする
   const autoMethod = best && best.src === '中押し' ? 'naka' : best && best.special ? 'kuno' : 'normal';
   useEffect(() => { if (best) { setV(best.row.id); setMethod(autoMethod); } }, [best && best.row.id, autoMethod, shape, t]);
@@ -256,7 +257,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }
     const m = open ? method : autoMethod;
     saveRec({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(), dev: deviceId(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: new Date().toISOString(), who: who.trim(), slip: slip.trim(), dev: deviceId(),
       shape, mat, t, V: row.V, machine: row.machine, sel: row.sel, dims: dims.map(Number), L: L > 0 ? L : null,
       method: m.startsWith('kuno') ? 'kuno' : m,
       punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
@@ -290,7 +291,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
             <button className="big ok" onClick={() => save(true)}>○ 曲がった（登録）</button>
             <button className="big ng" onClick={() => save(false)}>✕ 曲がらなかった</button>
           </div>
-          <button className="linkish" onClick={() => setOpen(!open)}>{open ? '閉じる' : '型・曲げ方・名前を変える'}</button>
+          <button className="linkish" onClick={() => setOpen(!open)}>{open ? '閉じる' : '型・曲げ方・名前・伝票番号を入れる'}</button>
           {open && (
             <div className="rec-grid">
               <label className="f"><span>型</span>
@@ -308,6 +309,9 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
               </label>
               <label className="f"><span>確かめた人（任意）</span>
                 <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="例：曲げ 田中" />
+              </label>
+              <label className="f"><span>伝票番号（任意）</span>
+                <input value={slip} onChange={(e) => setSlip(e.target.value)} placeholder="空でも登録できます" />
               </label>
             </div>
           )}

@@ -997,10 +997,17 @@ const ZMIN = {
 // 曲げ戻すときに底がダイの上で開ける必要があるため、この寸法が要る（経緯まとめ 第17章）。
 //
 // 現場で確かめてある範囲（2026-09-30 ユーザー確認）：
-//   中押しが要るコの字曲げは、立上り 120mm 以内・底の内-内 30mm 以上なら ヤゲン904061 で曲げられる。
+//   中押しが要るコの字曲げは、ヤゲン904061 で
+//     ① 底の内-内 30mm 以上 … 立上り（外寸）120mm まで
+//     ② 底の内-内 120mm 以上 … 立上り 内寸 250mm まで（＝外寸 250＋t）
+//   250mm を超えると、中押しで底を平らに戻すときの曲げがきつくなり、戻せない。
 //   この外側は計算で通っても「確かめが必要」にする。
 const SUTE_MIN_INNER = 30;
 const SUTE_MAX_H = 120;
+const SUTE_WIDE_INNER = 120;    // 底の内-内がこれ以上なら
+const SUTE_WIDE_MAX_H = 250;    // 立上りは内寸でここまで
+// 底の内-内から、中押しで曲げられる立上り（外寸）の上限
+const suteMaxH = (inner, t) => (inner >= SUTE_WIDE_INNER ? SUTE_WIDE_MAX_H + t : SUTE_MAX_H);
 
 // 中押し（捨て曲げの最後に底を平らに戻す工程）で、上型がコの字の内側に入れるか。
 // いちばん苦しいのは押し切った瞬間：底は平ら、両側の立上りは垂直、刃先は底の内面の中央。
@@ -2603,7 +2610,7 @@ const BendingSimulator = () => {
             suteHint.ok ? 'bg-amber-950/50 border-amber-700 text-amber-200'
                         : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
             {suteHint.ok
-              ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）${suteHint.inner < SUTE_MIN_INNER ? `。ただし内-内 ${SUTE_MIN_INNER}mm 未満は現場でまだ確かめていない` : `。現場で確かめてあるのは 内-内 ${SUTE_MIN_INNER}mm 以上・立上り ${SUTE_MAX_H}mm 以内`}`
+              ? `◇ 中押し（捨て曲げ）なら作れます — 底（辺${suteHint.seg}）の内-内 ${suteHint.inner.toFixed(1)}mm に、押し切ったとき上型が片側 ${suteHint.clear.toFixed(1)}mm あけて入ります（底を一旦への字 → 両サイド90° → 底を中押しで戻す）${suteHint.inner < SUTE_MIN_INNER ? `。ただし内-内 ${SUTE_MIN_INNER}mm 未満は現場でまだ確かめていない` : `。現場で確かめてあるのは 立上り ${Math.floor(suteMaxH(suteHint.inner, t))}mm 以内（内-内 ${suteHint.inner.toFixed(1)}mm のとき）`}`
               : suteHint.shortHalf
               ? `◇ 中押し（捨て曲げ）も不可 — 底の半分 ${suteHint.shortHalf.half.toFixed(1)}mm が最小フランジ ${suteHint.shortHalf.need}mm より短く、への字に曲げられません`
               : `◇ 中押し（捨て曲げ）も不可 — 押し切ったとき、刃先から ${suteHint.at}mm の高さで上型が立上りに当たります（内-内 ${suteHint.inner.toFixed(1)}mm、この高さの立上りには ${suteHint.needW}mm 要る。この内-内なら立上りの内側 ${suteHint.maxH}mm まで）`}
@@ -3239,5 +3246,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, SUTE_MAX_H, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
 };

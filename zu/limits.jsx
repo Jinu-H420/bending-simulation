@@ -5,7 +5,7 @@
 //   QuickTable  … 10mm（Zは5mm）刻みの早見表
 // row は zu/data/zu-data.json の1行（型ごとのカーブ・最小フランジ・片伸び）。
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { SUTE_MIN_INNER, SUTE_MAX_H } from '../bending-simulator.jsx';
+import { SUTE_MIN_INNER, suteMaxH } from '../bending-simulator.jsx';
 import { zLimitA, uLimitH, uKunoH, uNakaH, exactLimit, limitRanges, actLimit, firstHitWhere, Z_ACT_ON } from './judge.js';
 import './limits.css';
 
@@ -97,7 +97,7 @@ export function LimitChart({ shape, row, x, y, grade }) {
           const lastSeg = segs.length ? segs[segs.length - 1] : null;
           if (lastSeg) { const q = lastSeg[lastSeg.length - 1]; labs.push({ name: '普通', x: q[0], y: q[1] }); }
           if (extra) {
-            [[extra.kuno, 'くの字（L200まで）'], [extra.naka, `中押し（${SUTE_MAX_H}まで）`]].forEach(([ps, name]) => {
+            [[extra.kuno, 'くの字（L200まで）'], [extra.naka, '中押し']].forEach(([ps, name]) => {
               let best = null;
               for (const p of ps) {
                 if (p.y == null || p.x > xMax) continue;
@@ -279,7 +279,7 @@ export function LimitDetail({ shape, row, x, y, other, punch, punchFlip }) {
           ['くの字ヤゲン', kv, 'L 200mm まで（くの字165）・70mm まで（くの字100）'],
           ['中押し（最終手段）', nv, inner < SUTE_MIN_INNER
             ? `内-内 ${inner}mm。${SUTE_MIN_INNER}mm 未満は現場で未確認`
-            : `内-内 ${inner}mm。立上り ${SUTE_MAX_H}mm まで（現場で確認）`],
+            : `内-内 ${inner}mm。立上り ${Math.floor(suteMaxH(inner, row.t))}mm まで（現場で確認）`],
         ];
         return (
           <div className="ld-naka">

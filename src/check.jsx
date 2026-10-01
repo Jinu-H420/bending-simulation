@@ -430,6 +430,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
 function App() {
   const [shape, setShape] = useState('U');
   const [dims, setDims] = useState(SHAPES.U.def);
+  const [dimMode, setDimMode] = useState('outer');   // 'outer'=外寸 / 'inner'=内寸
   const [focus, setFocus] = useState(null);   // いま入力している寸法（図で色を変える）
   const [mat, setMat] = useState('鉄');
   const [t, setT] = useState(4.5);
@@ -477,6 +478,22 @@ function App() {
   };
 
   const S = SHAPES[shape];
+  // 判定・グラフ・実績はすべて外寸で動く。内寸で入れたときは外寸に直して渡す。
+  // 外寸 ＝ 内寸 ＋ 板厚 × その辺についている曲げの数（端の辺は1つ、間の辺は2つ）
+  const bendsAt = (i, n) => (i > 0 ? 1 : 0) + (i < n - 1 ? 1 : 0);
+  const outerDims = dims.map((d, i) =>
+    (dimMode === 'inner' ? +(Number(d) + Number(t) * bendsAt(i, dims.length)).toFixed(1) : Number(d)));
+  // 切替えたときは、品物の形が変わらないように数字のほうを直す
+  const switchMode = (m) => {
+    if (m === dimMode) return;
+    const tt = Number(t) || 0;
+    setDims(dims.map((d, i) => {
+      const v = Number(d); if (!Number.isFinite(v)) return d;
+      const k = tt * bendsAt(i, dims.length);
+      return String(+(m === 'inner' ? v - k : v + k).toFixed(1));
+    }));
+    setDimMode(m); setOthers(null);
+  };
   const base = useMemo(() => pickDie(mat, t), [mat, t]);
   // 表から自動で引いている片伸び（いくつ引いているか画面に出す）
   const autoNobi = useMemo(() => {
@@ -486,14 +503,21 @@ function App() {
   }, [base && base.sel, mat, t]);
   const nobiIn = nobiText.trim() === '' ? null : Number(nobiText);
 
-  const pickShape = (k) => { setShape(k); setDims(SHAPES[k].def); setFocus(null); setOthers(null); };
+  const pickShape = (k) => {
+    // 形を変えたときの初期値は外寸なので、内寸で入れているときは内寸に直して入れる
+    const tt = Number(t) || 0;
+    const def = SHAPES[k].def;
+    setShape(k);
+    setDims(dimMode === 'inner' ? def.map((v, i) => String(+(Number(v) - tt * bendsAt(i, def.length)).toFixed(1))) : def);
+    setFocus(null); setOthers(null);
+  };
   const Lnum = Number(Ltext);
-  const input = () => ({ shape, outer: dims.map(Number), t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
+  const input = () => ({ shape, outer: outerDims, t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
     nobiIn: Number.isFinite(nobiIn) ? nobiIn : null, recs });
-  const now = { shape, dims, mat, t, L: Ltext };
+  const now = { shape, dims: outerDims, mat, t, L: Ltext };
 
   // いま画面に入っている条件。判定の答えがこの条件のものかを見分けるのに使う
-  const inKey = `${shape}|${dims.join('|')}|${t}|${mat}|${Ltext}|${nobiText}`;
+  const inKey = `${shape}|${dims.join('|')}|${dimMode}|${t}|${mat}|${Ltext}|${nobiText}`;
 
   const run = () => {
     setOthers(null);
@@ -518,7 +542,7 @@ function App() {
       setBusy('');
     }, 300);
     return () => clearTimeout(id);
-  }, [shape, dims.join('|'), t, mat, nobiText, Ltext, recs]);
+  }, [shape, dims.join('|'), dimMode, t, mat, nobiText, Ltext, recs]);
 
   // 使えるほかの金型を全部試す（1型ずつ画面に出す）
   const scanId = useRef(0);
@@ -565,7 +589,7 @@ function App() {
     if (!(shape === 'Z' || shape === 'U') || !shown || shown.note || shown.skip || !shown.sel) return null;
     if (dims.some((d) => !(Number(d) > 0))) return null;
     return ZU_DATA.rows.find((r) => r.sel === shown.sel && r.mat === mat && Number(r.t) === Number(t)) || null;
-  }, [shape, shown && shown.sel, mat, t, dims.join('|')]);
+  }, [shape, shown && shown.sel, mat, t, dims.join('|'), dimMode]);
 
   return (
     <div className="wrap">
@@ -586,7 +610,14 @@ function App() {
           ))}
         </div>
 
-        <div className="step">② 寸法（外寸 mm）</div>
+        <div className="step step-row">
+          <span>② 寸法（{dimMode === 'inner' ? '内寸' : '外寸'} mm）</span>
+          <span className="seg small">
+            {[['outer', '外寸'], ['inner', '内寸']].map(([k, w]) => (
+              <button key={k} className={dimMode === k ? 'on' : ''} onClick={() => switchMode(k)}>{w}</button>
+            ))}
+          </span>
+        </div>
         <div className="fig-row">
         <DimFigure shape={shape} labels={S.labels} dims={dims} focus={focus} />
         <div className="dims">
@@ -601,7 +632,11 @@ function App() {
           ))}
         </div>
         </div>
-        <div className="hint">図の寸法線が、いま入れている数字の場所です。板の外側で測った寸法。</div>
+        <div className="hint">図の寸法線が、いま入れている数字の場所です。
+          {dimMode === 'inner'
+            ? <>いまは<b>内寸</b>（板の内側で測った寸法）。判定は外寸 {outerDims.join('・')} で見ています。</>
+            : <>いまは<b>外寸</b>（板の外側で測った寸法）。</>}
+        </div>
 
         <div className="step">③ 曲げ長さ L・材質・板厚</div>
         <div className="row">
@@ -668,11 +703,11 @@ function App() {
         <section className="card">
           <div className="step">どこまで曲げられるか（{limitRow.die}・{mat} t{t}）</div>
           <div className="limits">
-            <LimitDetail shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
-              other={Math.max(Number(dims[0]), Number(dims[2]))} punch={shown.punch} punchFlip={shown.punchFlip} />
-            <LimitChart shape={shape} row={limitRow} x={Number(dims[1])} y={Math.min(Number(dims[0]), Number(dims[2]))}
+            <LimitDetail shape={shape} row={limitRow} x={outerDims[1]} y={Math.min(outerDims[0], outerDims[2])}
+              other={Math.max(outerDims[0], outerDims[2])} punch={shown.punch} punchFlip={shown.punchFlip} />
+            <LimitChart shape={shape} row={limitRow} x={outerDims[1]} y={Math.min(outerDims[0], outerDims[2])}
               grade={shown && shown.ok ? 'ok-sim' : 'ng'} />
-            <QuickTable shape={shape} row={limitRow} x={Number(dims[1])} />
+            <QuickTable shape={shape} row={limitRow} x={outerDims[1]} />
           </div>
           <div className="hint">
             {shown.punch && shown.punch !== '904061' && <><b>グラフと早見表は、普通のヤゲン 904061 の値です</b>（上の2つは {shown.punch} の値）。<br /></>}
@@ -695,7 +730,7 @@ function App() {
       )}
 
       {result && !result.skip && !result.note && (
-        <RecordPanel shape={shape} mat={mat} t={t} dims={dims} L={Ltext} best={rescue || result}
+        <RecordPanel shape={shape} mat={mat} t={t} dims={outerDims} L={Ltext} best={rescue || result}
           dies={[result, ...(others || [])].filter((r) => r && r.sel && !r.skip)
             .filter((r, i, a) => a.findIndex((x) => x.sel === r.sel) === i)
             .map((r) => ({ sel: r.sel, V: r.V, machine: r.machine, label: `${r.label}（${MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）` }))}

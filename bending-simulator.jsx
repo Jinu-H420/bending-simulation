@@ -2634,9 +2634,9 @@ const BendingSimulator = () => {
         {nakaPlan && (
           <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-amber-950/40 border-amber-700 text-amber-100 flex items-center gap-3 flex-wrap">
             <span className="font-bold">中押しでシミュレーション中</span>
-            <span>① 底の真ん中を への字（{nakaAngle}°）→ ② 入力どおりの曲げ順 → ③ 中押し（への字を押して平らに戻す）</span>
+            <span>① 底の真ん中を への字（曲げ角度 {nakaAngle}° ＝ <b>山の開き {180 - nakaAngle}°</b>）→ ② 入力どおりの曲げ順 → ③ 中押し（への字を押して平らに戻す）</span>
             {nakaShape && (
-              <span className="text-amber-300">への字：山の開き {nakaShape.open}°・山の高さ 約{nakaShape.rise}mm（底の片側 {nakaShape.half}mm）</span>
+              <span className="text-amber-300">山の高さ 約{nakaShape.rise}mm（底の片側 {nakaShape.half}mm）</span>
             )}
             <button onClick={() => { setNakaOn(false); setStep(0); setProg(0); }} className="ml-auto text-amber-300 hover:text-white">普通の曲げ方に戻す</button>
           </div>
@@ -3119,12 +3119,13 @@ const BendingSimulator = () => {
                 </label>
                 <span className="text-slate-500">への字の角度</span>
                 <NumField value={nakaAngle} min={2} max={60} onChange={(v) => setNakaAngle(v)} className={inp} />
+                <span className="text-amber-300 font-bold self-center">＝ 山の開き {180 - nakaAngle}°</span>
                 {nakaShape && (
                   <span className="text-[11px] text-slate-400 self-center">
-                    山の開き {nakaShape.open}°・山の高さ 約{nakaShape.rise}mm
+                    山の高さ 約{nakaShape.rise}mm（底の片側 {nakaShape.half}mm）
                   </span>
                 )}
-                <span className="text-slate-500">°（中押しの工程は最後に自動で足します）</span>
+                <span className="text-slate-500">（中押しの工程は最後に自動で足します）</span>
               </div>
             )}
             {autoMsg && (

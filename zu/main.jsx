@@ -100,7 +100,7 @@ function MethodLadder({ r, L }) {
 }
 
 // 中押しの3工程を小さな絵で並べる。普通の曲げ（2回）より1回多いことも見せる
-function NakaSteps({ angle, inner, pending }) {
+function NakaSteps({ angle, inner, pending, open, rise, half }) {
   const pic = {
     1: <polyline points="12,50 60,36 108,50" />,
     2: <polyline points="20,10 20,52 60,40 100,52 100,10" />,
@@ -110,7 +110,8 @@ function NakaSteps({ angle, inner, pending }) {
     </>),
   };
   const steps = [
-    [1, `への字 ${angle}°${angle ? '以上' : ''}`, '底の真ん中を軽く曲げる'],
+    [1, `への字 ${angle}°${angle ? '以上' : ''}`,
+      open ? `山の開き ${open}°・山の高さ 約${rise}mm（底の片側 ${half}mm）` : '底の真ん中を軽く曲げる'],
     [2, '両サイドを90°', '立上りを2か所'],
     [3, '中押しで平らに', '底の山を押して戻す'],
   ];
@@ -516,7 +517,8 @@ function App() {
                 )}
               </div>
               {best.src === '中押し' && best.naka && best.grade !== 'ng' && (
-                <NakaSteps angle={best.naka.angle} inner={best.naka.inner} pending={best.grade === 'check'} />
+                <NakaSteps angle={best.naka.angle} inner={best.naka.inner} pending={best.grade === 'check'}
+                  open={best.naka.open} rise={best.naka.rise} half={best.naka.half} />
               )}
               {kunoText(best.kuno, Lnum) && !isNaka(best) && (
                 <div className="v-kuno">

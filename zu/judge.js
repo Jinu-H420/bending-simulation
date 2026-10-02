@@ -261,6 +261,7 @@ export function judgeU(row, H1, W, H2, L, need = -0.05) {
           fix: [winFix, `底Wを広くするか、立上りを低く`].filter(Boolean).join('、または') };
       }
       naka.angle = a.angle;
+      Object.assign(naka, nakaShape(row, W, a.angle));
       // 立上り2か所の突き当ての向き（シミュレーターをこの段取りで開く）
       naka.seq = (a.mirror || [false, false]).map((mr, i) => ({ bend: i, mirror: !!mr, valley: false }));
       // 現場で確かめてある範囲：立上り 120mm 以内・内-内 30mm 以上（904061 で中押しできる）
@@ -386,6 +387,13 @@ function nakaSimulate(row, H1, W, H2, angle) {
     if (!best || fail.step > best.step) best = fail;
   }
   return { ok: false, ...best };
+}
+// への字に曲げたときの形。現場で測れる数字で出す。
+//   山の開き＝180−曲げ角度（内側の角）、山の高さ＝底の片側（展開）× sin(曲げ角度 ÷ 2)
+export function nakaShape(row, W, angle) {
+  const half = (W - 2 * row.nobi) / 2;                 // 底の片側（展開）
+  return { open: 180 - angle, half: +half.toFixed(1),
+    rise: +(half * Math.sin((angle * Math.PI) / 360)).toFixed(1) };
 }
 // への字の角度を小さい順に試し、全工程が通る最小の角度を返す（無ければ null と、いちばん先まで行けた失敗）
 export const NAKA_ANGLES = [5, 10, 15, 20, 25, 30, 40, 50];
@@ -581,7 +589,7 @@ export function nakaPlan(row, H1, W, H2, need = -0.05) {
   }
   const tall = Math.max(H1, H2);
   const cap = Math.floor(suteMaxH(inner, row.t));
-  return { ok: true, where, inner, angle: a.angle, tall,
+  return { ok: true, where, inner, angle: a.angle, tall, ...nakaShape(row, W, a.angle),
     seq: (a.mirror || [false, false]).map((mr, i) => ({ bend: i, mirror: !!mr, valley: false })),
     pending: inner < SUTE_MIN_INNER || tall > cap, sute: SUTE_MIN_INNER, maxH: cap };
 }

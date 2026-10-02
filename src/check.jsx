@@ -311,6 +311,7 @@ function Result({ r, big, now }) {
         )}
         {m === 'naka' && r.naka && r.naka.angle != null && (
           <span className="naka-a">◇ 最初に底を <b>への字 {r.naka.angle}°</b> に曲げる（これより浅いと曲げ戻すときに当たります）
+            {r.naka.open != null && <>　山の開き <b>{r.naka.open}°</b>・山の高さ <b>約{r.naka.rise}mm</b>（底の片側 {r.naka.half}mm）</>}
             {r.naka.seq && r.naka.seq.some((q) => q.mirror) ? `／立上り${r.naka.seq.findIndex((q) => q.mirror) + 1}は突き当て反対側` : ''}</span>
         )}
         {m === 'naka' && r.naka && r.naka.pending && (

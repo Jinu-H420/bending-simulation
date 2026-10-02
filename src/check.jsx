@@ -250,7 +250,9 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
 // その型・その寸法でシミュレーターを開くリンク。曲がらない型は、当たる所で止まる
 function simLink(r, { shape, dims, mat, t, L }) {
   const S = SHAPES[shape];
-  const seq = r.seq || S.dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 }));
+  // 中押しのときは、計算が通った段取り（立上りの突き当ての向き）で開く
+  const seq = (r.method === 'naka' && r.naka && r.naka.seq) || r.seq
+    || S.dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 }));
   const note = [`かんたん判定から開きました：${S.name}　${mat} t${t}　${S.labels.map((lb, i) => `${lb}=${dims[i]}`).join('・')}（外寸）　L=${L}　${r.label}`];
   note.push(r.ok
     ? (r.method === 'naka' ? `判定：${r.why}。中押し（への字 → 両サイド90° → 中押し）の工程で開いています。「▶ 全工程再生」で動きが見られます。`
@@ -306,6 +308,10 @@ function Result({ r, big, now }) {
         )}
         {r.ok && r.smallV && r.smallV.maxL == null && (
           <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
+        )}
+        {m === 'naka' && r.naka && r.naka.angle != null && (
+          <span className="naka-a">◇ 最初に底を <b>への字 {r.naka.angle}°</b> に曲げる（これより浅いと曲げ戻すときに当たります）
+            {r.naka.seq && r.naka.seq.some((q) => q.mirror) ? `／立上り${r.naka.seq.findIndex((q) => q.mirror) + 1}は突き当て反対側` : ''}</span>
         )}
         {m === 'naka' && r.naka && r.naka.pending && (
           <span className="caution">⚠ {r.naka.inner < r.naka.sute

@@ -78,6 +78,8 @@ a.res.link { display: block; text-decoration: none; color: inherit; }
 a.res.link:hover { border-color: var(--accent); }
 .res-foot .len { color: var(--muted); }
 .res-foot .see { color: var(--accent); font-weight: 700; }
+/* 中押しのときの「への字の角度」 */
+.res-foot .naka-a { color: var(--naka); font-weight: 600; font-size: 13px; }
 
 /* 曲げ方ごとの色（Z・コの字判定とそろえる）：くの字＝オレンジ、ほかのヤゲン＝青、中押し＝紫 */
 :root { --kuno: #eb6834; --naka: #7b4fd0; }

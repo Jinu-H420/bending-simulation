@@ -29,8 +29,9 @@ const GRADE = {
 function simLink(shape, r, dims, mat, L) {
   const row = r.row;
   const dirs = shape === 'Z' ? [1, -1] : [1, 1];
-  const seq = r.geo && r.geo.ok ? r.geo.seq
-    : dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 }));
+  // 中押しのときは、計算が通った段取り（立上りの突き当ての向き）で開く
+  const seq = (r.src === '中押し' && r.naka && r.naka.seq) || (r.geo && r.geo.ok ? r.geo.seq
+    : dirs.map((d, k) => ({ bend: k, mirror: false, valley: d < 0 })));
   const S = SHAPE[shape];
   const lines = [`Z・コの字判定から開きました：${S.name}　${mat} t${row.t}　${S.keys.map((k, i) => `${k}=${dims[i]}`).join('・')}（外寸）　${r.die}`];
   if (r.grade === 'ng' && r.geo && r.geo.ok) {

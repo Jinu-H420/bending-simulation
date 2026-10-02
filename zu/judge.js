@@ -261,6 +261,8 @@ export function judgeU(row, H1, W, H2, L, need = -0.05) {
           fix: [winFix, `底Wを広くするか、立上りを低く`].filter(Boolean).join('、または') };
       }
       naka.angle = a.angle;
+      // 立上り2か所の突き当ての向き（シミュレーターをこの段取りで開く）
+      naka.seq = (a.mirror || [false, false]).map((mr, i) => ({ bend: i, mirror: !!mr, valley: false }));
       // 現場で確かめてある範囲：立上り 120mm 以内・内-内 30mm 以上（904061 で中押しできる）
       const tall = Math.max(H1, H2);
       const cap = Math.floor(suteMaxH(inner, row.t));
@@ -378,7 +380,9 @@ function nakaSimulate(row, H1, W, H2, angle) {
         if (gg.gap < -0.05) { fail = { step: si + 1, where: tools.names[gg.atIdx] || '工具' }; break; }
       }
     }
-    if (!fail) return { ok: true };
+    // 通った突き当ての向き（立上り1・立上り2を反対側から当てるか）も返す。
+    // これを渡さないと、シミュレーターが別の向きで開いて「当たる」と出てしまう
+    if (!fail) return { ok: true, mirror: [!!(m & 1), !!(m & 2)] };
     if (!best || fail.step > best.step) best = fail;
   }
   return { ok: false, ...best };
@@ -389,7 +393,7 @@ function nakaMinAngle(row, H1, W, H2) {
   let last = null;
   for (const a of NAKA_ANGLES) {
     const r = nakaSimulate(row, H1, W, H2, a);
-    if (r.ok) return { angle: a };
+    if (r.ok) return { angle: a, mirror: r.mirror };
     last = r;
   }
   return { angle: null, fail: last };
@@ -578,6 +582,7 @@ export function nakaPlan(row, H1, W, H2, need = -0.05) {
   const tall = Math.max(H1, H2);
   const cap = Math.floor(suteMaxH(inner, row.t));
   return { ok: true, where, inner, angle: a.angle, tall,
+    seq: (a.mirror || [false, false]).map((mr, i) => ({ bend: i, mirror: !!mr, valley: false })),
     pending: inner < SUTE_MIN_INNER || tall > cap, sute: SUTE_MIN_INNER, maxH: cap };
 }
 

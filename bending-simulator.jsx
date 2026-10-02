@@ -1528,6 +1528,13 @@ const BendingSimulator = () => {
     ];
     return { part: { t, segs: segs2, bends: bends2, grow: grow2 }, seq: seq2, k };
   }, [nakaOn, nakaSeg, nakaAngle, effSegs, bends, growPerBend, seq, t]);
+  // への字に曲げたときの形。山の開き＝180−角度、山の高さ＝底の片側（展開）× sin(角度÷2)
+  const nakaShape = useMemo(() => {
+    if (!nakaPlan) return null;
+    const half = effSegs[nakaPlan.k] / 2;
+    return { half: +half.toFixed(1), open: 180 - nakaAngle,
+      rise: +(half * Math.sin((nakaAngle * Math.PI) / 360)).toFixed(1) };
+  }, [nakaPlan, effSegs, nakaAngle]);
   const simPart = nakaPlan ? nakaPlan.part : part;
   const simSeq = nakaPlan ? nakaPlan.seq : seq;
   // 板厚・材質から基準金型（折り曲げ表の赤枠）を決め、変わったら金型を自動で切り替える。
@@ -2628,6 +2635,9 @@ const BendingSimulator = () => {
           <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-amber-950/40 border-amber-700 text-amber-100 flex items-center gap-3 flex-wrap">
             <span className="font-bold">中押しでシミュレーション中</span>
             <span>① 底の真ん中を への字（{nakaAngle}°）→ ② 入力どおりの曲げ順 → ③ 中押し（への字を押して平らに戻す）</span>
+            {nakaShape && (
+              <span className="text-amber-300">への字：山の開き {nakaShape.open}°・山の高さ 約{nakaShape.rise}mm（底の片側 {nakaShape.half}mm）</span>
+            )}
             <button onClick={() => { setNakaOn(false); setStep(0); setProg(0); }} className="ml-auto text-amber-300 hover:text-white">普通の曲げ方に戻す</button>
           </div>
         )}
@@ -3109,6 +3119,11 @@ const BendingSimulator = () => {
                 </label>
                 <span className="text-slate-500">への字の角度</span>
                 <NumField value={nakaAngle} min={2} max={60} onChange={(v) => setNakaAngle(v)} className={inp} />
+                {nakaShape && (
+                  <span className="text-[11px] text-slate-400 self-center">
+                    山の開き {nakaShape.open}°・山の高さ 約{nakaShape.rise}mm
+                  </span>
+                )}
                 <span className="text-slate-500">°（中押しの工程は最後に自動で足します）</span>
               </div>
             )}

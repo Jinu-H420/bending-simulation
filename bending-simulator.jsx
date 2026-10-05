@@ -1503,8 +1503,8 @@ const BendingSimulator = () => {
   // 中押しで曲げる底：両隣の曲げが同じ向きの辺（コの字・ハットの底）のうち、いちばん長いもの
   const nakaSeg = useMemo(() => {
     let best = null;
-    for (let k = 1; k < effSegs.length - 1; k++) {
-      if (bends[k - 1].dir !== bends[k].dir) continue;
+    for (let k = 1; k < Math.min(effSegs.length - 1, bends.length); k++) {
+      if (!bends[k - 1] || !bends[k] || bends[k - 1].dir !== bends[k].dir) continue;
       if (best == null || effSegs[k] > effSegs[best]) best = k;
     }
     return best;
@@ -1531,10 +1531,15 @@ const BendingSimulator = () => {
   // への字に曲げたときの形。山の開き＝180−角度、山の高さ＝底の片側（展開）× sin(角度÷2)
   const nakaShape = useMemo(() => {
     if (!nakaPlan) return null;
-    const half = effSegs[nakaPlan.k] / 2;
+    // 底の展開の長さ。内寸法のときの effSegs は伸び0の簡略なので、外寸から片伸びを引いて出し直す
+    const k = nakaPlan.k;
+    const flat = inputMode === 'inner'
+      ? innerSegs[k] + 2 * t - (nobiPerBend[k - 1] || 0) - (nobiPerBend[k] || 0)
+      : effSegs[k];
+    const half = flat / 2;
     return { half: +half.toFixed(1), open: 180 - nakaAngle,
       rise: +(half * Math.sin((nakaAngle * Math.PI) / 360)).toFixed(1) };
-  }, [nakaPlan, effSegs, nakaAngle]);
+  }, [nakaPlan, effSegs, nakaAngle, inputMode, innerSegs, nobiPerBend, t]);
   const simPart = nakaPlan ? nakaPlan.part : part;
   const simSeq = nakaPlan ? nakaPlan.seq : seq;
   // 板厚・材質から基準金型（折り曲げ表の赤枠）を決め、変わったら金型を自動で切り替える。
@@ -1724,11 +1729,26 @@ const BendingSimulator = () => {
     if (effSegs.length === 5 && d.length === 4) return 'HAT';
     return 'free';
   }, [effSegs.length, bends]);
-  const recDims = useMemo(() => effSegs.map((L, k) => +Number(
+  // 辺 k の外寸。外寸＝内寸＋板厚×その辺についている曲げの数（端の辺は1つ、間の辺は2つ）
+  const bendsOnSeg = (k, n) => (k > 0 ? 1 : 0) + (k < n - 1 ? 1 : 0);
+  const outerOfSeg = (k) => +Number(
     inputMode === 'outer' ? outerSegs[k]
-    : inputMode === 'inner' ? innerSegs[k] + 2 * t
-    : Number(L) + (nobiPerBend[k - 1] || 0) + (nobiPerBend[k] || 0)).toFixed(1)),
+    : inputMode === 'inner' ? innerSegs[k] + t * bendsOnSeg(k, effSegs.length)
+    : Number(effSegs[k]) + (nobiPerBend[k - 1] || 0) + (nobiPerBend[k] || 0)).toFixed(1);
+  const recDims = useMemo(() => effSegs.map((L, k) => outerOfSeg(k)),
   [effSegs, inputMode, outerSegs, innerSegs, nobiPerBend, t]);
+  // 展開値・外寸法・内寸法は別々に持っているので、切り替えるときは「いまの形」を新しいほうへ写す。
+  // 写さないと、前に入れた別の形（辺の数も違う）が出てきて、曲げの数と食い違い画面が落ちる
+  const switchInputMode = (m) => {
+    if (m === inputMode) return;
+    const n = effSegs.length;
+    const outer = effSegs.map((_, k) => outerOfSeg(k));
+    if (m === 'outer') setOuterSegs(outer);
+    else if (m === 'inner') setInnerSegs(outer.map((o, k) => +Math.max(1, o - t * bendsOnSeg(k, n)).toFixed(1)));
+    // 展開値＝外寸から両隣の曲げの片伸びを引いたもの（内寸法のときの effSegs は伸び0の簡略なので使わない）
+    else setSegs(outer.map((o, k) => +Math.max(1, o - (nobiPerBend[k - 1] || 0) - (nobiPerBend[k] || 0)).toFixed(1)));
+    setInputMode(m);
+  };
   const nowCase = useMemo(() => ({
     die: dieSel, dieFlip, punch: punchType, punchFlip, machine: machineSel,
     mat: matType, t, nobi: baseNobi, segs: effSegs, bends, seq, simOK: allOK,
@@ -2708,11 +2728,11 @@ const BendingSimulator = () => {
                 板形状（{inputMode === 'flat' ? '展開寸法' : inputMode === 'outer' ? '外寸法' : '内寸法'} mm）
               </h2>
               <div className="flex rounded overflow-hidden border border-slate-600 text-xs">
-                <button onClick={() => setInputMode('flat')}
+                <button onClick={() => switchInputMode('flat')}
                   className={`px-2 py-0.5 ${inputMode === 'flat' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>展開値</button>
-                <button onClick={() => setInputMode('outer')}
+                <button onClick={() => switchInputMode('outer')}
                   className={`px-2 py-0.5 ${inputMode === 'outer' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>外寸法</button>
-                <button onClick={() => setInputMode('inner')}
+                <button onClick={() => switchInputMode('inner')}
                   className={`px-2 py-0.5 ${inputMode === 'inner' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>内寸法</button>
               </div>
               <div className="flex gap-2">

@@ -176,21 +176,33 @@ export function judgeZ(row, A, S, B, L, need = -0.05) {
   const act = Z_ACT_ON ? row.zAct : null;
 
   if (act) {
-    // 実績：段差S最小と、そのSでのフランジ上限。備考に「S35なら A95」があれば広いSでの上限
-    const far = act.far;
-    if (S < act.S) {
-      return { ...base, grade: 'ng', src: '実績', why: `段差S ${S}mm が狭すぎます（実績で ${act.S}mm 以上）`, fix: `段差Sを ${act.S}mm 以上に`, geo };
+    // 実績（曲げ屋さん記入）：段差Sごとに曲げられる短いほうのフランジの上限。Sが広いほど長くできる階段
+    const pts = act.pts, first = pts[0], last = pts[pts.length - 1];
+    const lim = actA(act, S);
+    if (lim == null) {
+      return { ...base, grade: 'ng', src: '実績', geo,
+        why: `段差S ${S}mm が狭すぎます（実績で ${first.S}mm 以上。そのときフランジ ${first.A}mm まで）`,
+        fix: `段差Sを ${first.S}mm 以上に` };
     }
-    const lim = far && S >= far.S ? far.A : act.A;
     if (short <= lim) {
-      return { ...base, grade: 'ok-act', src: '実績', why: `実績の範囲内（段差S ${act.S}mm 以上・フランジ ${lim}mm まで）`, geo };
+      return { ...base, grade: 'ok-act', src: '実績', geo,
+        why: `実績の範囲内（段差S ${S}mm なら、短いほうのフランジ ${lim}mm まで曲げられた）` };
     }
-    if (far && S < far.S && short <= far.A) {
-      return { ...base, grade: 'check', src: '実績', why: `実績は S${act.S} でフランジ${act.A}まで、S${far.S} で${far.A}まで。S${S} は間なので未確認です`,
-        fix: `段差Sを ${far.S}mm 以上に`, geo };
+    const wider = pts.find((p) => p.S > S && p.A >= short);   // 段差Sを広げれば曲がる点
+    if (wider) {
+      return { ...base, grade: 'ng', src: '実績', geo,
+        why: `短いほうのフランジ ${short}mm は、段差S ${S}mm では長すぎます（実績：段差S ${S}mm ならフランジ ${lim}mm まで）`,
+        fix: `段差Sを ${wider.S}mm 以上に、または短いほうのフランジを ${lim}mm 以下に` };
     }
-    return { ...base, grade: 'ng', src: '実績', why: `短いほうのフランジ ${short}mm が長すぎて、下の台に当たります（実績 ${lim}mm まで）`,
-      fix: far && S < far.S ? `段差Sを ${far.S}mm 以上に` : `短いほうのフランジを ${lim}mm 以下に`, geo };
+    // 実績で確かめたフランジより長い：確かめていない範囲。計算で通れば △、通らなければ ✕
+    if (geo.ok) {
+      return { ...base, grade: 'check', src: '実績', geo,
+        why: `計算では通りますが、実績で確かめたフランジは ${last.A}mm まで（段差S ${last.S}mm）。それより長いのは未確認です`,
+        fix: `短いほうのフランジを ${last.A}mm 以下に` };
+    }
+    return { ...base, grade: 'ng', src: '実績', geo,
+      why: `短いほうのフランジ ${short}mm が長すぎて、型に当たります（実績 ${lim}mm まで）`,
+      fix: `短いほうのフランジを ${lim}mm 以下に` };
   }
 
   // 実績なし：計算で決める
@@ -337,12 +349,18 @@ export function limitRanges(row, shape, y, other, opt = {}) {
 }
 
 // 実績の上限（Z）。段差Sで決まる。実績が無ければ null
+// 実績の階段で、段差S のときの短いほうのフランジの上限（S が実績の最小より狭ければ null）
+export function actA(act, S) {
+  let a = null;
+  for (const p of (act && act.pts) || []) if (S >= p.S) a = a == null ? p.A : Math.max(a, p.A);
+  return a;
+}
 export function actLimit(row, S) {
   const act = Z_ACT_ON ? row.zAct : null;
   if (!act) return null;
-  if (S < act.S) return { A: null, why: `段差S ${act.S}mm 未満は実績なし` };
-  if (act.far && S >= act.far.S) return { A: act.far.A };
-  return { A: act.A };
+  const a = actA(act, S);
+  if (a == null) return { A: null, why: `段差S ${act.pts[0].S}mm 未満は実績なし` };
+  return { A: a };
 }
 
 // 中押しを工程ごとに動かして当たりを見る（本体の「中押しで曲げる」と同じ組み立て）。

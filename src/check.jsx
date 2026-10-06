@@ -9,7 +9,7 @@ import {
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, matDies,
 } from '../bending-simulator.jsx';
-import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA } from '../zu/judge.js';
+import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON } from '../zu/judge.js';
 import { learned, gapLimit, deviceId } from './records.js';
 import { LimitChart, LimitDetail, QuickTable } from '../zu/limits.jsx';
 import ZU_DATA from '../zu/data/zu-data.json';
@@ -124,7 +124,38 @@ const vOf = (info) => Math.round(info.vHalf * 2);
 
 // 1つの金型で判定する
 function judge({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
-  return withRecs(withLength(judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }), { L, t, mat }), { shape, outer, L, recs });
+  const r0 = withZAct(judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }), { shape, outer, t, mat, sel });
+  return withRecs(withLength(r0, { L, t, mat }), { shape, outer, L, recs });
+}
+// Z曲げは、型ごとの実績（曲げ屋さん記入の段差S最小とフランジA最大・2026-10-06）を計算より優先する。
+// 実績の階段：段差Sが広いほど、短いほうのフランジを長くできる（Z曲げ・コの字判定と同じ表）
+function withZAct(r, { shape, outer, t, mat, sel }) {
+  if (shape !== 'Z' || !Z_ACT_ON || r.skip || !r.V) return r;
+  const zr = ZU_DATA.rows.find((x) => x.sel === sel && x.mat === mat && Number(x.t) === Number(t));
+  const act = zr && zr.zAct;
+  if (!act || !act.pts || !act.pts.length) return r;
+  const S = outer[1], short = Math.min(outer[0], outer[2]);
+  if (r.minOut && short < r.minOut) return r;          // 最小フランジ不足は表のとおり ✕ のまま
+  const pts = act.pts, first = pts[0], last = pts[pts.length - 1];
+  const lim = actA(act, S);
+  const base = { ...r, zAct: act };
+  if (lim == null) {
+    return { ...base, ok: false, method: null, src: '実績',
+      why: `段差S ${S}mm が狭すぎます（実績で ${first.S}mm 以上。そのとき短いほうのフランジ ${first.A}mm まで）` };
+  }
+  if (short <= lim) {
+    return { ...base, ok: true, method: null, src: '実績',
+      why: `実績の範囲内です（段差S ${S}mm なら、短いほうのフランジ ${lim}mm まで曲げられた）`
+        + (r.ok ? '' : '。計算では当たりますが、曲げ屋さんの実績を優先しています') };
+  }
+  const wider = pts.find((p) => p.S > S && p.A >= short);
+  if (wider) {
+    return { ...base, ok: false, method: null, src: '実績',
+      why: `短いほうのフランジ ${short}mm は、段差S ${S}mm では長すぎます（実績：段差S ${S}mm ならフランジ ${lim}mm まで。`
+        + `段差Sを ${wider.S}mm 以上にすれば ${wider.A}mm まで）` };
+  }
+  // 実績で確かめたより長いフランジ：計算の答えのまま、未確認と書き添える
+  return { ...base, actNote: `実績で確かめたフランジは ${last.A}mm まで（段差S ${last.S}mm）。それより長いのは未確認です` };
 }
 // 曲げ屋さんに確かめて登録した実績があれば、計算より優先する（Z・コの字のみ）
 function withRecs(r, { shape, outer, L, recs }) {
@@ -309,6 +340,7 @@ function Result({ r, big, now }) {
         {r.ok && r.smallV && r.smallV.maxL == null && (
           <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
         )}
+        {r.actNote && <span className="caution">⚠ {r.actNote}</span>}
         {m === 'naka' && r.naka && r.naka.angle != null && (
           <span className="naka-a">◇ 最初に底を <b>への字 {r.naka.angle}°</b> に曲げる（これより浅いと曲げ戻すときに当たります）
             {r.naka.open != null && <>　山の開き <b>{r.naka.open}°</b>・山の高さ <b>約{r.naka.rise}mm</b>（底の片側 {r.naka.half}mm）</>}

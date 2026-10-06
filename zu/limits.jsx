@@ -57,11 +57,12 @@ export function LimitChart({ shape, row, x, y, grade }) {
   const kunoSegs = extra ? lineSegs(extra.kuno) : [];
   const nakaSegs = extra ? lineSegs(extra.naka) : [];
   const zone = segs.map((s) => `M${s[0][0]},${sy(0)} ` + s.map((q) => `L${q[0]},${q[1]}`).join(' ') + ` L${s[s.length - 1][0]},${sy(0)} Z`);
+  // 実績の範囲（階段）：点ごとに、その S から右はフランジ A まで
   const actZone = act ? (() => {
-    const s1 = act.S, a1 = act.A, far = act.far;
-    const p = [[sx(s1), sy(0)], [sx(s1), sy(a1)]];
-    if (far) { p.push([sx(far.S), sy(a1)], [sx(far.S), sy(far.A)], [sx(xMax), sy(far.A)]); } else p.push([sx(xMax), sy(a1)]);
-    p.push([sx(xMax), sy(0)]);
+    const ps = act.pts;
+    const p = [[sx(ps[0].S), sy(0)], [sx(ps[0].S), sy(ps[0].A)]];
+    for (let i = 1; i < ps.length; i++) p.push([sx(ps[i].S), sy(ps[i - 1].A)], [sx(ps[i].S), sy(ps[i].A)]);
+    p.push([sx(xMax), sy(ps[ps.length - 1].A)], [sx(xMax), sy(0)]);
     return 'M' + p.map((q) => q.join(',')).join(' L') + ' Z';
   })() : null;
   const xt = []; for (let v = 0; v <= xMax; v += 50) xt.push(v);
@@ -116,8 +117,8 @@ export function LimitChart({ shape, row, x, y, grade }) {
         })()}
         {act && (
           <>
-            {[{ x: act.S, y: act.A }, ...(act.far ? [act.far] : [])].map((p, i) => (
-              <circle key={i} cx={sx(p.x ?? p.S)} cy={sy(p.y ?? p.A)} r="5.5" fill="var(--s2)" stroke="var(--card)" strokeWidth="2" />
+            {act.pts.map((p, i) => (
+              <circle key={i} cx={sx(p.S)} cy={sy(p.A)} r="5.5" fill="var(--s2)" stroke="var(--card)" strokeWidth="2" />
             ))}
           </>
         )}
@@ -125,8 +126,8 @@ export function LimitChart({ shape, row, x, y, grade }) {
           const p = pts.find((q) => q.x <= xMax && q.y != null && q.y >= 399);
           return p ? <text x={sx(p.x) + 4} y={sy(yMax) + 14} style={{ fill: 'var(--sub)' }}>ここから上限なし →</text> : null;
         })()}
-        {actRef && [{ x: actRef.S, y: actRef.A }, ...(actRef.far ? [{ x: actRef.far.S, y: actRef.far.A }] : [])].map((p, i) => (
-          <circle key={'r' + i} cx={sx(p.x)} cy={sy(p.y)} r="5" fill="none" stroke="var(--muted)" strokeWidth="2" />
+        {actRef && (actRef.pts || []).map((p, i) => (
+          <circle key={'r' + i} cx={sx(p.S)} cy={sy(p.A)} r="5" fill="none" stroke="var(--muted)" strokeWidth="2" />
         ))}
         {hov && <line x1={sx(hov.xv)} x2={sx(hov.xv)} y1={T} y2={sy(0)} stroke="var(--muted)" strokeDasharray="3 3" />}
         {/* いまの寸法から縦・横に点線。横線がカーブの下にある所なら曲がる */}
@@ -207,10 +208,11 @@ export function LimitDetail({ shape, row, x, y, other, punch, punchFlip }) {
   // いまの y で曲げるための x の条件
   let need;
   if (Z && Z_ACT_ON && row.zAct) {
-    const a = row.zAct;
-    if (y <= a.A) need = { pre: `${xN} を`, big: `${a.S}mm 以上`, src: '実績' };
-    else if (a.far && y <= a.far.A) need = { pre: `${xN} を`, big: `${a.far.S}mm 以上`, src: '実績' };
-    else need = { big: `${yN}を短くする`, sub: `実績では ${a.far ? a.far.A : a.A}mm まで`, src: '実績' };
+    // いまのフランジ y が入る、いちばん狭い段差S（実績の階段）
+    const ps = row.zAct.pts;
+    const p = ps.find((q) => y <= q.A);
+    need = p ? { pre: `${xN} を`, big: `${p.S}mm 以上`, src: '実績' }
+      : { big: `${yN}を短くする`, sub: `実績では ${ps[ps.length - 1].A}mm まで`, src: '実績' };
   } else if (alt) {
     // ヤゲンを替えたときは、その場で調べた範囲を出す
     const lst = (alts || []).map(([a, b]) => (b == null ? `${a}mm 以上` : a === b ? `${a}mm` : `${a}〜${b}mm`));

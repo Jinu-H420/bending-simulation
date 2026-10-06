@@ -46,6 +46,17 @@ const memoPoint = (memo) => {
   return S2 != null ? { S: S2, A: +a[1] } : null;
 };
 
+// 実績の点を S の小さい順に並べ、A は単調に増える階段にそろえる
+const actPts = (r) => {
+  const ps = [{ S: r.actK, A: r.actI }, ...(r.actNear || [])];
+  const far = memoPoint(r.memo);
+  if (far) ps.push(far);
+  ps.sort((a, b) => a.S - b.S);
+  const pts = [];
+  for (const p of ps) if (!pts.length || p.A > pts[pts.length - 1].A) pts.push({ S: p.S, A: p.A });
+  return { pts, S: pts[0].S, A: pts[0].A, note: r.actNote || null, src: r.actSrc || null };
+};
+
 // コの字（左右同じ高さ H・底 W）が、ヤゲン punch で通るか。突き当ては4通り試す（u-ratio.mjs と同じ）
 function uOk(nobi, t, info, punch, H, W) {
   const vHalf = info.vHalf;
@@ -172,7 +183,9 @@ for (const { r, sel, mach, two } of plan) {
     die: r.mat === '縞' ? `V${r.V}（HD3504NT）` : two ? `${sel.split(':')[1]} 2溝ダイ（HD3504NT）` : r.dieName || info.note.split('｜')[0].trim(),
     sel, two, minOut, nobi,
     // Z 実績（記入シートの「実際の値」）。実績は HG のインサートで取ったものなので、2溝ダイには付けない
-    zAct: !two && r.actK != null ? { S: r.actK, A: r.actI, far: memoPoint(r.memo) } : null,
+    // 実績の点（段差S, そのSで曲げられるフランジAの上限）。Sが広いほどAも長くできる階段にする。
+    // 段差S最小とそのときのA最大＋備考の点（Aを短くすればSを縮められる／Sを広げればAを長くできる）
+    zAct: !two && r.actK != null ? actPts(r) : null,
     zSimS: two ? firstS : r.simK,
     zCurve,
     uLo: u ? u.lo : null,

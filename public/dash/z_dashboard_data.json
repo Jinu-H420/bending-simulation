@@ -370,14 +370,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 56.1,
-  "S": 54.0,
+  "S": 45.0,
   "Ssrc": "実績",
   "simI": 102.3,
   "simJ": "なし",
   "simL": 24.9,
   "simM": "なし",
   "dieName": "03500 V32",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 45.0,
+    "A": 49.5
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },
@@ -395,14 +400,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 56.7,
-  "S": 55.0,
+  "S": 46.0,
   "Ssrc": "実績",
   "simI": 102.5,
   "simJ": "なし",
   "simL": 24.6,
   "simM": "なし",
   "dieName": "03500 V32",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 46.0,
+    "A": 50.0
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },
@@ -420,14 +430,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 58.3,
-  "S": 57.0,
+  "S": 48.0,
   "Ssrc": "実績",
   "simI": 103,
   "simJ": "なし",
   "simL": 25,
   "simM": "なし",
   "dieName": "03500 V32",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 48.0,
+    "A": 51.0
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },
@@ -475,14 +490,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 56.1,
-  "S": 54.0,
+  "S": 46.0,
   "Ssrc": "実績",
   "simI": 102.3,
   "simJ": "なし",
   "simL": 30.5,
   "simM": "なし",
   "dieName": "03600 V40",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 46.0,
+    "A": 49.5
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },
@@ -500,14 +520,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 56.6,
-  "S": 55.0,
+  "S": 47.0,
   "Ssrc": "実績",
   "simI": 102.5,
   "simJ": "なし",
   "simL": 30.2,
   "simM": "なし",
   "dieName": "03600 V40",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 47.0,
+    "A": 50.0
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },
@@ -525,14 +550,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 58.1,
-  "S": 57.0,
+  "S": 49.0,
   "Ssrc": "実績",
   "simI": 103,
   "simJ": "なし",
   "simL": 30.2,
   "simM": "なし",
   "dieName": "03600 V40",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 49.0,
+    "A": 51.0
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },
@@ -550,14 +580,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 63.1,
-  "S": 63.0,
+  "S": 55.0,
   "Ssrc": "実績",
   "simI": 104.5,
   "simJ": "なし",
   "simL": 37,
   "simM": "なし",
   "dieName": "03600 V40",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 55.0,
+    "A": 54.0
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },
@@ -605,14 +640,19 @@
   "memo": null,
   "machine": "HD3504NT",
   "simK": 62.1,
-  "S": 61.0,
+  "S": 54.5,
   "Ssrc": "実績",
   "simI": 104,
   "simJ": "なし",
   "simL": 38.5,
   "simM": "なし",
   "dieName": "03700 V50",
-  "actNear": [],
+  "actNear": [
+   {
+    "S": 54.5,
+    "A": 53.0
+   }
+  ],
   "actNote": null,
   "actSrc": "曲げ屋さん記入 2026-10-06"
  },

@@ -499,7 +499,7 @@ function App() {
       const k = tt * bendsAt(i, dims.length);
       return String(+(m === 'inner' ? v - k : v + k).toFixed(1));
     }));
-    setDimMode(m); setOthers(null);
+    setDimMode(m);
   };
   const base = useMemo(() => pickDie(mat, t), [mat, t]);
   // 表から自動で引いている片伸び（いくつ引いているか画面に出す）
@@ -516,49 +516,60 @@ function App() {
     const def = SHAPES[k].def;
     setShape(k);
     setDims(dimMode === 'inner' ? def.map((v, i) => String(+(Number(v) - tt * bendsAt(i, def.length)).toFixed(1))) : def);
-    setFocus(null); setOthers(null);
+    setFocus(null);
   };
   const Lnum = Number(Ltext);
   const input = () => ({ shape, outer: outerDims, t: Number(t), mat, L: Number.isFinite(Lnum) ? Lnum : 0,
     nobiIn: Number.isFinite(nobiIn) ? nobiIn : null, recs });
-  const now = { shape, dims: outerDims, mat, t, L: Ltext };
+  // 判定した時の条件。下のグラフ・実績・シミュレーターへのリンクは、この条件で出す
+  // （入力を打っている途中に重い計算を走らせない）
+  const snap = result && result.snap;
+  const now = snap || { shape, dims: outerDims, mat, t, L: Ltext };
 
   // いま画面に入っている条件。判定の答えがこの条件のものかを見分けるのに使う
   const inKey = `${shape}|${dims.join('|')}|${dimMode}|${t}|${mat}|${Ltext}|${nobiText}`;
 
+  // 判定は「判定する」を押したときだけ行う。入力のたびに判定すると重くてカクカクするため
+  // （2026-10-06 ユーザー指示。前は入力が止まって0.3秒で自動判定していた）。
+  // 入力を変えたあとは、前の答えを薄くして「判定する」を押すよう出す（答えは消さない）。
   const run = () => {
+    if (scanId.current != null) scanId.current += 1;   // 前の金型探しを止める
     setOthers(null);
-    if (!base || !base.sel) { setResult({ ok: false, label: '—', why: 'この板厚の基準金型が折り曲げ表にありません' }); return; }
-    setBusy('判定しています…');
-    setTimeout(() => { setResult({ ...judge({ ...input(), sel: base.sel }), key: inKey }); setBusy(''); }, 20);
-  };
-
-  // 形や寸法を変えたら、押さなくても判定し直す（前は結果が消えたままだった）
-  useEffect(() => {
     if (dims.some((d) => !(Number(d) > 0)) || !(Number(t) > 0)) {
-      setResult({ note: '寸法と板厚を数字で入れてください' }); setBusy(''); return undefined;
+      setResult({ note: '寸法と板厚を数字で入れてください', key: inKey }); return;
     }
     if (!base || !base.sel) {
-      setResult({ note: `折り曲げ表に ${mat}・t${t} の基準金型がありません（板厚を見直してください）` }); setBusy(''); return undefined;
+      setResult({ note: `折り曲げ表に ${mat}・t${t} の基準金型がありません（板厚を見直してください）`, key: inKey }); return;
     }
+    const inp = input();
+    const sn = { shape, dims: outerDims, mat, t, L: Ltext };
+    const sel = base.sel, key = inKey;
     setBusy('判定しています…');
-    const id = setTimeout(() => {
-      try { setResult({ ...judge({ ...input(), sel: base.sel }), key: inKey }); } catch (e) {
-        setResult({ note: `判定でつまずきました（${e && e.message ? e.message : e}）。寸法を見直すか、この文面を知らせてください` });
+    setTimeout(() => {
+      try { setResult({ ...judge({ ...inp, sel }), key, snap: sn, inp }); } catch (e) {
+        setResult({ note: `判定でつまずきました（${e && e.message ? e.message : e}）。寸法を見直すか、この文面を知らせてください`, key });
       }
       setBusy('');
-    }, 300);
-    return () => clearTimeout(id);
-  }, [shape, dims.join('|'), dimMode, t, mat, nobiText, Ltext, recs]);
+    }, 20);
+  };
+  // 開いたときは、最初の見本で1回だけ判定しておく（空の画面にしない）
+  useEffect(() => { run(); }, []);
+  // 共有フォルダの実績を読み込んだら、いまの答えに実績を当てはめ直す（入力が変わっていないときだけ）
+  useEffect(() => {
+    if (recs.length && result && result.key === inKey && !result.note) run();
+  }, [recs]);
+  // 入力が判定した時から変わったか
+  const stale = !!(result && result.key && result.key !== inKey);
 
   // 使えるほかの金型を全部試す（1型ずつ画面に出す）
   const scanId = useRef(0);
   const runOthers = () => {
     // 縞板は V25・V40・V80（HD3504NT）だけ（金型寸法表・2026-09-24 ユーザー確認）
-    const allow = matDies(mat);
+    const inp = (result && result.inp) || input();   // 判定した時の条件で探す
+    const b0 = pickDie(inp.mat, inp.t);
+    const allow = matDies(inp.mat);
     const all = [...MACHINE_DIES.hg2203.main, ...MACHINE_DIES.hd3504nt.main]
-      .filter((s) => (!allow || allow.includes(s)) && s !== (base && base.sel));
-    const inp = input();
+      .filter((s) => (!allow || allow.includes(s)) && s !== (b0 && b0.sel));
     const my = ++scanId.current;
     const out = [];
     setOthers([]);
@@ -582,9 +593,8 @@ function App() {
   // （V12 では当たるが V8 なら普通に曲がる、のような段取りを見落とさないため）
   const needScan = !!(result && !result.note && !result.skip && (!result.ok || result.method));
   useEffect(() => {
-    if (!needScan || !result || result.key !== inKey) return;
-    runOthers();
-  }, [needScan, result && result.key, inKey]);
+    if (needScan && result && result.inp) runOthers();
+  }, [result]);
   // ほかの金型で見つかった、いまより良い段取り（曲がらない→曲がる／中押し→普通に曲がる）
   const rescue = !needScan ? null
     : ((others || []).find((o) => o.ok && (!result.ok ? true : !o.method)) || null);
@@ -593,10 +603,11 @@ function App() {
   // Z・コの字のときは「どこまで曲げられるか」を出す（Z曲げ・コの字判定と同じグラフ）。
   // カーブは型ごとに作りだめしてある（zu/data/zu-data.json）ので、いま使う型の行を探す。
   const limitRow = useMemo(() => {
-    if (!(shape === 'Z' || shape === 'U') || !shown || shown.note || shown.skip || !shown.sel) return null;
-    if (dims.some((d) => !(Number(d) > 0))) return null;
-    return ZU_DATA.rows.find((r) => r.sel === shown.sel && r.mat === mat && Number(r.t) === Number(t)) || null;
-  }, [shape, shown && shown.sel, mat, t, dims.join('|'), dimMode]);
+    if (!snap || !(snap.shape === 'Z' || snap.shape === 'U') || !shown || shown.note || shown.skip || !shown.sel) return null;
+    if (snap.dims.some((d) => !(Number(d) > 0))) return null;
+    return ZU_DATA.rows.find((r) => r.sel === shown.sel && r.mat === snap.mat && Number(r.t) === Number(snap.t)) || null;
+  }, [result, shown && shown.sel]);
+  const sd = snap ? snap.dims : outerDims;   // 判定した時の外寸
 
   return (
     <div className="wrap">
@@ -634,7 +645,7 @@ function App() {
               <span>{lb}</span>
               <input inputMode="decimal" value={dims[i]}
                 onFocus={() => setFocus(i)} onBlur={() => setFocus((k) => (k === i ? null : k))}
-                onChange={(e) => { const d = [...dims]; d[i] = e.target.value; setDims(d); setOthers(null); }} />
+                onChange={(e) => { const d = [...dims]; d[i] = e.target.value; setDims(d); }} />
             </label>
           ))}
         </div>
@@ -649,15 +660,15 @@ function App() {
         <div className="row">
           <label className="inl" style={{ width: 104 }}><span>曲げ長さ L</span>
             <input inputMode="decimal" value={Ltext}
-              onChange={(e) => { setLtext(e.target.value); setOthers(null); }} />
+              onChange={(e) => { setLtext(e.target.value); }} />
           </label>
           <div className="seg">
             {['鉄', '縞'].map((m) => (
-              <button key={m} className={mat === m ? 'on' : ''} onClick={() => { setMat(m); setOthers(null); }}>{m}</button>
+              <button key={m} className={mat === m ? 'on' : ''} onClick={() => { setMat(m); }}>{m}</button>
             ))}
           </div>
           <label className="inl" style={{ width: 84 }}><span>板厚 t</span>
-            <input inputMode="decimal" value={t} onChange={(e) => { setT(e.target.value); setOthers(null); }} />
+            <input inputMode="decimal" value={t} onChange={(e) => { setT(e.target.value); }} />
           </label>
           <label className="inl" style={{ width: 104 }}><span>片伸び</span>
             <input inputMode="decimal" placeholder={autoNobi ? `自動 ${autoNobi.val}` : '表から自動'}
@@ -665,7 +676,8 @@ function App() {
           </label>
         </div>
 
-        <button className="go" onClick={run} disabled={!!busy}>判定する</button>
+        <button className={`go ${stale ? 'need' : ''}`} onClick={run} disabled={!!busy && !stale}>判定する</button>
+        {stale && <div className="stale-hint">入力が変わりました。「判定する」を押すと判定し直します</div>}
         {busy && <div className="busy">{busy}</div>}
         <div className="hint">
           {mat === '縞' && <><b>縞板は V25・V40・V80（HD3504NT）だけ</b>使えます。<br /></>}
@@ -678,7 +690,8 @@ function App() {
       </section>
 
       </div>
-      <div className="colR">
+      <div className={`colR ${stale ? 'is-stale' : ''}`}>
+      {stale && <div className="stale-bar">入力が変わりました。<b>「判定する」</b>を押すと判定し直します（下は前の入力の答え）</div>}
       {result && result.note && <section><div className="card">{result.note}</div></section>}
       {result && !result.note && (
         <section>
@@ -708,17 +721,17 @@ function App() {
       )}
       {limitRow && (
         <section className="card">
-          <div className="step">どこまで曲げられるか（{limitRow.die}・{mat} t{t}）</div>
+          <div className="step">どこまで曲げられるか（{limitRow.die}・{snap.mat} t{snap.t}）</div>
           <div className="limits">
-            <LimitDetail shape={shape} row={limitRow} x={outerDims[1]} y={Math.min(outerDims[0], outerDims[2])}
-              other={Math.max(outerDims[0], outerDims[2])} punch={shown.punch} punchFlip={shown.punchFlip} />
-            <LimitChart shape={shape} row={limitRow} x={outerDims[1]} y={Math.min(outerDims[0], outerDims[2])}
+            <LimitDetail shape={snap.shape} row={limitRow} x={sd[1]} y={Math.min(sd[0], sd[2])}
+              other={Math.max(sd[0], sd[2])} punch={shown.punch} punchFlip={shown.punchFlip} />
+            <LimitChart shape={snap.shape} row={limitRow} x={sd[1]} y={Math.min(sd[0], sd[2])}
               grade={shown && shown.ok ? 'ok-sim' : 'ng'} />
-            <QuickTable shape={shape} row={limitRow} x={outerDims[1]} />
+            <QuickTable shape={snap.shape} row={limitRow} x={sd[1]} />
           </div>
           <div className="hint">
             {shown.punch && shown.punch !== '904061' && <><b>グラフと早見表は、普通のヤゲン 904061 の値です</b>（上の2つは {shown.punch} の値）。<br /></>}
-            {shape === 'Z' ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'
+            {snap.shape === 'Z' ? '短いほうのフランジを先に曲げる想定。長いほうのフランジは上限なし（最小フランジ以上）。'
               : '低いほうの立上りを先に曲げる想定。オレンジ＝くの字ヤゲン（曲げ長さ L が窓以内のときだけ）、紫の点線＝中押し。現場の順番は 普通 → くの字 → 中押し。'}
           </div>
         </section>
@@ -736,8 +749,8 @@ function App() {
         </section>
       )}
 
-      {result && !result.skip && !result.note && (
-        <RecordPanel shape={shape} mat={mat} t={t} dims={outerDims} L={Ltext} best={rescue || result}
+      {result && snap && !result.skip && !result.note && (
+        <RecordPanel shape={snap.shape} mat={snap.mat} t={snap.t} dims={snap.dims} L={snap.L} best={rescue || result}
           dies={[result, ...(others || [])].filter((r) => r && r.sel && !r.skip)
             .filter((r, i, a) => a.findIndex((x) => x.sel === r.sel) === i)
             .map((r) => ({ sel: r.sel, V: r.V, machine: r.machine, label: `${r.label}（${MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）` }))}

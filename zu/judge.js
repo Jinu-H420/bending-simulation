@@ -456,17 +456,28 @@ export const METHOD_JA = { normal: '普通に', kuno: 'くの字ヤゲンで', n
 const recKey = (s, r) => [s, r.mat, r.t, r.V].join('|');
 // 同じ V でも HG のインサートと2溝ダイは別の型。型（sel）が書いてない実績は同じVならどちらにも使う
 const sameDie = (rec, row) => !rec.sel || !row.sel || rec.sel === row.sel;
+// C形 [A,H1,W,H2,B]：底Wと立上りが実績と ±5mm 以内で、リップが短い（easy）／長い（hard）か同じ。
+// 左右を入れ替えた向き（B,H2,W,H1,A）でも見る
+function cMatch(dims, rd, easy) {
+  if (!Array.isArray(rd) || rd.length !== 5 || dims.length !== 5) return false;
+  const near = (a, b) => Math.abs(a - b) <= 5;
+  const lip = (a, b) => (easy ? a <= b : a >= b);
+  return [rd, [...rd].reverse()].some((r) => near(dims[2], r[2]) && near(dims[1], r[1]) && near(dims[3], r[3])
+    && lip(dims[0], r[0]) && lip(dims[4], r[4]));
+}
 function easierOrSame(shape, dims, L, rec, smallV) {
   if (smallV && rec.L > 0 && !(L <= rec.L)) return false;
+  if (shape === 'C') return cMatch(dims, rec.dims, true);
   if (shape === 'Z') return dims[1] >= rec.dims[1] && Math.min(dims[0], dims[2]) <= Math.min(rec.dims[0], rec.dims[2]);
   return Math.abs(dims[1] - rec.dims[1]) <= 5 && Math.max(dims[0], dims[2]) <= Math.max(rec.dims[0], rec.dims[2]);
 }
 function harderOrSame(shape, dims, L, rec, smallV) {
   if (smallV && rec.L > 0 && rec.lenFail) return L >= rec.L;   // 長さで曲がらなかった記録
+  if (shape === 'C') return cMatch(dims, rec.dims, false);
   if (shape === 'Z') return dims[1] <= rec.dims[1] && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
   return Math.abs(dims[1] - rec.dims[1]) <= 5 && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
 }
-const recText = (r) => (!r || !Array.isArray(r.dims) ? '（記録の中身が足りません）' : `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${r.who ? `（${r.who}）` : ''}`);
+const recText = (r) => (!r || !Array.isArray(r.dims) ? '（記録の中身が足りません）' : `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : r.shape === 'C' ? `C形 A${r.dims[0]}・H${r.dims[1]}・W${r.dims[2]}・H${r.dims[3]}・B${r.dims[4]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${r.who ? `（${r.who}）` : ''}`);
 // 小さいVの最長L：曲がった実績の一番長い L
 function recMaxL(recs, shape, row) {
   const ls = (recs || []).filter((r) => r.ok && r.mat === row.mat && r.t === row.t && r.V === row.V && sameDie(r, row) && r.L > 0).map((r) => r.L);

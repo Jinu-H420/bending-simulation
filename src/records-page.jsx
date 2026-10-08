@@ -7,7 +7,7 @@ import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull
 import { METHOD_JA } from '../zu/judge.js';
 import './check.css';
 
-const SHAPE_JA = { L: 'L曲げ', U: 'コの字', Z: 'Z曲げ', HAT: 'ハット', free: 'その他' };
+const SHAPE_JA = { L: 'L曲げ', U: 'コの字', Z: 'Z曲げ', HAT: 'ハット', C: 'C形', free: 'その他' };
 const dieName = (r) => `V${r.V || '—'}${/^lib:30[56]40:/.test(r.sel || '') ? ' 2溝' : ''}`;
 
 // 同じ型・材質・板厚で、実績が食い違っていないか（同じくらいの寸法で ○ と ✕ の両方がある）

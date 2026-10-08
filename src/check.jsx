@@ -3,7 +3,6 @@
 // 曲げ順・突き当て（左右）・裏返しは自動で探す。✕ のときは理由（どこに当たるか）と、
 // 通る別の金型を出す。
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import ReactDOM from 'react-dom/client';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
@@ -28,7 +27,11 @@ const SHAPES = {
   U: { name: 'コの字', labels: ['H1', 'W', 'H2'], dirs: [1, 1], def: [50, 100, 50] },
   Z: { name: 'Z曲げ', labels: ['A', 'S', 'B'], dirs: [1, -1], def: [50, 40, 50] },
   HAT: { name: 'ハット', labels: ['A', 'H1', 'W', 'H2', 'B'], dirs: [1, -1, -1, 1], def: [46, 26, 100, 26, 46] },
+  // C形（リップ内向きの溝形）。いまは別ページ c.html だけで使う。あとで かんたん判定の形にも足す
+  C: { name: 'C形', labels: ['A', 'H1', 'W', 'H2', 'B'], dirs: [1, 1, 1, 1], def: [25, 60, 100, 60, 25] },
 };
+// かんたん判定（check.html）に並べる形
+const CHECK_SHAPES = ['L', 'U', 'Z', 'HAT'];
 
 // 形の見本図（寸法の取り方）
 function ShapeIcon({ kind, size = 64 }) {
@@ -37,6 +40,7 @@ function ShapeIcon({ kind, size = 64 }) {
     U: '10,14 10,50 54,50 54,14',
     Z: '6,20 30,20 30,46 58,46',
     HAT: '4,48 18,48 18,18 46,18 46,48 60,48',
+    C: '24,14 10,14 10,50 54,50 54,14 40,14',
   }[kind];
   return (
     <svg width={size} height={size * 0.9} viewBox="0 0 64 58" aria-hidden="true">
@@ -72,6 +76,14 @@ const FIG = {
       { x1: 76, y1: 28, x2: 234, y2: 28, tx: 155, ty: 20, anchor: 'middle' },    // W
       { x1: 252, y1: 46, x2: 252, y2: 154, tx: 258, ty: 104, anchor: 'start' },  // H2
       { x1: 226, y1: 176, x2: 294, y2: 176, tx: 260, ty: 194, anchor: 'middle' },// B
+    ] },
+  C: { plate: [[120, 46], [70, 46], [70, 150], [240, 150], [240, 46], [190, 46]],
+    dims: [
+      { x1: 66, y1: 26, x2: 124, y2: 26, tx: 95, ty: 18, anchor: 'middle' },     // A
+      { x1: 46, y1: 42, x2: 46, y2: 154, tx: 40, ty: 102, anchor: 'end' },       // H1
+      { x1: 66, y1: 176, x2: 244, y2: 176, tx: 155, ty: 194, anchor: 'middle' }, // W
+      { x1: 264, y1: 42, x2: 264, y2: 154, tx: 270, ty: 102, anchor: 'start' },  // H2
+      { x1: 186, y1: 26, x2: 244, y2: 26, tx: 215, ty: 18, anchor: 'middle' },   // B
     ] },
 };
 function DimFigure({ shape, labels, dims, focus }) {
@@ -119,6 +131,8 @@ function withLength(r, { L, t, mat }) {
   return out;
 }
 
+// 実績を判定に当てはめる形（zu/judge.js の recMatch が見られる形）
+const REC_SHAPES = ['Z', 'U', 'C'];
 const machineOfSel = (sel) => Object.keys(MACHINE_DIES).find((m) => MACHINE_DIES[m].main.includes(sel));
 const vOf = (info) => Math.round(info.vHalf * 2);
 
@@ -157,9 +171,9 @@ function withZAct(r, { shape, outer, t, mat, sel }) {
   // 実績で確かめたより長いフランジ：計算の答えのまま、未確認と書き添える
   return { ...base, actNote: `実績で確かめたフランジは ${last.A}mm まで（段差S ${last.S}mm）。それより長いのは未確認です` };
 }
-// 曲げ屋さんに確かめて登録した実績があれば、計算より優先する（Z・コの字のみ）
+// 曲げ屋さんに確かめて登録した実績があれば、計算より優先する（Z・コの字・C形）
 function withRecs(r, { shape, outer, L, recs }) {
-  if (!recs || !recs.length || r.skip || !r.V || !(shape === 'Z' || shape === 'U')) return r;
+  if (!recs || !recs.length || r.skip || !r.V || !REC_SHAPES.includes(shape)) return r;
   const m = recMatch({ mat: r.mat || null, t: r.t, V: r.V, sel: r.sel }, shape, outer, L, recs);
   if (!m.same.length) return r;
   // 登録した「曲がった」実績は必ず勝たせる（反対の実績があるときは注意書きを足す）。
@@ -371,7 +385,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
   const autoMethod = best && best.method === 'naka' ? 'naka' : best && best.method === 'kuno' ? 'kuno' : 'normal';
   useEffect(() => { if (best) { setSel(best.sel); setMethod(autoMethod); } }, [best && best.sel, autoMethod]);
   const die = dies.find((d) => d.sel === sel) || dies[0];
-  const done = die && (shape === 'Z' || shape === 'U')
+  const done = die && REC_SHAPES.includes(shape)
     ? recMatch({ mat, t: Number(t), V: die.V, sel: die.sel }, shape, dims.map(Number), Number(L) || 0, recs).ok : null;
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === Number(t));
   const S = SHAPES[shape];
@@ -466,9 +480,14 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
   );
 }
 
-function App() {
-  const [shape, setShape] = useState('U');
-  const [dims, setDims] = useState(SHAPES.U.def);
+// shapes：並べる形。title・lead：見出し。C形だけのページ（c.html）も同じ画面を使う
+function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判定',
+  lead = '形と寸法を入れて「判定する」を押すだけ。曲げ順と突き当ての向きは自動で探します。' }) {
+  const first = shapes.includes('U') ? 'U' : shapes[0];
+  const one = shapes.length === 1;   // 形が1つだけなら、形のボタンは出さない（番号も1つずつ繰り上げる）
+  const no = (k) => '①②③④'[one ? k - 1 : k];
+  const [shape, setShape] = useState(first);
+  const [dims, setDims] = useState(SHAPES[first].def);
   const [dimMode, setDimMode] = useState('outer');   // 'outer'=外寸 / 'inner'=内寸
   const [focus, setFocus] = useState(null);   // いま入力している寸法（図で色を変える）
   const [mat, setMat] = useState('鉄');
@@ -644,24 +663,26 @@ function App() {
   return (
     <div className="wrap">
       <header>
-        <h1>曲がるか かんたん判定</h1>
-        <p>形と寸法を入れて「判定する」を押すだけ。曲げ順と突き当ての向きは自動で探します。</p>
+        <h1>{title}</h1>
+        <p>{lead}</p>
       </header>
 
       <div className="cols">
       <div className="colL">
       <section className="card">
-        <div className="step">① 形</div>
-        <div className="shapes">
-          {Object.entries(SHAPES).map(([k, s]) => (
-            <button key={k} className={`shape ${shape === k ? 'on' : ''}`} onClick={() => pickShape(k)}>
-              <ShapeIcon kind={k} /><span>{s.name}</span>
-            </button>
-          ))}
-        </div>
+        {!one && <>
+          <div className="step">① 形</div>
+          <div className="shapes">
+            {shapes.map((k) => (
+              <button key={k} className={`shape ${shape === k ? 'on' : ''}`} onClick={() => pickShape(k)}>
+                <ShapeIcon kind={k} /><span>{SHAPES[k].name}</span>
+              </button>
+            ))}
+          </div>
+        </>}
 
         <div className="step step-row">
-          <span>② 寸法（{dimMode === 'inner' ? '内寸' : '外寸'} mm）</span>
+          <span>{no(1)} 寸法（{dimMode === 'inner' ? '内寸' : '外寸'} mm）</span>
           <span className="seg small">
             {[['outer', '外寸'], ['inner', '内寸']].map(([k, w]) => (
               <button key={k} className={dimMode === k ? 'on' : ''} onClick={() => switchMode(k)}>{w}</button>
@@ -688,7 +709,7 @@ function App() {
             : <>いまは<b>外寸</b>（板の外側で測った寸法）。</>}
         </div>
 
-        <div className="step">③ 曲げ長さ L・材質・板厚</div>
+        <div className="step">{no(2)} 曲げ長さ L・材質・板厚</div>
         <div className="row">
           <label className="inl" style={{ width: 104 }}><span>曲げ長さ L</span>
             <input inputMode="decimal" value={Ltext}
@@ -806,7 +827,7 @@ function App() {
 }
 
 // どこかで落ちても画面を真っ白にしない
-class Boundary extends React.Component {
+export class Boundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
   render() {
@@ -822,4 +843,4 @@ class Boundary extends React.Component {
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<Boundary><App /></Boundary>);
+export { CheckApp, SHAPES };

@@ -90,6 +90,7 @@
 
 - 公開URL：https://jinu-h420.github.io/bending-simulation/ （main に push すると約40秒で反映、`.github/workflows/deploy.yml`）
 - かんたん判定：https://jinu-h420.github.io/bending-simulation/check.html
+- C形曲げ かんたん判定：https://jinu-h420.github.io/bending-simulation/c.html （画面はかんたん判定と共用。まとめるときは `src/check.jsx` の `CHECK_SHAPES` に 'C' を足す）
 - Z曲げ・コの字 判定（別アプリ）：https://jinu-h420.github.io/bending-simulation/zu/
 - 確認資料：https://jinu-h420.github.io/bending-simulation/dash/
 - 起動：`npm install` → `npm run dev` → http://localhost:5173/

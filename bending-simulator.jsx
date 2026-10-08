@@ -2353,21 +2353,52 @@ const BendingSimulator = () => {
       setSeq(seq.map((s) => (s.bend === i ? { ...s, valley: patch.dir < 0 } : s)));
     }
   };
-  const addSeg = () => {
-    setSegs([...segs, 30]);
-    setOuterSegs([...outerSegs, 30]);
-    setInnerSegs([...innerSegs, 27.7]);
-    setBends([...bends, { angle: 90, dir: 1 }]);
-    setSeq([...seq, { bend: bends.length, mirror: false, valley: false }]);
+  // 辺を先頭・末尾に足す（2026-10-08 ユーザー指示：コの字からC形にするとき、先頭にも足したい）。
+  // 足した曲げは、となりの曲げと同じ向き（同じ向きならC形のリップになる）・90°。
+  // 曲げ順では新しい曲げを先頭に入れる（リップは先に曲げるのが普通。違えば「自動で段取りを決める」で直る）。
+  const NEW_LEN = 30;
+  const newSeg = () => ({ flat: NEW_LEN, outer: NEW_LEN, inner: +Math.max(1, NEW_LEN - t).toFixed(1) });
+  const addSegAt = (where) => {
+    const n = newSeg();
+    const nb = bends.length;
+    if (where === 'head') {
+      const dir = nb ? bends[0].dir : 1;
+      setSegs([n.flat, ...segs]); setOuterSegs([n.outer, ...outerSegs]); setInnerSegs([n.inner, ...innerSegs]);
+      setBends([{ angle: 90, dir }, ...bends]);
+      setSeq([{ bend: 0, mirror: false, valley: dir < 0 }, ...seq.map((q) => ({ ...q, bend: q.bend + 1 }))]);
+    } else {
+      const dir = nb ? bends[nb - 1].dir : 1;
+      setSegs([...segs, n.flat]); setOuterSegs([...outerSegs, n.outer]); setInnerSegs([...innerSegs, n.inner]);
+      setBends([...bends, { angle: 90, dir }]);
+      setSeq([{ bend: nb, mirror: false, valley: dir < 0 }, ...seq]);
+    }
+    setStep(0); setProg(1); setPlaying(false);
   };
-  const removeSeg = () => {
+  // 両端に足してC形にする（コの字 → C形 がボタン1つで）
+  const addBothEnds = () => {
+    const n = newSeg();
+    const nb = bends.length;
+    const d0 = nb ? bends[0].dir : 1, d1 = nb ? bends[nb - 1].dir : 1;
+    setSegs([n.flat, ...segs, n.flat]); setOuterSegs([n.outer, ...outerSegs, n.outer]); setInnerSegs([n.inner, ...innerSegs, n.inner]);
+    setBends([{ angle: 90, dir: d0 }, ...bends, { angle: 90, dir: d1 }]);
+    setSeq([{ bend: 0, mirror: false, valley: d0 < 0 }, { bend: nb + 1, mirror: false, valley: d1 < 0 },
+      ...seq.map((q) => ({ ...q, bend: q.bend + 1 }))]);
+    setStep(0); setProg(1); setPlaying(false);
+  };
+  // 先頭・末尾の辺を消す（曲げ順からも、その曲げだけを抜く）
+  const removeSegAt = (where) => {
     if (segs.length <= 2) return;
-    setSegs(segs.slice(0, -1));
-    setOuterSegs(outerSegs.slice(0, -1));
-    setInnerSegs(innerSegs.slice(0, -1));
-    setBends(bends.slice(0, -1));
-    setSeq(seq.slice(0, -1).map((s) => ({ ...s, bend: Math.min(s.bend, bends.length - 2) })));
-    setStep(0); setProg(1);
+    const nb = bends.length;
+    if (where === 'head') {
+      setSegs(segs.slice(1)); setOuterSegs(outerSegs.slice(1)); setInnerSegs(innerSegs.slice(1));
+      setBends(bends.slice(1));
+      setSeq(seq.filter((q) => q.bend !== 0).map((q) => ({ ...q, bend: q.bend - 1 })));
+    } else {
+      setSegs(segs.slice(0, -1)); setOuterSegs(outerSegs.slice(0, -1)); setInnerSegs(innerSegs.slice(0, -1));
+      setBends(bends.slice(0, -1));
+      setSeq(seq.filter((q) => q.bend !== nb - 1));
+    }
+    setStep(0); setProg(1); setPlaying(false);
   };
   const setStepConf = (i, patch) => setSeq(seq.map((s, k) => (k === i ? { ...s, ...patch } : s)));
 
@@ -2733,21 +2764,30 @@ const BendingSimulator = () => {
         <div className="grid md:grid-cols-2 gap-3 mt-3">
           {/* 板形状 */}
           <div className="bg-slate-900 border border-slate-800 rounded-md p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
               <h2 className="text-sm font-bold text-slate-100">
                 板形状（{inputMode === 'flat' ? '展開寸法' : inputMode === 'outer' ? '外寸法' : '内寸法'} mm）
               </h2>
               <div className="flex rounded overflow-hidden border border-slate-600 text-xs">
                 <button onClick={() => switchInputMode('flat')}
-                  className={`px-2 py-0.5 ${inputMode === 'flat' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>展開値</button>
+                  className={`px-2 py-0.5 whitespace-nowrap ${inputMode === 'flat' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>展開値</button>
                 <button onClick={() => switchInputMode('outer')}
-                  className={`px-2 py-0.5 ${inputMode === 'outer' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>外寸法</button>
+                  className={`px-2 py-0.5 whitespace-nowrap ${inputMode === 'outer' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>外寸法</button>
                 <button onClick={() => switchInputMode('inner')}
-                  className={`px-2 py-0.5 ${inputMode === 'inner' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>内寸法</button>
+                  className={`px-2 py-0.5 whitespace-nowrap ${inputMode === 'inner' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>内寸法</button>
               </div>
-              <div className="flex gap-2">
-                <button onClick={addSeg} className="px-2 py-0.5 text-xs rounded border border-slate-600 hover:bg-slate-800">＋辺追加</button>
-                <button onClick={removeSeg} className="px-2 py-0.5 text-xs rounded border border-slate-600 hover:bg-slate-800">－削除</button>
+              <div className="flex gap-1 flex-wrap">
+                <span className="text-[11px] text-slate-500 self-center">辺</span>
+                <button onClick={() => addSegAt('head')} title="いちばん左（辺1の前）に辺を足す"
+                  className="px-2 py-0.5 text-xs whitespace-nowrap rounded border border-slate-600 hover:bg-slate-800">＋先頭</button>
+                <button onClick={() => addSegAt('tail')} title="いちばん右（最後の辺の後）に辺を足す"
+                  className="px-2 py-0.5 text-xs whitespace-nowrap rounded border border-slate-600 hover:bg-slate-800">＋末尾</button>
+                <button onClick={addBothEnds} title="両端に辺を足す（コの字 → C形）"
+                  className="px-2 py-0.5 text-xs whitespace-nowrap rounded border border-amber-600 text-amber-300 hover:bg-amber-900/30">＋両端（C形）</button>
+                <button onClick={() => removeSegAt('head')} disabled={segs.length <= 2}
+                  className="px-2 py-0.5 text-xs whitespace-nowrap rounded border border-slate-600 hover:bg-slate-800 disabled:opacity-40">－先頭</button>
+                <button onClick={() => removeSegAt('tail')} disabled={segs.length <= 2}
+                  className="px-2 py-0.5 text-xs whitespace-nowrap rounded border border-slate-600 hover:bg-slate-800 disabled:opacity-40">－末尾</button>
               </div>
             </div>
             <div className="flex items-center gap-2 mb-3 flex-wrap">

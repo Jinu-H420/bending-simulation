@@ -6,6 +6,7 @@
 //   ok: 曲がった true／曲がらなかった false。長さ（力）で曲がらなかったときは "lenFail": true
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { upsertRecords, sameKey } from '../src/records.js';
 
 const DIR = process.env.BENDSIM_DIR || '\\\\srv02\\共有\\データフォルダ\\ユーザー共有用\\地主\\claudecode\\曲げシミュレーション';
 const FILE = join(DIR, 'bendsim.json');
@@ -26,8 +27,10 @@ const one = {
   sel: null, L: null, method: 'normal', punch: '904061', lenFail: false, note: '', slip: '', dev: 'Claude', ...rec,
   dims: rec.dims.map(Number),
 };
-data.zuRecords = [one, ...(data.zuRecords || [])];
+// 同じ内容の実績があれば、足さずに上書きする（並びは登録した新しい順）
+const dup = (data.zuRecords || []).some((r) => sameKey(r) === sameKey(one));
+data.zuRecords = upsertRecords(data.zuRecords || [], [one]);
 data.savedAt = d.toISOString();
 data.savedBy = `Claude（${rec.who}）`;
 writeFileSync(FILE, JSON.stringify(data, null, 1));
-console.log('登録しました', JSON.stringify(one));
+console.log(dup ? '同じ内容の実績を上書きしました' : '登録しました', JSON.stringify(one));

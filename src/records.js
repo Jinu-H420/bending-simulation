@@ -68,15 +68,64 @@ function save(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); return true; } catch { return false; }
 }
 
-// 2つの一覧を混ぜる（id が同じものは新しいほう）。共有フォルダとこのPCの控えを合わせるのに使う
+// 登録した時刻（ミリ秒）。シミュレーターは「2026-10-08 13:45」（日本時間）、ほかは「2026-10-08T04:45:00Z」で
+// 書いているので、文字のまま比べると順番が崩れる。時刻に直して比べる
+export function atMs(r) {
+  const s = String((r && r.at) || '');
+  const ms = Date.parse(s.includes('T') ? s : s.replace(' ', 'T'));
+  return Number.isFinite(ms) ? ms : 0;
+}
+// 新しい順（登録した新しいものが上）
+export const byNewest = (a, b) => atMs(b) - atMs(a);
+
+// 同じ内容の実績かを見る鍵。シミュレーターの記録は段取り（case.key）、
+// ほかは 形・材質・板厚・型・寸法・L・曲げ方・ヤゲン。○✕ は鍵に入れない（同じ条件なら新しい結果で上書き）
+export function sameKey(r) {
+  if (r.case && r.case.key) return `sim|${r.case.key}`;
+  if (r.key && r.bent !== undefined) return `old|${r.key}`;   // 前の形の記録（共有フォルダの records）
+  return [r.shape, r.mat, Number(r.t), r.V || '', r.sel || '',
+    (r.dims || []).map((x) => +Number(x).toFixed(1)).join('/'), r.L || '', r.method || 'normal', r.punch || '', r.lenFail ? 'L' : '']
+    .join('|');
+}
+// 同じ内容の重複を、新しい1件だけにする
+function dedupe(list) {
+  const seen = new Set();
+  return list.slice().sort(byNewest).filter((r) => {
+    const k = sameKey(r);
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+}
+// 実績を足す。同じ id か同じ内容の記録があれば、足さずに上書きする（何回押しても1件のまま）。
+// 名前・伝票番号・ひとことを空で押したときは前のものを残し、回数 n を足す。返すのは新しい順
+export function upsertRecords(list, incoming) {
+  let next = (list || []).slice();
+  for (const r of incoming || []) {
+    if (!r || !r.id) continue;
+    const byId = next.find((x) => x.id === r.id);
+    if (byId) {
+      if (atMs(r) >= atMs(byId)) next = next.map((x) => (x.id === r.id ? r : x));
+      continue;
+    }
+    const old = next.find((x) => sameKey(x) === sameKey(r));
+    if (!old) { next.push(r); continue; }
+    next = next.filter((x) => x !== old);
+    next.push({ ...r, who: r.who || old.who || '', slip: r.slip || old.slip || '', note: r.note || old.note || '',
+      n: (old.n || 1) + 1 });
+  }
+  return dedupe(next);
+}
+
+// 2つの一覧を混ぜる（id が同じものは新しいほう。同じ内容のものも新しい1件にまとめる）。
+// 共有フォルダとこのPCの控えを合わせるのに使う
 export function mergeRecords(a, b) {
   const m = new Map((a || []).map((r) => [r.id, r]));
   for (const r of b || []) {
     if (!r || !r.id) continue;
     const cur = m.get(r.id);
-    if (!cur || (r.at || '') >= (cur.at || '')) m.set(r.id, r);
+    if (!cur || atMs(r) >= atMs(cur)) m.set(r.id, r);
   }
-  const next = [...m.values()].sort((x, y) => ((x.at || '') < (y.at || '') ? 1 : -1));
+  const next = dedupe([...m.values()]);
   save(next);
   return next;
 }
@@ -87,7 +136,8 @@ export function addRecord(list, c, bent, note, who, slip) {
   const key = caseKey(c);
   const d = new Date();   // 記録の日時は日本時間（端末の時刻）で残す
   const p2 = (n) => String(n).padStart(2, '0');
-  const now = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  // 秒まで残す（同じ分に登録したほかの記録と、新しい順に並べられるように）
+  const now = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
   const next = list.slice();
   const i = next.findIndex((r) => r.case && r.case.key === key);
   const one = {
@@ -103,7 +153,9 @@ export function addRecord(list, c, bent, note, who, slip) {
       seq: c.seq.map((s) => ({ bend: s.bend, mirror: !!s.mirror, valley: !!s.valley })),
     },
   };
-  if (i >= 0) { one.n = (next[i].n || 1) + 1; one.note = note || next[i].note; next[i] = one; } else next.unshift(one);
+  // 上書きしたものも、登録した新しいものとして一番上に出す
+  if (i >= 0) { one.n = (next[i].n || 1) + 1; one.note = note || next[i].note; next.splice(i, 1); }
+  next.unshift(one);
   save(next);
   return { list: next, rec: one };
 }

@@ -5,6 +5,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
 import { METHOD_JA } from '../zu/judge.js';
+import { byNewest } from './records.js';
 import './check.css';
 
 const SHAPE_JA = { L: 'L曲げ', U: 'コの字', Z: 'Z曲げ', HAT: 'ハット', C: 'C形', free: 'その他' };
@@ -76,7 +77,7 @@ function App() {
   const list = useMemo(() => recs.filter((r) => (shape === 'すべて' || r.shape === shape)
     && (mat === 'すべて' || r.mat === mat)
     && (tSel === 'すべて' || String(r.t) === String(tSel))
-    && (die === 'すべて' || dieName(r) === die)), [recs, shape, mat, tSel, die]);
+    && (die === 'すべて' || dieName(r) === die)).sort(byNewest), [recs, shape, mat, tSel, die]);   // 登録した新しい順
   const bad = useMemo(() => conflicts(recs), [recs]);
   const badIds = new Set(bad.flatMap((c) => [c.ok.id, c.ng.id]));
 

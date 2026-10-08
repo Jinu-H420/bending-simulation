@@ -9,7 +9,7 @@ import {
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, matDies,
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON } from '../zu/judge.js';
-import { learned, gapLimit, deviceId } from './records.js';
+import { learned, gapLimit, deviceId, sameKey, byNewest } from './records.js';
 import { LimitChart, LimitDetail, QuickTable } from '../zu/limits.jsx';
 import ZU_DATA from '../zu/data/zu-data.json';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
@@ -387,7 +387,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
   const die = dies.find((d) => d.sel === sel) || dies[0];
   const done = die && REC_SHAPES.includes(shape)
     ? recMatch({ mat, t: Number(t), V: die.V, sel: die.sel }, shape, dims.map(Number), Number(L) || 0, recs).ok : null;
-  const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === Number(t));
+  const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === Number(t)).sort(byNewest);   // 新しい順
   const S = SHAPES[shape];
   const save = (ok) => {
     if (!die) return;
@@ -526,8 +526,11 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
   const saveRec = async (rec) => {
     if (!dir) return;
     try {
+      // 同じ内容の実績がもうあれば、足さずに上書きする（何回押しても1件のまま）
+      const dup = recs.some((r) => sameKey(r) === sameKey(rec));
       const d = await folderPush(dir, { zuRecords: [rec] }, rec.who);
-      setRecs(d.zuRecords || []); setRecMsg('実績を登録しました。次の判定から使います');
+      setRecs(d.zuRecords || []);
+      setRecMsg(dup ? '同じ内容の実績があったので、上書きしました（1件のままです）' : '実績を登録しました。次の判定から使います');
     } catch (e) { setRecMsg(`登録できませんでした：${e.message}`); }
   };
   const dropRec = async (id) => {

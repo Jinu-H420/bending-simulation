@@ -7,6 +7,8 @@
 // ブラウザ（Chrome・Edge）のフォルダ読み書き機能を使う。最初に1回フォルダを選ぶと、
 // 選んだフォルダをブラウザが覚えている。iPhone など使えない端末では何もしない。
 
+import { upsertRecords } from './records.js';
+
 const FILE = 'bendsim.json';
 const DB = 'bendsim-folder';
 
@@ -119,11 +121,10 @@ export async function push(dir, change, who) {
     let recs = mergeRecords(data.records, change.records);
     if (change.removeKeys && change.removeKeys.length) recs = recs.filter((r) => !change.removeKeys.includes(r.key));
     next.records = recs;
-    // Z・コの字判定の実績：id で足し算（ほかのPCで足したものを消さない）。消すときは removeZu に id
-    const zu = new Map((data.zuRecords || []).map((z) => [z.id, z]));
-    for (const z of change.zuRecords || []) if (z && z.id) zu.set(z.id, z);
-    for (const id of change.removeZu || []) zu.delete(id);
-    next.zuRecords = [...zu.values()].sort((a, b) => (a.at < b.at ? 1 : -1));
+    // 実績（zuRecords）：足し算（ほかのPCで足したものを消さない）。同じ内容の記録があれば上書きして1件のまま。
+    // 並びは登録した新しい順。消すときは removeZu に id
+    const gone = new Set(change.removeZu || []);
+    next.zuRecords = upsertRecords((data.zuRecords || []).filter((z) => !gone.has(z.id)), change.zuRecords || []);
     await writeText(dir, FILE, JSON.stringify(next, null, 1));
     return next;
   } catch (e) {

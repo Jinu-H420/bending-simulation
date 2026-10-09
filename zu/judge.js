@@ -454,8 +454,18 @@ export function lenLimit(row) {
 //   L ：基準より小さいVのときだけ見る。曲がった実績の L 以下なら ○、曲がらなかった L 以上なら ✕
 export const METHOD_JA = { normal: '普通に', kuno: 'くの字ヤゲンで', naka: '中押しで' };
 const recKey = (s, r) => [s, r.mat, r.t, r.V].join('|');
+// 曲がらなかった理由。'out'＝曲げた後に抜けられない（型を替えても同じ）。無し＝型に当たった（その型だけ）
+export const CAUSE_JA = { die: '型に当たった（この型だけ）', out: '曲げた後に抜けられない（どの型でも）' };
+// 型に関係なく曲がらなかった記録（cause:'out'）は、型・V を問わず、ほぼ同じ寸法（各辺 ±5mm、左右反転も）だけに当てはめる。
+// 似た寸法に広げない（何が抜けを邪魔したかは寸法ごとに違うため）
+export function outNgMatch(shape, mat, t, dims, recs) {
+  const d = (dims || []).map(Number);
+  const near = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 5);
+  return (recs || []).find((r) => r && !r.ok && r.cause === 'out' && r.shape === shape && r.mat === mat
+    && Number(r.t) === Number(t) && Array.isArray(r.dims) && (near(d, r.dims) || near(d, [...r.dims].reverse()))) || null;
+}
 // 同じ V でも HG のインサートと2溝ダイは別の型。型（sel）が書いてない実績は同じVならどちらにも使う
-const sameDie = (rec, row) => !rec.sel || !row.sel || rec.sel === row.sel;
+const sameDie = (rec, row) => rec.cause !== 'out' && (!rec.sel || !row.sel || rec.sel === row.sel);
 // C形 [A,H1,W,H2,B]：底Wと立上りが実績と ±5mm 以内で、リップが短い（easy）／長い（hard）か同じ。
 // 左右を入れ替えた向き（B,H2,W,H1,A）でも見る
 function cMatch(dims, rd, easy) {
@@ -477,7 +487,7 @@ function harderOrSame(shape, dims, L, rec, smallV) {
   if (shape === 'Z') return dims[1] <= rec.dims[1] && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
   return Math.abs(dims[1] - rec.dims[1]) <= 5 && Math.min(dims[0], dims[2]) >= Math.min(rec.dims[0], rec.dims[2]);
 }
-const recText = (r) => (!r || !Array.isArray(r.dims) ? '（記録の中身が足りません）' : `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : r.shape === 'C' ? `C形 A${r.dims[0]}・H${r.dims[1]}・W${r.dims[2]}・H${r.dims[3]}・B${r.dims[4]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${r.who ? `（${r.who}）` : ''}`);
+const recText = (r) => (!r || !Array.isArray(r.dims) ? '（記録の中身が足りません）' : `${String(r.at).slice(0, 10)} ${r.shape === 'Z' ? `A${r.dims[0]}・S${r.dims[1]}・B${r.dims[2]}` : r.shape === 'C' ? `C形 A${r.dims[0]}・H${r.dims[1]}・W${r.dims[2]}・H${r.dims[3]}・B${r.dims[4]}` : `H${r.dims[0]}・W${r.dims[1]}・H${r.dims[2]}`}${r.L ? `・L${r.L}` : ''} を${METHOD_JA[r.method] || ''}${r.ok ? '曲げた' : '曲げられなかった'}${!r.ok && r.cause === 'out' ? '（曲げた後に抜けられない）' : ''}${r.who ? `（${r.who}）` : ''}`);
 // 小さいVの最長L：曲がった実績の一番長い L
 function recMaxL(recs, shape, row) {
   const ls = (recs || []).filter((r) => r.ok && r.mat === row.mat && r.t === row.t && r.V === row.V && sameDie(r, row) && r.L > 0).map((r) => r.L);
@@ -485,6 +495,13 @@ function recMaxL(recs, shape, row) {
 }
 function withRecords(res, shape, dims, L, recs) {
   if (!recs || !recs.length) return res;
+  // 曲げた後に抜けられない（型に関係なく）と登録した寸法は、どの型でも ✕
+  const out = outNgMatch(shape, res.row.mat, res.row.t, dims, recs);
+  if (out) {
+    return { ...res, grade: 'ng', src: '実績', outNg: out,
+      why: `実績：${recText(out)}${out.note ? `「${out.note}」` : ''}。型を替えても同じです`,
+      fix: '形・寸法を見直す（曲げた後に機械から抜けられない）' };
+  }
   const k = recKey(shape, res.row);
   const same = recs.filter((r) => r && Array.isArray(r.dims) && r.dims.length >= 3
     && recKey(r.shape, r) === k && sameDie(r, res.row));

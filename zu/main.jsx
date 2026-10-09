@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
 import { LimitChart, LimitDetail, QuickTable } from './limits.jsx';
-import { METHOD_JA, recMatch, recText, judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH, Z_ACT_ON } from './judge.js';
+import { METHOD_JA, CAUSE_JA, outNgMatch, recMatch, recText, judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH, Z_ACT_ON } from './judge.js';
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from '../src/cloud.js';
 import { deviceId, sameKey, byNewest } from '../src/records.js';
@@ -248,6 +248,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
   const [note, setNote] = useState('');
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
   const [slip, setSlip] = useState('');   // 伝票番号（任意）
+  const [cause, setCause] = useState('die');   // ✕ のときの理由（die＝この型だけ／out＝曲げた後に抜けられない）
   // 判定の答えの曲げ方を、そのまま既定にする
   const autoMethod = best && best.src === '中押し' ? 'naka' : best && best.special ? 'kuno' : 'normal';
   useEffect(() => { if (best) { setV(best.row.id); setMethod(autoMethod); } }, [best && best.row.id, autoMethod, shape, t]);
@@ -263,7 +264,9 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
       shape, mat, t, V: row.V, machine: row.machine, sel: row.sel, dims: dims.map(Number), L: L > 0 ? L : null,
       method: m.startsWith('kuno') ? 'kuno' : m,
       punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
-      ok, lenFail: false, note: note.trim(),
+      ok, lenFail: false,
+      note: note.trim() || (!ok && cause === 'out' ? '曲げた後に抜けられない' : ''),
+      ...(ok ? {} : { cause }),
       // そのときの計算（○✕と余裕）も残す。次からの「要る余裕」の学習に使う
       case: { key: null, sim: picked.grade !== 'ng', gap: typeof picked.gap === 'number' ? picked.gap : null },
     });
@@ -293,6 +296,11 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
             <button className="big ok" onClick={() => save(true)}>○ 曲がった（登録）</button>
             <button className="big ng" onClick={() => save(false)}>✕ 曲がらなかった</button>
           </div>
+          <label className="rec-cause"><span>✕ のときの理由</span>
+            <select value={cause} onChange={(e) => setCause(e.target.value)}>
+              {Object.entries(CAUSE_JA).map(([k, w]) => <option key={k} value={k}>{w}</option>)}
+            </select>
+          </label>
           <button className="linkish" onClick={() => setOpen(!open)}>{open ? '閉じる' : '型・曲げ方・名前・伝票番号を入れる'}</button>
           {open && (
             <div className="rec-grid">

@@ -169,3 +169,9 @@ header p { margin-bottom: 10px; font-size: 13.5px; }
   background: color-mix(in srgb, var(--accent) 10%, var(--card)); border: 1px solid var(--accent); color: var(--sub); }
 .stale-bar b { color: var(--accent); }
 .colR.is-stale > :not(.stale-bar) { opacity: .45; }
+
+/* 実績の登録：✕ のときの理由 */
+.rec-cause { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; font-size: 13px; color: var(--sub); flex-wrap: wrap; }
+.rec-cause select { font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: inherit; }
+.rec-done.ng { border-color: var(--ng); background: var(--ng-bg); }
+.rec-done.ng b { color: var(--ng); }

@@ -8,7 +8,7 @@ import {
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, matDies,
 } from '../bending-simulator.jsx';
-import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON } from '../zu/judge.js';
+import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON, outNgMatch, CAUSE_JA } from '../zu/judge.js';
 import { learned, gapLimit, deviceId, sameKey, byNewest } from './records.js';
 import { LimitChart, LimitDetail, QuickTable } from '../zu/limits.jsx';
 import ZU_DATA from '../zu/data/zu-data.json';
@@ -174,6 +174,12 @@ function withZAct(r, { shape, outer, t, mat, sel }) {
 // 曲げ屋さんに確かめて登録した実績があれば、計算より優先する（Z・コの字・C形）
 function withRecs(r, { shape, outer, L, recs }) {
   if (!recs || !recs.length || r.skip || !r.V || !REC_SHAPES.includes(shape)) return r;
+  // 「曲げた後に抜けられない」と登録した寸法は、型を替えても同じなので ✕ だけにする（ほかの型も探さない）
+  const out = outNgMatch(shape, r.mat, r.t, outer, recs);
+  if (out) {
+    return { ...r, ok: false, method: null, src: '実績', rec: out, outNg: true, kunoWin: null,
+      why: `実績：${recText(out)}${out.note ? `「${out.note}」` : ''}。型を替えても同じなので、ほかの型は探しません` };
+  }
   const m = recMatch({ mat: r.mat || null, t: r.t, V: r.V, sel: r.sel }, shape, outer, L, recs);
   if (!m.same.length) return r;
   // 登録した「曲がった」実績は必ず勝たせる（反対の実績があるときは注意書きを足す）。
@@ -382,11 +388,13 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
   const [note, setNote] = useState('');
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
   const [slip, setSlip] = useState('');   // 伝票番号（任意）
+  const [cause, setCause] = useState('die');   // ✕ のときの理由（die＝この型だけ／out＝曲げた後に抜けられない）
   const autoMethod = best && best.method === 'naka' ? 'naka' : best && best.method === 'kuno' ? 'kuno' : 'normal';
   useEffect(() => { if (best) { setSel(best.sel); setMethod(autoMethod); } }, [best && best.sel, autoMethod]);
   const die = dies.find((d) => d.sel === sel) || dies[0];
   const done = die && REC_SHAPES.includes(shape)
-    ? recMatch({ mat, t: Number(t), V: die.V, sel: die.sel }, shape, dims.map(Number), Number(L) || 0, recs).ok : null;
+    ? (recMatch({ mat, t: Number(t), V: die.V, sel: die.sel }, shape, dims.map(Number), Number(L) || 0, recs).ok
+      || outNgMatch(shape, mat, Number(t), dims, recs)) : null;
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === Number(t)).sort(byNewest);   // 新しい順
   const S = SHAPES[shape];
   const save = (ok) => {
@@ -399,8 +407,10 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
       dims: dims.map(Number), L: Number(L) > 0 ? Number(L) : null,
       method: m.startsWith('kuno') ? 'kuno' : m,
       punch: m === 'kuno' ? '特殊 くの字165' : m === 'kuno100' ? '特殊 くの字100' : '904061',
-      ok, lenFail: false, note: note.trim(),
-      // そのときの計算（○✕と余裕）も残す。次からの「要る余裕」の学習に使う
+      ok, lenFail: false,
+      note: note.trim() || (!ok && cause === 'out' ? '曲げた後に抜けられない' : ''),
+      ...(ok ? {} : { cause }),
+      // そのときの計算（○✕と余裕）も残す。次からの「要る余裕」の学習に使う（抜けられないは使わない）
       case: { key: null, sim: !!(best && best.ok), gap: best && typeof best.gap === 'number' ? best.gap : null },
     });
     setNote('');
@@ -418,7 +428,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
       ) : (
         <>
           {done ? (
-            <div className="rec-done"><b>登録済みです</b><div>{recText(done)}</div></div>
+            <div className={`rec-done ${done.ok ? '' : 'ng'}`}><b>登録済みです</b><div>{recText(done)}{done.note ? `「${done.note}」` : ''}</div></div>
           ) : (
             <div className="hint" style={{ marginTop: 0 }}>
               {S.labels.map((lb, i) => `${lb} ${dims[i]}`).join('・')}　{mat} t{t}　L{L || '—'}　／　{die ? die.label : ''}
@@ -429,6 +439,11 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
             <button className="big ok" onClick={() => save(true)}>○ 曲がった（登録）</button>
             <button className="big ng" onClick={() => save(false)}>✕ 曲がらなかった</button>
           </div>
+          <label className="rec-cause"><span>✕ のときの理由</span>
+            <select value={cause} onChange={(e) => setCause(e.target.value)}>
+              {Object.entries(CAUSE_JA).map(([k, w]) => <option key={k} value={k}>{w}</option>)}
+            </select>
+          </label>
           <button className="linkish" onClick={() => setOpen(!open)}>{open ? '閉じる' : '型・曲げ方・名前・伝票番号を入れる'}</button>
           {open && (
             <div className="row">
@@ -645,7 +660,7 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
 
   // 基準金型で曲がらない（または中押し・くの字が要る）ときは、押さなくても自動でほかの金型を探す。
   // （V12 では当たるが V8 なら普通に曲がる、のような段取りを見落とさないため）
-  const needScan = !!(result && !result.note && !result.skip && (!result.ok || result.method));
+  const needScan = !!(result && !result.note && !result.skip && !result.outNg && (!result.ok || result.method));
   useEffect(() => {
     if (needScan && result && result.inp) runOthers();
   }, [result]);
@@ -768,14 +783,14 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
               <Result r={rescue} big now={now} />
             </div>
           )}
-          {!others && !busy && (
+          {!others && !busy && !result.outNg && (
             <button className="more" onClick={runOthers}>
               {needScan ? '曲がる金型を探す' : 'ほかの金型でも曲がるか調べる'}
             </button>
           )}
         </section>
       )}
-      {limitRow && (
+      {limitRow && !(result && result.outNg) && (
         <section className="card">
           <div className="step">どこまで曲げられるか（{limitRow.die}・{snap.mat} t{snap.t}）</div>
           <div className="limits">

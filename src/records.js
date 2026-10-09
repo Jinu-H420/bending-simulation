@@ -188,8 +188,9 @@ export function missRate(list, c) {
 //   allow ：シミュレーションでは当たるのに曲がった → その分は当たっても曲がる（板が逃げるなど）
 // どちらも同じ型・材質・板厚の記録だけを見る。記録が無ければ null。
 export function learned(list, sel, mat, t) {
+  // 「曲げた後に抜けられない」（cause:'out'）は型に当たったのではないので、余裕の学習には使わない
   const rel = (list || []).filter((r) => r.sel === sel && r.mat === mat && Number(r.t) === Number(t)
-    && r.case && typeof r.case.gap === 'number');
+    && r.cause !== 'out' && r.case && typeof r.case.gap === 'number');
   if (!rel.length) return null;
   const tooTight = rel.filter((r) => !r.ok && r.case.gap >= -0.05).map((r) => r.case.gap);
   const bentAnyway = rel.filter((r) => r.ok && r.case.gap < -0.05).map((r) => -r.case.gap);

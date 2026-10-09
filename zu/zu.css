@@ -198,3 +198,7 @@ button.big.ok { border: 2px solid var(--ok); color: var(--ok); }
 button.big.ng { border: 2px solid var(--ng); color: var(--ng); }
 button.big:hover { filter: brightness(1.05); }
 button.linkish { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 8px 0 0; }
+
+/* 実績の登録：✕ のときの理由 */
+.rec-cause { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; font-size: 13px; color: var(--sub); flex-wrap: wrap; }
+.rec-cause select { font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: inherit; }

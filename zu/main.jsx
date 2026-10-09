@@ -8,6 +8,7 @@ import { METHOD_JA, CAUSE_JA, outNgMatch, recMatch, recText, judgeAll, zLimitA, 
 import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from '../src/cloud.js';
 import { deviceId, sameKey, byNewest } from '../src/records.js';
+import { RecEditForm } from '../src/RecEdit.jsx';
 import './zu.css';
 
 const ROWS = DATA.rows;
@@ -249,6 +250,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
   const [who, setWho] = useState(() => { try { return localStorage.getItem('zu.who') || ''; } catch { return ''; } });
   const [slip, setSlip] = useState('');   // 伝票番号（任意）
   const [cause, setCause] = useState('die');   // ✕ のときの理由（die＝この型だけ／out＝曲げた後に抜けられない）
+  const [editId, setEditId] = useState(null);  // 一覧で直している実績
   // 判定の答えの曲げ方を、そのまま既定にする
   const autoMethod = best && best.src === '中押し' ? 'naka' : best && best.special ? 'kuno' : 'normal';
   useEffect(() => { if (best) { setV(best.row.id); setMethod(autoMethod); } }, [best && best.row.id, autoMethod, shape, t]);
@@ -336,7 +338,8 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
               <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th>ひとこと</th><th></th></tr></thead>
               <tbody>
                 {mine.map((r) => (
-                  <tr key={r.id}>
+                  <React.Fragment key={r.id}>
+                  <tr className={editId === r.id ? 'editing' : ''}>
                     <td>{String(r.at).slice(5, 10)}</td>
                     <td>V{r.V}{/^lib:30[56]40:/.test(r.sel || '') ? ' 2溝' : ''}</td>
                     <td>{(r.dims || []).join('・')}</td>
@@ -344,8 +347,17 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
                     <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
                     <td className={r.ok ? 'g ok-sim' : 'g ng'}>{r.ok ? '○' : '✕'}</td>
                     <td className="memo">{!r.ok && r.cause === 'out' && <b className="cause">抜けられない</b>}{r.note || (r.ok || r.cause === 'out' ? '' : '—')}</td>
-                    <td><button className="del" onClick={() => { if (confirm('この実績を消しますか？')) dropRec(r.id); }}>消す</button></td>
+                    <td className="acts">
+                      <button className="edit" onClick={() => setEditId(editId === r.id ? null : r.id)}>{editId === r.id ? '閉じる' : '直す'}</button>
+                      <button className="del" onClick={() => { if (confirm('この実績を消しますか？')) dropRec(r.id); }}>消す</button>
+                    </td>
                   </tr>
+                  {editId === r.id && (
+                    <tr className="edit-row"><td colSpan={8}>
+                      <RecEditForm rec={r} onSave={async (x) => { await saveRec(x, '直しました'); setEditId(null); }} onCancel={() => setEditId(null)} />
+                    </td></tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -414,14 +426,14 @@ function App() {
       if (await permission(d, true) === 'granted') await openDir(d);
     } catch (e) { if (!(e && e.name === 'AbortError')) setRecMsg(`つながりませんでした：${e.message || e}`); }
   };
-  const saveRec = async (rec) => {
+  const saveRec = async (rec, doneMsg) => {
     if (!dir) return;
     try {
       // 同じ内容の実績がもうあれば、足さずに上書きする（何回押しても1件のまま）
       const dup = recs.some((r) => sameKey(r) === sameKey(rec));
       const d = await folderPush(dir, { zuRecords: [rec] }, rec.who);
       setRecs(d.zuRecords || []);
-      setRecMsg(dup ? '同じ内容の実績があったので、上書きしました（1件のままです）' : '実績を登録しました。次の判定から使います');
+      setRecMsg(doneMsg || (dup ? '同じ内容の実績があったので、上書きしました（1件のままです）' : '実績を登録しました。次の判定から使います'));
     } catch (e) { setRecMsg(`登録できませんでした：${e.message}`); }
   };
   const dropRec = async (id) => {

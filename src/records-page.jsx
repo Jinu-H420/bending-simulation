@@ -4,6 +4,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
+import { RecEditForm } from './RecEdit.jsx';
 import { METHOD_JA } from '../zu/judge.js';
 import { byNewest } from './records.js';
 import './check.css';
@@ -45,6 +46,8 @@ function App() {
   const [mat, setMat] = useState('すべて');
   const [tSel, setTSel] = useState('すべて');
   const [die, setDie] = useState('すべて');
+  const [editId, setEditId] = useState(null);   // いま直している実績
+  const [busy, setBusy] = useState(false);
 
   const open = async (d) => {
     try {
@@ -73,6 +76,14 @@ function App() {
     catch (e) { setMsg(`消せませんでした：${e.message}`); }
   };
 
+  // 直した実績を共有フォルダに書く（同じ id の記録を置き換える）
+  const saveEdit = async (rec) => {
+    if (!dir) return;
+    setBusy(true);
+    try { const d = await folderPush(dir, { zuRecords: [rec] }); setRecs(d.zuRecords || []); setEditId(null); setMsg('直しました'); }
+    catch (e) { setMsg(`直せませんでした：${e.message}`); }
+    setBusy(false);
+  };
   const uniq = (f) => ['すべて', ...[...new Set(recs.map(f).filter((x) => x != null && x !== ''))].sort()];
   const list = useMemo(() => recs.filter((r) => (shape === 'すべて' || r.shape === shape)
     && (mat === 'すべて' || r.mat === mat)
@@ -138,7 +149,8 @@ function App() {
             </thead>
             <tbody>
               {list.map((r) => (
-                <tr key={r.id} className={badIds.has(r.id) ? 'bad' : ''}>
+                <React.Fragment key={r.id}>
+                <tr className={`${badIds.has(r.id) ? 'bad' : ''} ${editId === r.id ? 'editing' : ''}`}>
                   <td>{String(r.at).slice(0, 10)}</td>
                   <td>{SHAPE_JA[r.shape] || r.shape}</td>
                   <td>{r.mat} t{r.t}</td>
@@ -152,9 +164,19 @@ function App() {
                   <td>{r.who || '—'}</td>
                   <td>{r.slip || '—'}</td>
                   <td>{r.dev || '—'}</td>
-                  <td>{r.note || ''}</td>
-                  <td><button className="del" onClick={() => { if (confirm('この実績を消しますか？')) drop(r.id); }}>消す</button></td>
+                  <td className="memo">{!r.ok && r.cause === 'out' && <b className="cause">抜けられない</b>}{r.note || ''}
+                    {r.editedAt && <div className="sub2">{new Date(r.editedAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })} に直した</div>}</td>
+                  <td className="acts">
+                    <button className="edit" onClick={() => setEditId(editId === r.id ? null : r.id)}>{editId === r.id ? '閉じる' : '直す'}</button>
+                    <button className="del" onClick={() => { if (confirm('この実績を消しますか？')) drop(r.id); }}>消す</button>
+                  </td>
                 </tr>
+                {editId === r.id && (
+                  <tr className="edit-row"><td colSpan={13}>
+                    <RecEditForm rec={r} busy={busy} onSave={saveEdit} onCancel={() => setEditId(null)} />
+                  </td></tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

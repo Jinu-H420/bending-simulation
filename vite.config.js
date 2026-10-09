@@ -12,7 +12,8 @@ export default defineConfig(({ command }) => ({
   build: single ? {} : { rollupOptions: { input: { main: 'index.html', check: 'check.html', c: 'c.html', zu: 'zu/index.html', records: 'records.html' } } },
   plugins: [react(), tailwindcss()],
   server: {
-    port: 5173,
+    // 別のチャットが 5173 を使っているときは、プレビューが渡す PORT で起動する
+    port: Number(process.env.PORT) || 5173,
     open: false,
   },
 }));

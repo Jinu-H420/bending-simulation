@@ -255,6 +255,9 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
   const picked = list.find((r) => r.row.id === V) || list[0];
   const row = picked.row;
   const done = recMatch(row, shape, dims, L, recs).ok;     // すでに実績がある寸法
+  // すでに ✕ で登録してある寸法なら、理由はその登録のものにしておく（ひとことだけ足したいときに理由が変わらないように）
+  const prevNg = outNgMatch(shape, mat, t, dims, recs) || recMatch(row, shape, dims, L, recs).ng;
+  useEffect(() => { if (prevNg && prevNg.cause) setCause(prevNg.cause); }, [prevNg && prevNg.id, prevNg && prevNg.cause]);
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === t).sort(byNewest);   // 新しい順
   const save = (ok) => {
     try { localStorage.setItem('zu.who', who.trim()); } catch { /* 無視 */ }

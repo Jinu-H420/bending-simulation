@@ -96,8 +96,16 @@ function dedupe(list) {
     seen.add(k); return true;
   });
 }
+// ひとことを足す。前のものは消さない（同じなら1つ）。2026-10-09：上書きでひとことが消えて困ったため
+const joinNote = (a, b) => {
+  const x = (a || '').trim(), y = (b || '').trim();
+  if (!x) return y;
+  if (!y || x.includes(y)) return x;
+  if (y.includes(x)) return y;
+  return `${x}／${y}`;
+};
 // 実績を足す。同じ id か同じ内容の記録があれば、足さずに上書きする（何回押しても1件のまま）。
-// 名前・伝票番号・ひとことを空で押したときは前のものを残し、回数 n を足す。返すのは新しい順
+// 名前・伝票番号を空で押したときは前のものを残し、ひとことは前のものに足し、回数 n を足す。返すのは新しい順
 export function upsertRecords(list, incoming) {
   let next = (list || []).slice();
   for (const r of incoming || []) {
@@ -110,7 +118,8 @@ export function upsertRecords(list, incoming) {
     const old = next.find((x) => sameKey(x) === sameKey(r));
     if (!old) { next.push(r); continue; }
     next = next.filter((x) => x !== old);
-    next.push({ ...r, who: r.who || old.who || '', slip: r.slip || old.slip || '', note: r.note || old.note || '',
+    next.push({ ...r, who: r.who || old.who || '', slip: r.slip || old.slip || '', note: joinNote(old.note, r.note),
+      ...(r.ok ? {} : { cause: r.cause || old.cause }),
       n: (old.n || 1) + 1 });
   }
   return dedupe(next);

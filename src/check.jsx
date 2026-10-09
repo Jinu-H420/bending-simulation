@@ -396,6 +396,11 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
     ? (recMatch({ mat, t: Number(t), V: die.V, sel: die.sel }, shape, dims.map(Number), Number(L) || 0, recs).ok
       || outNgMatch(shape, mat, Number(t), dims, recs)) : null;
   const mine = recs.filter((r) => r.shape === shape && r.mat === mat && r.t === Number(t)).sort(byNewest);   // 新しい順
+  // すでに ✕ で登録してある寸法なら、理由はその登録のものにしておく（ひとことだけ足したいときに理由が変わらないように）
+  const prevNg = die && REC_SHAPES.includes(shape)
+    ? (outNgMatch(shape, mat, Number(t), dims, recs) || recMatch({ mat, t: Number(t), V: die.V, sel: die.sel }, shape, dims.map(Number), Number(L) || 0, recs).ng)
+    : null;
+  useEffect(() => { if (prevNg && prevNg.cause) setCause(prevNg.cause); }, [prevNg && prevNg.id, prevNg && prevNg.cause]);
   const S = SHAPES[shape];
   const save = (ok) => {
     if (!die) return;

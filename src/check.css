@@ -175,3 +175,7 @@ header p { margin-bottom: 10px; font-size: 13.5px; }
 .rec-cause select { font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: inherit; }
 .rec-done.ng { border-color: var(--ng); background: var(--ng-bg); }
 .rec-done.ng b { color: var(--ng); }
+
+/* 登録した実績の一覧：ひとこと（✕ は理由も） */
+.rec-list td.memo { font-size: 12.5px; color: var(--sub); overflow-wrap: anywhere; min-width: 6em; }
+.rec-list td.memo .cause { color: var(--ng); font-weight: 700; margin-right: 6px; }

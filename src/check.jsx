@@ -478,7 +478,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
           <div className="hint">登録には、このPCの番号 <b>{deviceId() || '—'}</b> が自動で付きます（どのPCから登録したか分かるように）。</div>
           {mine.length > 0 && (
             <table className="rec-list">
-              <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th /></tr></thead>
+              <thead><tr><th>日付</th><th>型</th><th>寸法</th><th>L</th><th>曲げ方</th><th>結果</th><th>ひとこと</th><th /></tr></thead>
               <tbody>
                 {mine.map((r) => (
                   <tr key={r.id}>
@@ -488,12 +488,14 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
                     <td>{r.L || '—'}</td>
                     <td>{(METHOD_JA[r.method] || '').replace(/で$|に$/, '')}</td>
                     <td className={r.ok ? 'g-ok' : 'g-ng'}>{r.ok ? '○' : '✕'}</td>
+                    <td className="memo">{!r.ok && r.cause === 'out' && <b className="cause">抜けられない</b>}{r.note || (r.ok || r.cause === 'out' ? '' : '—')}</td>
                     <td><button className="del" onClick={() => { if (confirm('この実績を消しますか？')) dropRec(r.id); }}>消す</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+          <div className="hint"><a href="./records.html" target="_blank" rel="noreferrer">▶ 登録した実績をぜんぶ見る（ひとこと・確かめた人・伝票番号・登録PC）</a></div>
         </>
       )}
     </section>

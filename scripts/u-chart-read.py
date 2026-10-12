@@ -1,5 +1,6 @@
 # コの字曲げ 早見グラフ（u-chart-sheet.py で作った xlsx）から、各型の表に書いてある実績を読む。
-#   出力: [{ t, V, entries: { 底W: 立上り | '×' }, min?: { h, w } }]（u-fit.mjs に渡す。min＝いちばん小さい断面の実績）
+#   出力: [{ t, V, entries: { 底W: 立上り | '×' | {lo, hi} }, min?: { h, w } }]（u-fit.mjs に渡す。min＝いちばん小さい断面の実績、
+#          {lo, hi}＝ハットで「25〜75」のように範囲で書いたもの）。コの字・ハットどちらの早見グラフも読める
 #   使い方: python scripts/u-chart-read.py 早見グラフ.xlsx > 実績.json
 import json
 import re
@@ -9,11 +10,24 @@ from openpyxl import load_workbook
 
 
 def num(v):
-    """書いてある値 → 数字 か '×' か None（全角の数字も読む）"""
+    """書いてある値 → 数字 か '×' か 範囲 {lo, hi}（「25〜75」「〜75」「25〜」） か None（全角の数字も読む）"""
     if isinstance(v, str):
-        v = v.strip().translate(str.maketrans('０１２３４５６７８９．', '0123456789.'))
+        v = v.strip().translate(str.maketrans('０１２３４５６７８９．～－', '0123456789.〜〜'))
         if v in ('×', '✕', 'x', 'X', '✖'):
             return '×'
+        for sep in ('〜', '~', '-'):
+            if sep in v:
+                a, b = (x.strip() for x in v.split(sep, 1))
+                rg = {}
+                for k, x in (('lo', a), ('hi', b)):
+                    try:
+                        f = float(x)
+                        rg[k] = int(f) if f.is_integer() else f
+                    except ValueError:
+                        pass
+                if 'hi' in rg and 'lo' not in rg:
+                    return rg['hi']
+                return rg or None
         try:
             v = float(v)
         except ValueError:
@@ -30,10 +44,10 @@ for ws in wb.worksheets[1:]:
     if not m:
         continue
     # 見出しの行（A列が「底W」）と、各段の「底W」の列を探す
-    hr = next((r for r in range(1, 30) if ws.cell(r, 1).value == '底W'), None)
+    hr = next((r for r in range(1, 30) if ws.cell(r, 1).value in ('底W', '上面W')), None)
     if hr is None:
         continue
-    cols = [c for c in range(1, 30) if ws.cell(hr, c).value == '底W']
+    cols = [c for c in range(1, 30) if ws.cell(hr, c).value in ('底W', '上面W')]
     ents = {}
     for c0 in cols:
         for r in range(hr + 1, hr + 200):
@@ -51,7 +65,7 @@ for ws in wb.worksheets[1:]:
         if str(ws.cell(r, 1).value or '').startswith('いちばん小さい断面'):
             for c in range(2, 30):
                 lab = ws.cell(r, c).value
-                if lab in ('立上り', '底W'):
+                if lab in ('立上り', '底W', '上面W'):
                     v = num(ws.cell(r, c + 1).value)
                     if isinstance(v, (int, float)):
                         mn['h' if lab == '立上り' else 'w'] = v

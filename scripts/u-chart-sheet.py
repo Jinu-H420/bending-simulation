@@ -17,6 +17,7 @@ from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
 
@@ -193,7 +194,10 @@ for gi, r in enumerate(rows, start=1):
 
     ch = ScatterChart()
     ch.style = 2
-    ch.width, ch.height = 26.5, 21.5
+    ch.width, ch.height = 26.5, 17      # 下に実績を入れる欄をとるため、少し低め
+    ER = 38                            # 実績を入れる欄の1行目（見出しは37行目）
+    N_ENT = 10                         # 実績を入れる行の数
+    hc = 70                            # グラフ用に実績を写す列（印刷範囲の外）
     X = Reference(ws, min_col=dc, min_row=4, max_row=3 + n)
     s1 = Series(Reference(ws, min_col=dc + 1, min_row=4, max_row=3 + n), X, title='上限（5mmごと）')
     s1.marker = Marker(symbol='circle', size=4)
@@ -227,6 +231,21 @@ for gi, r in enumerate(rows, start=1):
         s5.marker.graphicalProperties.line.solidFill = '0A7D0A'
         s5.graphicalProperties = line_props(None, none=True)
         ch.series.append(s5)
+    # 実績（下の欄に入れたもの）を ○＝緑・✕＝赤 でグラフに出す
+    XR = Reference(ws, min_col=hc, min_row=ER, max_row=ER + N_ENT - 1)
+    s6 = Series(Reference(ws, min_col=hc + 1, min_row=ER, max_row=ER + N_ENT - 1), XR, title='実績 ○ 曲がった')
+    s6.marker = Marker(symbol='circle', size=11)
+    s6.marker.graphicalProperties = GraphicalProperties(noFill=True)
+    s6.marker.graphicalProperties.line.solidFill = '0A7D0A'
+    s6.marker.graphicalProperties.line.width = 28575
+    s6.graphicalProperties = line_props(None, none=True)
+    s7 = Series(Reference(ws, min_col=hc + 2, min_row=ER, max_row=ER + N_ENT - 1), XR, title='実績 ✕ 曲がらなかった')
+    s7.marker = Marker(symbol='x', size=11)
+    s7.marker.graphicalProperties = GraphicalProperties(noFill=True)
+    s7.marker.graphicalProperties.line.solidFill = 'C62F2F'
+    s7.marker.graphicalProperties.line.width = 28575
+    s7.graphicalProperties = line_props(None, none=True)
+    ch.series.extend([s6, s7])
     axes(ch, lo, hi, ymax)
     ch.legend.position = 't'
     ws.add_chart(ch, 'A3')
@@ -249,6 +268,7 @@ for gi, r in enumerate(rows, start=1):
         txt = ('× 曲がらない' if v is None else f"{r['hLow']}〜なし（上限なし）" if v == 'なし'
                else f"{v} だけ" if v == r['hLow'] else f"{r['hLow']} 〜 {v}")
         ws.cell(4 + i, lc, int(k)); ws.cell(4 + i, lc + 1, txt)
+        ws.cell(4 + i, lc + 2, -1 if v is None else 9999 if v == 'なし' else v)   # 計算の上限（✕は -1、上限なしは 9999）
     nlk = len(h1)
     L1, L2 = get_column_letter(lc), get_column_letter(lc + 1)
     IN = f'{get_column_letter(t0 + 2)}4'
@@ -286,9 +306,64 @@ for gi, r in enumerate(rows, start=1):
         else:
             put(ws, rr, t0 + 2 * b + 1, (f"{v}だけ" if v == r['hLow'] else f"{r['hLow']}〜{v}"), size=11, bold=dip or first,
                 color='C62F2F' if dip else ('0A7D0A' if first else None), fill=MINF if first else None)
-    for rr in range(6, 8 + max(per, 41) + 1):
+    for rr in range(6, ER - 2):
         ws.row_dimensions[rr].height = 15
-    a3(ws, f'A1:{get_column_letter(t0 + 5)}{7 + max(per, 41)}')
+
+    # ---- 実績を入れる欄（グラフの下）。入れるとグラフに ○✕ が出て、計算と合っているかも出る
+    ecols = [('No', 1), ('日付', 1), ('伝票番号', 1), ('底W', 1), ('立上りH1', 1), ('立上りH2', 1), ('低いほうの\n立上り（自動）', 1),
+             ('曲げ長さ L', 1), ('結果\n○／✕', 1), ('曲げ方', 1), ('✕のときの理由', 1), ('当たった所・ひとこと', 2),
+             ('確かめた人', 2), ('計算では（自動）', 3)]
+    ws.merge_cells(start_row=ER - 2, start_column=1, end_row=ER - 2, end_column=t0 + 5)
+    et = ws.cell(ER - 2, 1, '実績（曲げ屋さんに確かめた結果）を入れる　―　寸法は外寸。入れるとグラフに ○（曲がった）・✕（曲がらなかった）が出て、右端に計算と合っているかが出ます')
+    et.font = Font(name=FONT, size=11.5, bold=True)
+    et.alignment = Alignment(horizontal='left', vertical='center')
+    ws.row_dimensions[ER - 2].height = 20
+    col = 1
+    cpos = {}
+    for name, w in ecols:
+        if name.startswith('計算では'):
+            col = t0          # 計算の欄は、右の表の下（グラフとの間のすき間の列はとばす）
+        if w > 1:
+            ws.merge_cells(start_row=ER - 1, start_column=col, end_row=ER - 1, end_column=col + w - 1)
+        put(ws, ER - 1, col, name, bold=True, size=9.5, fill=HEAD)
+        cpos[name] = col
+        col += w
+    ws.row_dimensions[ER - 1].height = 28
+    ENTRY = PatternFill('solid', fgColor='FFF7E6')
+    L = lambda name: get_column_letter(cpos[name])
+    hL, hR = get_column_letter(lc), get_column_letter(lc + 2)
+    look = f'${hL}$4:${hR}${3 + max(nlk, 1)}'
+    for k in range(N_ENT):
+        R = ER + k
+        ws.row_dimensions[R].height = 18
+        for name, w in ecols:
+            c = cpos[name]
+            if w > 1:
+                ws.merge_cells(start_row=R, start_column=c, end_row=R, end_column=c + w - 1)
+            if name == 'No':
+                put(ws, R, c, k + 1, size=10)
+            elif name.startswith('低いほう'):
+                put(ws, R, c, f'=IF({L("立上りH1")}{R}="","",IF({L("立上りH2")}{R}="",{L("立上りH1")}{R},MIN({L("立上りH1")}{R},{L("立上りH2")}{R})))', size=10.5, fill=PatternFill('solid', fgColor='EEF3FA'))
+            elif name.startswith('計算では'):
+                W_, G_, I_ = f'{L("底W")}{R}', f'{L("低いほうの\n立上り（自動）")}{R}', f'{L("結果\n○／✕")}{R}'
+                calc = f'IFERROR(AND({G_}>={r["hLow"]},{G_}<=VLOOKUP(INT({W_}),{look},3,FALSE)),FALSE)'
+                f = (f'=IF(OR({W_}="",{G_}=""),"",IF({calc},"計算 ○","計算 ✕")'
+                     f'&IF({I_}="","",IF(({I_}="○")={calc},"（合っている）","（食い違い）")))')
+                put(ws, R, c, f, size=10.5, fill=PatternFill('solid', fgColor='EEF3FA'))
+            else:
+                put(ws, R, c, None, size=10.5, fill=ENTRY, align='left' if name.startswith('当たった') else 'center')
+        # グラフ用（印刷範囲の外）：底W と、○ の高さ・✕ の高さ（入っていなければ #N/A で点を出さない）
+        G_, I_ = f'{L("低いほうの\n立上り（自動）")}{R}', f'{L("結果\n○／✕")}{R}'
+        ws.cell(R, hc, f'=IF({L("底W")}{R}="",NA(),{L("底W")}{R})')
+        ws.cell(R, hc + 1, f'=IF(AND({I_}="○",{G_}<>""),{G_},NA())')
+        ws.cell(R, hc + 2, f'=IF(AND({I_}="✕",{G_}<>""),{G_},NA())')
+    # 選べる欄（▼）。書き方が違ってもエラーにしない
+    for name, items in [('結果\n○／✕', ['○', '✕']), ('曲げ方', ['普通', 'くの字165', 'くの字100', '中押し']),
+                        ('✕のときの理由', ['型に当たった', '曲げた後 抜けない', '長さ（力）が足りない', 'その他'])]:
+        dv = DataValidation(type='list', formula1='"' + ','.join(items) + '"', allow_blank=True, showErrorMessage=False)
+        ws.add_data_validation(dv)
+        dv.add(f'{L(name)}{ER}:{L(name)}{ER + N_ENT - 1}')
+    a3(ws, f'A1:{get_column_letter(t0 + 5)}{ER + N_ENT - 1}')
 
 wb.save(out_path)
 print('saved', out_path)

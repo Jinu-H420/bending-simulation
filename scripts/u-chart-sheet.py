@@ -228,7 +228,7 @@ for gi, r in enumerate(rows, start=1):
     gcol = tcols + 2                      # グラフの始まりの列（表の右に1列あける）
     span = gcol + 15
     title(ws, f"コの字曲げ 早見グラフ {gi}／{len(rows)}　V{r['V']}　{r['sel'].split(':')[1]}・{r['machine']}　鉄 t{r['t']}（{tag}）",
-          '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。★だけ書けば、間の行は「見込み」に自動で入ります。'
+          '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。★だけ書けば、間の行は「見込み」に自動で入ります。いちばん小さい断面が計算と違えば、7行目の赤い枠に（立上り・底W）。'
           '保存して Claude に「計算し直して」と言うと、★に合わせて計算そのものを直し、見込みがもっと確かになります（合わない★は赤で知らせます）。'
           f'左右の立上りが違うときは低いほうで見ます。計算は {TODAY} 時点・ヤゲン904061・中間板標準・普通に曲げたとき。', span)
     for b in range(BLK):
@@ -295,15 +295,32 @@ for gi, r in enumerate(rows, start=1):
     bads = [k for k in fit['checks'] if k['bad']] if fit else []
     if fit:
         nchk = len(fit['checks'])
-        ftxt = (f"★に合わせて計算し直し済み：{nchk}か所中 {nchk - len(bads)}か所が合う" +
-                ''.join(f"　合わない 底W{k['W']}（実績{k['act']}／計算{'×' if k['fit'] is None else k['fit']}）" for k in bads))
-        put(ws, 6, 1, ftxt, bold=True, size=11, color='C00000' if bads else '0A7D0A', fill=BADF if bads else MINF, align='left')
+        ftxt = (f"実績に合わせて計算し直し済み：{nchk}か所中 {nchk - len(bads)}か所が合う" +
+                ''.join((f"　合わない いちばん小さい{k['act']}（計算では曲がらない）" if k.get('kind') == 'min' else
+                         f"　合わない 底W{k['W']}（実績{k['act']}／計算{'×' if k['fit'] is None else k['fit']}）") for k in bads) +
+                (f"　※実績の立上り {fit['minLow']['h']} は最小フランジの表（{r['minOut']}）より低い → 表を直すか確認"
+                 if fit.get('minLow') else ''))
+        warn = bads or fit.get('minLow')
+        put(ws, 6, 1, ftxt, bold=True, size=11, color='C00000' if warn else '0A7D0A', fill=BADF if warn else MINF, align='left')
     else:
-        put(ws, 6, 1, '★を書いて保存したら、Claude に「計算し直して」と言ってください（★に合わせて計算を直します）', size=10.5, color='666666', align='left')
-    ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=tcols)
-    sm = ws.cell(7, 1, f"いちばん小さい断面：立上り {r['hLow']} × 底W {r['wMin']}" if r.get('wMin') else 'この型は曲がらない')
-    sm.font = Font(name=FONT, size=11.5, bold=True, color='0A7D0A')
-    sm.alignment = Alignment(horizontal='left', vertical='center')
+        put(ws, 6, 1, '★や「いちばん小さい」の実績を書いて保存したら、Claude に「計算し直して」と言ってください', size=10.5, color='666666', align='left')
+    # いちばん小さい断面：計算と、実績を書く欄（立上り・底W）。2026-10-13 ユーザー「最小が実績と違うとき」
+    mn = r.get('minAct') or {}
+    ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=nb)
+    mchg = bool(fit and r.get('wMin') and (fit['hLow'], fit['wMin']) != (r['hLow'], r['wMin']))
+    if not r.get('wMin'):
+        mtxt = 'いちばん小さい断面 計算では曲がらない 実績→'
+    elif mchg:
+        mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}／実績合わせ {fit['hLow']}×{fit['wMin']}　実績→"
+    else:
+        mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}　実績→"
+    put(ws, 7, 1, mtxt, bold=True, size=11, color='0A7D0A', fill=MINF, align='left')
+    put(ws, 7, nb + 2, '立上り', bold=True, size=10, fill=HEAD)
+    put(ws, 7, nb + 4, '底W', bold=True, size=10, fill=HEAD)
+    for cc, v in ((nb + 3, mn.get('h')), (nb + 5, mn.get('w'))):
+        e7 = put(ws, 7, cc, v, bold=True, size=12, fill=KEYF)
+        e7.border = KEYBOX
+    MH, MW = f'{get_column_letter(nb + 3)}7', f'{get_column_letter(nb + 5)}7'
 
     # ---- 左の表
     per = -(-n // BLK)
@@ -393,6 +410,8 @@ for gi, r in enumerate(rows, start=1):
     ws.cell(5, dc + 6, hi); ws.cell(5, dc + 7, r['minOut'])
     if r.get('wMin'):
         ws.cell(4, dc + 8, r['wMin']); ws.cell(4, dc + 9, r['hLow'])
+    ws.cell(6, dc + 8, f'=IF(AND(ISNUMBER({MH}),ISNUMBER({MW})),{MW},NA())')
+    ws.cell(6, dc + 9, f'=IF(AND(ISNUMBER({MH}),ISNUMBER({MW})),{MH},NA())')
     ymax = min(300, max(150, (int(max([h for _, h, _ in pts if h is not None] + [100])) // 50 + 1) * 50))
 
     # ---- 右のグラフ
@@ -461,11 +480,18 @@ for gi, r in enumerate(rows, start=1):
         s7.marker.graphicalProperties.line.solidFill = '0A7D0A'
         s7.graphicalProperties = line_props(None, none=True)
         ch.series.append(s7)
+    s11 = Series(Reference(ws, min_col=dc + 9, min_row=6, max_row=6), Reference(ws, min_col=dc + 8, min_row=6, max_row=6),
+                 title='実績のいちばん小さい')
+    s11.marker = Marker(symbol='square', size=11)
+    s11.marker.graphicalProperties = GraphicalProperties(solidFill='E07B00')
+    s11.marker.graphicalProperties.line.solidFill = '7A3E00'
+    s11.graphicalProperties = line_props(None, none=True)
+    ch.series.append(s11)
     axes(ch, lo, hi, ymax)
     ch.legend.position = 't'
     ws.add_chart(ch, f'{get_column_letter(gcol)}3')
     for rr in range(3, HR):
-        ws.row_dimensions[rr].height = 22 if rr <= 5 else (32 if rr == 6 and bads else 18)
+        ws.row_dimensions[rr].height = 22 if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else ((32 if mchg else 21) if rr == 7 else 18))
     end_row = max(last_row, 3 + int(ch.height / 0.53) + 1)
     for rr in range(last_row + 1, end_row + 1):
         ws.row_dimensions[rr].height = 15

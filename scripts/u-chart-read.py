@@ -1,11 +1,27 @@
 # コの字曲げ 早見グラフ（u-chart-sheet.py で作った xlsx）から、各型の表に書いてある実績を読む。
-#   出力: [{ t, V, entries: { 底W: 立上り | '×' } }]（u-fit.mjs に渡す）
+#   出力: [{ t, V, entries: { 底W: 立上り | '×' }, min?: { h, w } }]（u-fit.mjs に渡す。min＝いちばん小さい断面の実績）
 #   使い方: python scripts/u-chart-read.py 早見グラフ.xlsx > 実績.json
 import json
 import re
 import sys
 
 from openpyxl import load_workbook
+
+
+def num(v):
+    """書いてある値 → 数字 か '×' か None（全角の数字も読む）"""
+    if isinstance(v, str):
+        v = v.strip().translate(str.maketrans('０１２３４５６７８９．', '0123456789.'))
+        if v in ('×', '✕', 'x', 'X', '✖'):
+            return '×'
+        try:
+            v = float(v)
+        except ValueError:
+            return None
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return v
+
 
 wb = load_workbook(sys.argv[1])
 out = []
@@ -26,20 +42,22 @@ for ws in wb.worksheets[1:]:
                 if W is None and ws.cell(r + 1, c0).value is None:
                     break
                 continue
-            v = ws.cell(r, c0 + 2).value
-            if isinstance(v, str):
-                v = v.strip().translate(str.maketrans('０１２３４５６７８９．', '0123456789.'))
-                if v in ('×', '✕', 'x', 'X', '✖'):
-                    v = '×'
-                else:
-                    try:
-                        v = float(v)
-                    except ValueError:
-                        v = None
-            if isinstance(v, float) and v.is_integer():
-                v = int(v)
+            v = num(ws.cell(r, c0 + 2).value)
             if v is not None:
                 ents[str(int(W))] = v
+    # いちばん小さい断面の実績（見出しの上の「いちばん小さい断面」の行。「立上り」「底W」の右の欄）
+    mn = {}
+    for r in range(1, hr):
+        if str(ws.cell(r, 1).value or '').startswith('いちばん小さい断面'):
+            for c in range(2, 30):
+                lab = ws.cell(r, c).value
+                if lab in ('立上り', '底W'):
+                    v = num(ws.cell(r, c + 1).value)
+                    if isinstance(v, (int, float)):
+                        mn['h' if lab == '立上り' else 'w'] = v
     t = float(m.group(1))
-    out.append({'t': int(t) if t.is_integer() else t, 'V': int(m.group(2)), 'entries': ents})
+    d = {'t': int(t) if t.is_integer() else t, 'V': int(m.group(2)), 'entries': ents}
+    if 'h' in mn and 'w' in mn:
+        d['min'] = mn
+    out.append(d)
 json.dump(out, sys.stdout, ensure_ascii=False)

@@ -72,7 +72,8 @@ for pi, page in enumerate(pages, start=1):
     ws.row_dimensions[4].height = 26
     ws.row_dimensions[5].height = 16
     # 底W の範囲：このページの型で、どれかが曲がる所から、全部「なし」になる所まで
-    Ws = sorted({int(w) for r in page for w in r['hmax'].keys()})
+    # 行は 5mm 刻みだけ（型ごとの「いちばん狭い底W」の行は型によって違うので、上の「いちばん小さい」の欄で見る）
+    Ws = sorted({int(w) for r in page for w in r['hmax'].keys() if int(w) % 5 == 0})
     used = [w for w in Ws if any(r['hmax'].get(str(w)) is not None for r in page)]
     w_lo, w_hi = (min(used), max(used)) if used else (Ws[0], Ws[-1])
     while w_hi > w_lo and all(r['hmax'].get(str(w_hi)) in ('なし', None) for r in page) and \

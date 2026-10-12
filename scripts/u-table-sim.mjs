@@ -61,6 +61,12 @@ for (const p of plan) {
     while (b - a > 1) { const m = Math.floor((a + b) / 2); if (ok(info, nobi, t, [m, W, m])) a = m; else b = m; }
     hmax[W] = a;
   }
+  // いちばん狭い底W（5mm 刻みの間）の上限も足す。表にその行を出すため
+  if (wMin != null && hmax[wMin] === undefined) {
+    let a = hLow, b = H_TOP;
+    if (ok(info, nobi, t, [H_TOP, wMin, H_TOP])) hmax[wMin] = 'なし';
+    else { while (b - a > 1) { const m = Math.floor((a + b) / 2); if (ok(info, nobi, t, [m, wMin, m])) a = m; else b = m; } hmax[wMin] = a; }
+  }
   out.push({ mat, t, V, sel, base: p.base, machine: machine === 'hg2203' ? 'HG2203' : 'HD3504NT', minOut, nobi, hLow, wMin, hmax });
   process.stderr.write(`t${t} V${V}${p.base ? '（基準）' : ''} 最小 ${hLow}×${wMin}\n`);
 }

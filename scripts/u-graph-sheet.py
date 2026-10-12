@@ -204,6 +204,10 @@ def draw_graph(row, path):
     if row.get('wMin'):
         ax.axvline(row['wMin'], color='#888', lw=1, ls=':')
         ax.text(row['wMin'] + (w_hi - w_lo) * 0.006, ymax * 0.975, f"底W {row['wMin']} より狭いと ×", color='#666', fontsize=10.5, va='top')
+        ax.plot([row['wMin']], [row['hLow']], marker='s', ms=7, color='#0a7d0a')
+        ax.annotate(f"いちばん小さい\n立上り{row['hLow']}×底W{row['wMin']}", xy=(row['wMin'], row['hLow']),
+                    xytext=(row['wMin'] + (w_hi - w_lo) * 0.09, ymax * 0.03), fontsize=10.5, color='#0a7d0a', va='bottom',
+                    fontweight='bold', arrowprops=dict(arrowstyle='->', color='#0a7d0a'))
     ax.set_xlabel('底W（外寸 mm）', fontsize=13)
     ax.set_ylabel('低いほうの立上りH（外寸 mm）', fontsize=13)
     fig.tight_layout(pad=0.5)
@@ -227,10 +231,11 @@ for gi, row in enumerate(graphs, start=1):
     ws.column_dimensions[get_column_letter(G_COLS + 1)].width = 2
     for b in range(T_BLOCKS):
         ws.column_dimensions[get_column_letter(t0 + 2 * b)].width = 7.5
-        ws.column_dimensions[get_column_letter(t0 + 2 * b + 1)].width = 8.5
+        ws.column_dimensions[get_column_letter(t0 + 2 * b + 1)].width = 10   # 「62〜112」が入る幅
     header(ws, f"コの字曲げ 実績入力シート（型ごと {gi}／{len(graphs)}）　V{row['V']}　{row['sel'].split(':')[1]}・{row['machine']}　鉄 t{row['t']}（{tag}）",
            '書き方　曲げた寸法（底W・低いほうの立上りH。どちらも外寸）の所に、曲がったら ○、曲がらなかったら × を打ち、横に寸法（例 100×90）や伝票番号、「中押し」「抜けない」を書き添えてください。'
-           '点線＝計算の境目（この線より下は、計算では普通に曲がる）。線の上の数字＝その底Wでの上限（10mm ごと。赤＝前より下がる所）。右の表は 5mm ごと。'
+           '点線＝計算の境目（この線より下は、計算では普通に曲がる）。線の上の数字＝その底Wでの上限（10mm ごと。赤＝前より下がる所）。'
+           '右の表は 5mm ごとに、その底Wで曲げられる立上り（下限〜上限）。緑＝いちばん小さい断面。'
            f'左右の立上りが違うときは低いほうで見ます（高いほうは計算では上限なし。ただし高すぎると機械から抜けないことがある）。（計算は {TODAY} 時点・ヤゲン904061・中間板標準・普通に曲げたとき）',
            span)
     ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=G_COLS)
@@ -243,26 +248,33 @@ for gi, row in enumerate(graphs, start=1):
     img = XLImage(png)
     img.width, img.height = GW, GH
     ws.add_image(img, 'A4')
-    # 右の表：底W（5mm）と上限
+    # 右の表：底W（5mm。いちばん狭い底Wの行も）と、曲げられる立上り（下限〜上限）
+    ws.merge_cells(start_row=3, start_column=t0, end_row=3, end_column=span)
+    sm = ws.cell(3, t0, f"いちばん小さい断面：立上り {row['hLow']} × 底W {row['wMin']}" if row.get('wMin') else 'この型は曲がらない')
+    sm.font = Font(name=FONT, size=11, bold=True, color='0a7d0a')
+    sm.alignment = Alignment(horizontal='left', vertical='center')
     w_lo, w_hi = wrange(row)
     vals = [(int(k), row['hmax'][k]) for k in sorted(row['hmax'], key=lambda x: int(x)) if w_lo <= int(k) <= w_hi]
     per = -(-len(vals) // T_BLOCKS)
     HR = 4
     for b in range(T_BLOCKS):
         put(ws, HR, t0 + 2 * b, '底W', bold=True, size=10, fill=HEAD)
-        put(ws, HR, t0 + 2 * b + 1, '上限', bold=True, size=10, fill=HEAD)
+        put(ws, HR, t0 + 2 * b + 1, '立上り', bold=True, size=10, fill=HEAD)
     for idx, (W, v) in enumerate(vals):
         b, k = divmod(idx, per)
         r = HR + 1 + k
         prevv = dict(vals).get(W - 5)
         dip = isinstance(v, (int, float)) and isinstance(prevv, (int, float)) and v < prevv
-        put(ws, r, t0 + 2 * b, W, size=10.5, bold=True, fill=MATF)
+        first = W == row.get('wMin')            # いちばん狭い底W の行は緑で目立たせる
+        WF2 = PatternFill('solid', fgColor='DDF2DD') if first else MATF
+        put(ws, r, t0 + 2 * b, W, size=10.5, bold=True, fill=WF2)
         if v is None:
             put(ws, r, t0 + 2 * b + 1, '×', size=10.5, color='999999')
         elif v == 'なし':
-            put(ws, r, t0 + 2 * b + 1, 'なし', size=10.5, color='0a7d0a')
+            put(ws, r, t0 + 2 * b + 1, f"{row['hLow']}〜なし", size=10.5, color='0a7d0a')
         else:
-            put(ws, r, t0 + 2 * b + 1, v, size=11, bold=dip, color='c62f2f' if dip else None)
+            put(ws, r, t0 + 2 * b + 1, f"{row['hLow']}〜{v}", size=11, bold=dip or first,
+                color='c62f2f' if dip else ('0a7d0a' if first else None), fill=PatternFill('solid', fgColor='DDF2DD') if first else None)
     rows_needed = max(per, 44)          # グラフ（40行分）＋下の余り。少なめだと横軸の名前が印刷で切れる
     ws.row_dimensions[HR].height = 15
     for rr in range(HR + 1, HR + 1 + rows_needed):

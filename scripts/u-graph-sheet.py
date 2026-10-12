@@ -273,7 +273,7 @@ for gi, row in enumerate(graphs, start=1):
         elif v == 'なし':
             put(ws, r, t0 + 2 * b + 1, f"{row['hLow']}〜なし", size=10.5, color='0a7d0a')
         else:
-            put(ws, r, t0 + 2 * b + 1, f"{row['hLow']}〜{v}", size=11, bold=dip or first,
+            put(ws, r, t0 + 2 * b + 1, (f"{v}だけ" if v == row['hLow'] else f"{row['hLow']}〜{v}"), size=11, bold=dip or first,
                 color='c62f2f' if dip else ('0a7d0a' if first else None), fill=PatternFill('solid', fgColor='DDF2DD') if first else None)
     rows_needed = max(per, 44)          # グラフ（40行分）＋下の余り。少なめだと横軸の名前が印刷で切れる
     ws.row_dimensions[HR].height = 15

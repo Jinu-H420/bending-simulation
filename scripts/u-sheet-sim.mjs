@@ -2,7 +2,7 @@
 // 行は折り曲げ表（MINOUT_TABLE）と同じ並び（金型 × 材質 × 板厚）。
 //
 //   使い方: node scripts/u-sheet-sim.mjs > u.json
-//           python scripts/u-sheet-form.py u.json 出力.xlsx 図.png
+//           python scripts/u-sheet-form2.py u.json 出力.xlsx 図.png
 //
 // 形の約束（記入シートの図と同じ。寸法はすべて外寸）
 //   立上りH1 － 底W － 立上りH2。2か所とも同じ向き。左右同じ高さ（H1=H2）で見る。

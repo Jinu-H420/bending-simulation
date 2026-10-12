@@ -1,11 +1,11 @@
 # コの字曲げの実績入力シート（グラフ版）を作る。2026-10-12 ユーザーと決めた形。
-#   1〜3枚目「型ごと・グラフ」：横＝底W、縦＝立上りH（左右同じ高さ・外寸）の方眼に、計算の境目（点線）を引いておき、
-#                               曲げ屋さんが 曲がった寸法に○、だめだった寸法に× を打つ。A3横1枚に6面。
+#   1〜16枚目「型ごと」：1型1枚（A3横）。横＝底W、縦＝低いほうの立上りH（外寸）の方眼に、計算の境目（点線）と上限の数字、
+#                        右に 5mm 刻みの数字の表。曲げ屋さんが 曲がった寸法に○、だめだった寸法に× を打つ。
 #                               型は 鉄 の各板厚の基準金型＋薄板の V8（t1.2・t1.6）。縞は入れない。
 #   最後の1枚「品物ごと」      ：曲げた品物を1件1行で書く（u-sheet-form2.py と同じ。そのまま実績 zuRecords に登録できる項目）。
 #   底Wで曲げられる高さが変わり、途中にくぼみもある（例 V25 t4.5 は底W110〜160で下がる）ので、決まった幅の数字欄ではなく、グラフに点で書いてもらう。
-#   使い方: node scripts/u-graph-sim.mjs > ug.json
-#           python scripts/u-graph-sheet.py ug.json <出力.xlsx> <作業フォルダ（グラフの画像を置く）>
+#   使い方: node scripts/u-table-sim.mjs > ut.json（早見表と同じ数字）
+#           python scripts/u-graph-sheet.py ut.json <出力.xlsx> <作業フォルダ（グラフの画像を置く）>
 import json
 import sys
 from datetime import date
@@ -124,88 +124,151 @@ def figure(ws, col):
 
 wb = Workbook()
 
-# ---------------------------------------------------------------- 1〜3枚目：型ごとのグラフ（○×を打つ）
+# ---------------------------------------------------------------- 型ごとのグラフ（1面ずつ A3横・数字つき。○×を打つ）
+# 2026-10-12 ユーザー「具体的な数字が分かるように。グラフをもっと大きく」→ 1型1枚にし、線の上に数字、右に 5mm 刻みの数字の表。
 from matplotlib.ticker import MultipleLocator
 
+def series(row):
+    """u-table-sim.mjs の hmax（底W 5mm ごとの低いほうの上限）を、並べた点にする。'なし' は上端に張り付ける"""
+    pts = []
+    for k in sorted(row['hmax'], key=lambda x: int(x)):
+        W, v = int(k), row['hmax'][k]
+        pts.append((W, None if v is None else (H_SHOW if v == 'なし' else v), v == 'なし'))
+    return pts
+
+H_SHOW = 300
+
+def wrange(row):
+    pts = series(row)
+    ok = [W for W, h, _ in pts if h is not None]
+    if not ok:
+        return 0, 300
+    lo = max(0, min(ok) - 10)
+    # 「なし」になってから先は要らない
+    hi = max(ok)
+    for W, h, top in pts:
+        if top:
+            hi = W
+            break
+    return lo, max(hi, 150)
+
 def draw_graph(row, path):
-    fig, ax = plt.subplots(figsize=(4.4, 4.0))
-    wmax = row['wMax']
-    pts = [p for p in row['curve'] if p['H'] is not None]
-    top = max([p['H'] for p in pts] + [100])
+    pts = series(row)
+    w_lo, w_hi = 0, wrange(row)[1]
+    # 300mm より先はまっすぐ伸びるだけなので、グラフは 300 まで（小さい型）。先の数字は右の表で
+    if (row.get('wMin') or 0) < 200:
+        w_hi = min(w_hi, 300)
+    else:
+        # 大きい型は底Wが広い所しか使わないので、左を詰める
+        w_lo = max(0, int((row['wMin'] - 30) // 50) * 50)
+    lab = 10 if (row.get('wMin') or 0) < 150 else 20     # 線が急な大きい型は数字を間引く
+    hs = [h for _, h, _ in pts if h is not None and _ <= w_hi]
+    top = max(hs + [100])
     ymax = min(300, max(150, (int(top) // 50 + 1) * 50))
-    ax.set_xlim(0, wmax); ax.set_ylim(0, ymax)
+    fig, ax = plt.subplots(figsize=(10.0, 8.0))
+    ax.set_xlim(w_lo, w_hi); ax.set_ylim(0, ymax)
     ax.xaxis.set_major_locator(MultipleLocator(50)); ax.xaxis.set_minor_locator(MultipleLocator(10))
     ax.yaxis.set_major_locator(MultipleLocator(50)); ax.yaxis.set_minor_locator(MultipleLocator(10))
-    ax.grid(which='major', color='#8a8a8a', lw=0.8)
-    ax.grid(which='minor', color='#d8d8d8', lw=0.5)
-    ax.tick_params(labelsize=10)
-    # 計算の境目（つながっている所ごとに線を引く）
-    seg = []
-    segs = []
-    for p in row['curve']:
-        if p['H'] is None:
-            if seg: segs.append(seg); seg = []
+    ax.grid(which='major', color='#8a8a8a', lw=0.9)
+    ax.grid(which='minor', color='#d4d4d4', lw=0.5)
+    ax.tick_params(labelsize=12)
+    # 境目（つながっている所ごと）
+    segs, cur = [], []
+    for W, h, _t in pts:
+        if W > w_hi:
+            break
+        if h is None:
+            if cur: segs.append(cur); cur = []
         else:
-            seg.append(p)
-    if seg: segs.append(seg)
+            cur.append((W, h))
+    if cur: segs.append(cur)
     for sg in segs:
-        xs = [p['W'] for p in sg]; ys = [p['H'] for p in sg]
+        xs = [p[0] for p in sg]; ys = [p[1] for p in sg]
         ax.fill_between(xs, 0, ys, color='#2a78d6', alpha=0.08, lw=0)
-        ax.plot(xs, ys, color='#2a78d6', lw=1.6, ls='--', alpha=0.75)
+        ax.plot(xs, ys, color='#2a78d6', lw=1.8, ls='--', alpha=0.8, marker='o', ms=2.6)
+    # 数字：10mm ごとに線の上へ（くぼみ＝前より下がった所は赤）。混む所は交互に上下へずらす
+    prev = None
+    for i, (W, h, topflag) in enumerate(pts):
+        if W > w_hi or h is None or topflag:
+            prev = h if h is not None else None
+            continue
+        if W % lab == 0:
+            dip = prev is not None and h < prev
+            dy = ymax * (0.025 if (W // lab) % 2 == 0 else 0.055)
+            ax.text(W, h + dy, f'{h}', fontsize=11, ha='center', va='bottom',
+                    color='#c62f2f' if dip else '#1f4f8f', fontweight='bold' if dip else 'normal')
+        prev = h
     # 最小フランジ・いちばん狭い底W
     ax.axhline(row['minOut'], color='#888', lw=1, ls=':')
-    ax.text(wmax * 0.985, row['minOut'] + ymax * 0.012, f"最小フランジ {row['minOut']}", color='#666', fontsize=9, ha='right', va='bottom')
+    ax.text(w_hi - (w_hi - w_lo) * 0.01, row['minOut'] + ymax * 0.012, f"最小フランジ {row['minOut']}", color='#666', fontsize=10.5, ha='right', va='bottom')
     if row.get('wMin'):
         ax.axvline(row['wMin'], color='#888', lw=1, ls=':')
-        ax.text(row['wMin'] + wmax * 0.008, ymax * 0.97, f"底W {row['wMin']}\nより狭いと×", color='#666', fontsize=9, va='top')
-    tag = '（基準金型）' if row['base'] else '（小さいV）'
-    ax.set_title(f"V{row['V']}　{row['sel'].split(':')[1]}・{row['machine']}　鉄 t{row['t']}{tag}", fontsize=11, loc='left', fontweight='bold')
-    ax.set_xlabel('底W（外寸 mm）', fontsize=10.5)
-    ax.set_ylabel('立上りH（外寸 mm）', fontsize=10.5)
-    fig.tight_layout(pad=0.4)
-    fig.savefig(path, dpi=170, facecolor='white')
+        ax.text(row['wMin'] + (w_hi - w_lo) * 0.006, ymax * 0.975, f"底W {row['wMin']} より狭いと ×", color='#666', fontsize=10.5, va='top')
+    ax.set_xlabel('底W（外寸 mm）', fontsize=13)
+    ax.set_ylabel('低いほうの立上りH（外寸 mm）', fontsize=13)
+    fig.tight_layout(pad=0.5)
+    fig.savefig(path, dpi=150, facecolor='white')
     plt.close(fig)
 
-PER_PAGE = 6
-GW, GH = 500, 455          # Excel に置く大きさ（px）。図の縦横比 4.4:4.0 に合わせる
-COLW = 10                  # 列幅（文字数）。1列 ≒ 75px
-COLS_PER = 7               # グラフ1つ分の列
-ROWS_PER = 24              # グラフ1つ分の行（1行 20px。図の高さ＋すき間）
+GW, GH = 1000, 800         # Excel に置く大きさ（px）。図の縦横比 10:8。A3横いっぱい
+COLW_G = 10                # グラフ側の列幅（1列 ≒ 75px）
+G_COLS = 14                # グラフが使う列（14×75＝1050px）
+T_BLOCKS = 3               # 右の表を何段に分けるか（底W・上限 の組を3つ横に）
 graphs = sorted(rows, key=lambda r: (r['t'], r['base']))   # 板厚の小さい順。同じ板厚なら V8 を基準金型の前に
-pages = [graphs[i:i + PER_PAGE] for i in range(0, len(graphs), PER_PAGE)]
 wb = Workbook()
-first_ws = True
-for pi, page in enumerate(pages, start=1):
-    if first_ws:
-        ws = wb.active; ws.title = f'グラフ{pi}'; first_ws = False
-    else:
-        ws = wb.create_sheet(f'グラフ{pi}')
-    span = COLS_PER * 3
-    for c in range(1, span + 4):
-        ws.column_dimensions[get_column_letter(c)].width = COLW
-    header(ws, f'コの字曲げ 実績入力シート（型ごと・グラフ {pi}／{len(pages)}）',
-           '書き方　曲げた寸法（底W・立上りH。どちらも外寸、左右同じ高さ）の所に、曲がったら ○、曲がらなかったら × を打ってください。'
-           '点の横に伝票番号や「中押し」「抜けない」などを書き添えてもらえると助かります。'
-           '点線＝計算の境目（この線より下は、計算では普通に曲がる）。点線より上で曲がった・下で曲がらなかった、が一番知りたい所です。'
-           f'　（計算は {TODAY} 時点・ヤゲン904061・中間板標準・普通に曲げたとき。中押しは入れていません）', span)
-    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=span)
+for gi, row in enumerate(graphs, start=1):
+    ws = wb.active if gi == 1 else wb.create_sheet()
+    tag = '基準金型' if row['base'] else '小さいV'
+    ws.title = f"t{row['t']} V{row['V']}"
+    t0 = G_COLS + 2                       # 表の始まりの列（1列あける）
+    span = t0 + 2 * T_BLOCKS - 1
+    for c in range(1, G_COLS + 1):
+        ws.column_dimensions[get_column_letter(c)].width = COLW_G
+    ws.column_dimensions[get_column_letter(G_COLS + 1)].width = 2
+    for b in range(T_BLOCKS):
+        ws.column_dimensions[get_column_letter(t0 + 2 * b)].width = 7.5
+        ws.column_dimensions[get_column_letter(t0 + 2 * b + 1)].width = 8.5
+    header(ws, f"コの字曲げ 実績入力シート（型ごと {gi}／{len(graphs)}）　V{row['V']}　{row['sel'].split(':')[1]}・{row['machine']}　鉄 t{row['t']}（{tag}）",
+           '書き方　曲げた寸法（底W・低いほうの立上りH。どちらも外寸）の所に、曲がったら ○、曲がらなかったら × を打ち、横に寸法（例 100×90）や伝票番号、「中押し」「抜けない」を書き添えてください。'
+           '点線＝計算の境目（この線より下は、計算では普通に曲がる）。線の上の数字＝その底Wでの上限（10mm ごと。赤＝前より下がる所）。右の表は 5mm ごと。'
+           f'左右の立上りが違うときは低いほうで見ます（高いほうは計算では上限なし。ただし高すぎると機械から抜けないことがある）。（計算は {TODAY} 時点・ヤゲン904061・中間板標準・普通に曲げたとき）',
+           span)
+    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=G_COLS)
     who = ws.cell(3, 1, '確かめた人：　　　　　　　　　　　　　　　日付：　　　　年　　月　　日')
     who.font = Font(name=FONT, size=11, bold=True)
     who.alignment = Alignment(horizontal='left', vertical='center')
     ws.row_dimensions[3].height = 19
-    for k, row in enumerate(page):
-        png = os.path.join(work, f"u-graph-t{row['t']}-V{row['V']}.png")
-        draw_graph(row, png)
-        img = XLImage(png)
-        img.width, img.height = GW, GH
-        col = 1 + (k % 3) * COLS_PER
-        r0 = 4 + (k // 3) * ROWS_PER
-        ws.add_image(img, f'{get_column_letter(col)}{r0}')
-    # 行の高さをはっきり決める（既定の高さは Excel の設定で変わり、図が重なることがある）
-    for rr in range(4, 4 + 2 * ROWS_PER + 1):
-        ws.row_dimensions[rr].height = 15   # 15pt＝20px
+    png = os.path.join(work, f"u-big-t{row['t']}-V{row['V']}.png")
+    draw_graph(row, png)
+    img = XLImage(png)
+    img.width, img.height = GW, GH
+    ws.add_image(img, 'A4')
+    # 右の表：底W（5mm）と上限
+    w_lo, w_hi = wrange(row)
+    vals = [(int(k), row['hmax'][k]) for k in sorted(row['hmax'], key=lambda x: int(x)) if w_lo <= int(k) <= w_hi]
+    per = -(-len(vals) // T_BLOCKS)
+    HR = 4
+    for b in range(T_BLOCKS):
+        put(ws, HR, t0 + 2 * b, '底W', bold=True, size=10, fill=HEAD)
+        put(ws, HR, t0 + 2 * b + 1, '上限', bold=True, size=10, fill=HEAD)
+    for idx, (W, v) in enumerate(vals):
+        b, k = divmod(idx, per)
+        r = HR + 1 + k
+        prevv = dict(vals).get(W - 5)
+        dip = isinstance(v, (int, float)) and isinstance(prevv, (int, float)) and v < prevv
+        put(ws, r, t0 + 2 * b, W, size=10.5, bold=True, fill=MATF)
+        if v is None:
+            put(ws, r, t0 + 2 * b + 1, '×', size=10.5, color='999999')
+        elif v == 'なし':
+            put(ws, r, t0 + 2 * b + 1, 'なし', size=10.5, color='0a7d0a')
+        else:
+            put(ws, r, t0 + 2 * b + 1, v, size=11, bold=dip, color='c62f2f' if dip else None)
+    rows_needed = max(per, 44)          # グラフ（40行分）＋下の余り。少なめだと横軸の名前が印刷で切れる
+    ws.row_dimensions[HR].height = 15
+    for rr in range(HR + 1, HR + 1 + rows_needed):
+        ws.row_dimensions[rr].height = 15     # 15pt＝20px（グラフ 800px ＝ 40行）
     a3(ws, None)
-    ws.print_area = f'A1:{get_column_letter(span)}{4 + 2 * ROWS_PER}'
+    ws.print_area = f'A1:{get_column_letter(span)}{HR + rows_needed}'
 
 # ---------------------------------------------------------------- 2枚目：品物ごと
 ws2 = wb.create_sheet('品物ごと')

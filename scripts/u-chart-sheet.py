@@ -1,7 +1,7 @@
 # コの字曲げ 早見グラフ（Excel のグラフ機能で作る。A3横）
 #   早見表（u-table-sheet.py）と同じ数字を、Excel のグラフにする。画像ではないので、点にマウスを当てると数字が出て、拡大もできる。
-#   1枚目「全部の型」：16型の上限の線を重ねる。2枚目から 1型1枚：大きいグラフ（5mm ごとの点、10mm ごとに数字、
-#   下がる所は赤い点）と、右に 5mm 刻みの表（立上りの下限〜上限）。縦軸は低いほうの立上り（左右違うときは低いほうで見る）。
+#   1枚目「全部の型」：16型の上限の線を重ねる。2枚目から 1型1枚：左に 5mm 刻みの表（計算の立上り 下限〜上限＋実績の上限を書く黄色の欄）、
+#   右にグラフ（計算の線＋実績の線）。縦軸は低いほうの立上り（左右違うときは低いほうで見る）。
 #   使い方: node scripts/u-table-sim.mjs > ut.json
 #           python scripts/u-chart-sheet.py ut.json <出力.xlsx>
 import json
@@ -156,7 +156,7 @@ ch.legend.position = 'r'
 ov.add_chart(ch, 'A7')
 # 型ごとのシートへ飛ぶ所（押すと、その型の「実績を入れる」表へ）
 ov.merge_cells(start_row=3, start_column=1, end_row=3, end_column=24)
-nv = ov.cell(3, 1, '実績を入れるときは、下の型を押してください（その型のシートの「実績を入れる」表へ飛びます）。各型のシートは Excel の下の見出しからも選べます。')
+nv = ov.cell(3, 1, '実績を入れるときは、下の型を押してください（その型のシートの表へ飛びます。表の黄色の「実績」の欄に書きます）。各型のシートは Excel の下の見出しからも選べます。')
 nv.font = Font(name=FONT, size=12, bold=True, color='9C5700')
 nv.fill = PatternFill('solid', fgColor='FFF2B3')
 nv.alignment = Alignment(horizontal='left', vertical='center')
@@ -165,7 +165,7 @@ for j, r in enumerate(rows):
     ov.merge_cells(start_row=rr, start_column=cc, end_row=rr, end_column=cc + 2)
     sname = f"t{r['t']} V{r['V']}"
     c = ov.cell(rr, cc, f"V{r['V']}  t{r['t']}{'（小さいV）' if not r['base'] else ''} の実績 →")
-    c.hyperlink = f"#'{sname}'!A36"
+    c.hyperlink = f"#'{sname}'!A6"
     c.font = Font(name=FONT, size=11, bold=True, color='0563C1', underline='single')
     c.alignment = Alignment(horizontal='center', vertical='center')
     c.border = box
@@ -176,52 +176,135 @@ ov.row_dimensions[4].height = 20
 ov.row_dimensions[5].height = 20   # 行の高さを決めておく（既定の高さは Excel の設定で変わり、グラフが印刷で切れる）
 a3(ov, 'A1:X52')
 
-# ---------------------------------------------------------------- 2枚目から：1型1枚
+# ---------------------------------------------------------------- 2枚目から：1型1枚（左に表、右にグラフ）
+# 2026-10-13 ユーザー：「右の表が一部見えない」「表を実績値で埋めたい（下の10行の欄は使えない）」→ 作り直し。
+#   左＝表：底W（5mm＋いちばん狭い底W）ごとに、計算の立上り（下限〜上限）と、実績の上限を書く欄（黄色）。
+#   右＝グラフ：計算の線＋実績の線（実績の欄に数字を入れると出る。「×」は曲がらなかった印）。表にかぶらないよう表の右に置く。
+ENTRY = PatternFill('solid', fgColor='FFF2B3')
+CALCF = PatternFill('solid', fgColor='EEF3FA')
+BLK = 2                       # 表を何段（横）に分けるか
+BW = (6.5, 10.5, 9)           # 1段の列幅：底W・計算・実績
 for gi, r in enumerate(rows, start=1):
     tag = '基準金型' if r['base'] else '小さいV'
     ws = wb.create_sheet(f"t{r['t']} V{r['V']}")
-    G_SPAN = 15
-    t0 = G_SPAN + 2
+    nb = len(BW)
+    tcols = BLK * nb + (BLK - 1)          # 表の列（段のあいだに1列すき間）
+    gcol = tcols + 2                      # グラフの始まりの列（表の右に1列あける）
+    span = gcol + 15
     title(ws, f"コの字曲げ 早見グラフ {gi}／{len(rows)}　V{r['V']}　{r['sel'].split(':')[1]}・{r['machine']}　鉄 t{r['t']}（{tag}）",
-          '線＝普通に曲げられる低いほうの立上りの上限（5mm ごとの点。点にマウスを当てると底W・立上りが出ます）。数字は10mm ごと、赤い点＝底Wを広げたのに上限が下がる所。'
-          '右の表＝5mm ごとに、その底Wで曲げられる立上り（下限〜上限）。緑＝いちばん小さい断面。'
-          f'左右の立上りが違うときは低いほうで見ます（高いほうは計算では上限なし。ただし高すぎると機械から抜けないことがある）。計算は {TODAY} 時点。',
-          t0 + 5)
-    pts = pts_of(r)
-    lo, hi = graph_range(r)
-    # グラフのデータ（印刷範囲の外の列に置く）
-    dc = 40
-    ws.cell(3, dc, '底W'); ws.cell(3, dc + 1, '上限'); ws.cell(3, dc + 2, '10mmごとの数字'); ws.cell(3, dc + 3, '下がる所')
-    ws.cell(3, dc + 4, '最小フランジ'); ws.cell(3, dc + 5, 'いちばん小さい')
-    shown = [(W, h, top) for W, h, top in pts if lo <= W <= hi]
-    prev = None
-    for i, (W, h, top) in enumerate(shown):
-        rr = 4 + i
-        ws.cell(rr, dc, W)
-        ws.cell(rr, dc + 1, h)
-        ws.cell(rr, dc + 2, h if (h is not None and W % 10 == 0 and not top) else None)
-        ws.cell(rr, dc + 3, h if (h is not None and prev is not None and h < prev) else None)
-        prev = h
-    n = len(shown)
-    ymax = min(300, max(150, (int(max([h for _, h, _ in shown if h is not None] + [100])) // 50 + 1) * 50))
-    # 最小フランジの横線・いちばん小さい点
-    ws.cell(4, dc + 6, lo); ws.cell(4, dc + 4, r['minOut'])
-    ws.cell(5, dc + 6, hi); ws.cell(5, dc + 4, r['minOut'])
-    if r.get('wMin'):
-        ws.cell(4, dc + 7, r['wMin']); ws.cell(4, dc + 5, r['hLow'])
+          '左の表：その底Wで普通に曲げられる低いほうの立上り（計算・外寸）。黄色の「実績」の欄に、曲げ屋さんに確かめた「実際に曲げられた一番高い立上り」を書いてください'
+          '（曲がらなかったら ×）。入れると右のグラフに実績の線が出ます。黄色の欄に底Wを入れると、1mm ごとの計算の答えも出ます。'
+          f'左右の立上りが違うときは低いほうで見ます。計算は {TODAY} 時点・ヤゲン904061・中間板標準・普通に曲げたとき。', span)
+    for b in range(BLK):
+        for k, w in enumerate(BW):
+            ws.column_dimensions[get_column_letter(1 + b * (nb + 1) + k)].width = w
+        if b < BLK - 1:
+            ws.column_dimensions[get_column_letter(1 + b * (nb + 1) + nb)].width = 1.5
+    ws.column_dimensions[get_column_letter(gcol - 1)].width = 2
+    for c in range(gcol, span + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 9
 
+    # ---- 1mm ごとの答え（印刷範囲の外）と、底Wを入れると答えが出る欄
+    lc = 60
+    h1 = r.get('h1') or {}
+    for i, k in enumerate(sorted(h1, key=lambda x: int(x))):
+        v = h1[k]
+        txt = ('× 曲がらない' if v is None else f"{r['hLow']}〜なし（上限なし）" if v == 'なし'
+               else f"{v} だけ" if v == r['hLow'] else f"{r['hLow']} 〜 {v}")
+        ws.cell(4 + i, lc, int(k)); ws.cell(4 + i, lc + 1, txt)
+    nlk = max(len(h1), 1)
+    L1, L2 = get_column_letter(lc), get_column_letter(lc + 1)
+    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=2)
+    put(ws, 3, 1, '底Wを入れる →', bold=True, size=11, fill=HEAD)
+    put(ws, 3, 3, r.get('wMin'), bold=True, size=14, fill=ENTRY)
+    IN = 'C3'
+    ws.merge_cells(start_row=3, start_column=4, end_row=3, end_column=tcols)
+    wmin = r.get('wMin') or 0
+    put(ws, 3, 4, (f'=IF({IN}="","",IFERROR("計算の立上り "&VLOOKUP(INT({IN}),${L1}$4:${L2}${3 + nlk},2,FALSE),'
+                   f'IF(INT({IN})<{wmin},"× 曲がらない（底W {wmin} より狭い）","表は底W 400 まで")))'),
+        bold=True, size=13, color='0A7D0A', align='left')
+    ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=tcols)
+    sm = ws.cell(4, 1, f"いちばん小さい断面：立上り {r['hLow']} × 底W {r['wMin']}" if r.get('wMin') else 'この型は曲がらない')
+    sm.font = Font(name=FONT, size=11.5, bold=True, color='0A7D0A')
+    sm.alignment = Alignment(horizontal='left', vertical='center')
+
+    # ---- 左の表
+    lo, hi = graph_range(r)
+    vals = [(int(k), r['hmax'][k]) for k in sorted(r['hmax'], key=lambda x: int(x)) if lo <= int(k) <= hi]
+    per = -(-len(vals) // BLK)
+    HR = 6
+    for b in range(BLK):
+        c0 = 1 + b * (nb + 1)
+        put(ws, HR, c0, '底W', bold=True, size=10, fill=HEAD)
+        put(ws, HR, c0 + 1, '計算の立上り\n下限〜上限', bold=True, size=9.5, fill=HEAD)
+        put(ws, HR, c0 + 2, '実績の上限\n（記入）', bold=True, size=9.5, fill=ENTRY)
+    ws.row_dimensions[HR].height = 42
+    d = dict(vals)
+    pos = {}                                  # 底W → 実績の欄（グラフ用に写すため）
+    for idx, (W, v) in enumerate(vals):
+        b, k = divmod(idx, per)
+        rr, c0 = HR + 1 + k, 1 + b * (nb + 1)
+        first = W == r.get('wMin')
+        pv = d.get(W - 5)
+        dip = isinstance(v, (int, float)) and isinstance(pv, (int, float)) and v < pv
+        put(ws, rr, c0, W, size=10.5, bold=True, fill=MINF if first else WF)
+        if v is None:
+            put(ws, rr, c0 + 1, '×', size=10.5, color='999999', fill=CALCF)
+        elif v == 'なし':
+            put(ws, rr, c0 + 1, f"{r['hLow']}〜なし", size=10.5, color='0A7D0A', fill=CALCF)
+        else:
+            put(ws, rr, c0 + 1, (f"{v}だけ" if v == r['hLow'] else f"{r['hLow']}〜{v}"), size=11, bold=dip or first,
+                color='C62F2F' if dip else ('0A7D0A' if first else None), fill=MINF if first else CALCF)
+        put(ws, rr, c0 + 2, None, size=11.5, bold=True, fill=ENTRY)
+        pos[W] = f'{get_column_letter(c0 + 2)}{rr}'
+    last_row = HR + per
+    for rr in range(HR + 1, last_row + 1):
+        ws.row_dimensions[rr].height = 16
+    # 実績の欄は、数字か × だけ（書き間違いを防ぐ。注意を出すだけで、止めはしない）
+    dv = DataValidation(type='custom', formula1=f'OR(ISNUMBER({get_column_letter(3)}{HR + 1}),{get_column_letter(3)}{HR + 1}="×",{get_column_letter(3)}{HR + 1}="✕")',
+                        allow_blank=True, showErrorMessage=False)
+    ws.add_data_validation(dv)
+    for b in range(BLK):
+        L = get_column_letter(1 + b * (nb + 1) + 2)
+        dv.add(f'{L}{HR + 1}:{L}{last_row}')
+
+    # ---- グラフ用のデータ（印刷範囲の外の列）
+    dc = 40
+    for j, name in enumerate(['底W', '計算の上限', '10mmごとの数字', '下がる所', '実績の上限', '実績で曲がらない', '最小フランジ x', '最小フランジ y', '小さい x', '小さい y']):
+        ws.cell(3, dc + j, name)
+    pts = [(W, h, top) for W, h, top in pts_of(r) if lo <= W <= hi]
+    prev = None
+    for i, (W, h, top) in enumerate(pts):
+        R = 4 + i
+        ws.cell(R, dc, W)
+        ws.cell(R, dc + 1, h)
+        ws.cell(R, dc + 2, h if (h is not None and W % 10 == 0 and not top) else None)
+        ws.cell(R, dc + 3, h if (h is not None and prev is not None and h < prev) else None)
+        if W in pos:
+            ws.cell(R, dc + 4, f'=IF(ISNUMBER({pos[W]}),{pos[W]},NA())')
+            ws.cell(R, dc + 5, f'=IF(OR({pos[W]}="×",{pos[W]}="✕"),{r["hLow"]},NA())')
+        else:
+            ws.cell(R, dc + 4, '=NA()'); ws.cell(R, dc + 5, '=NA()')
+        prev = h
+    n = len(pts)
+    ws.cell(4, dc + 6, lo); ws.cell(4, dc + 7, r['minOut'])
+    ws.cell(5, dc + 6, hi); ws.cell(5, dc + 7, r['minOut'])
+    if r.get('wMin'):
+        ws.cell(4, dc + 8, r['wMin']); ws.cell(4, dc + 9, r['hLow'])
+    ymax = min(300, max(150, (int(max([h for _, h, _ in pts if h is not None] + [100])) // 50 + 1) * 50))
+
+    # ---- 右のグラフ
     ch = ScatterChart()
     ch.style = 2
-    ch.width, ch.height = 26.5, 17      # 下に実績を入れる欄をとるため、少し低め
-    ER = 38                            # 実績を入れる欄の1行目（見出しは37行目）
-    N_ENT = 10                         # 実績を入れる行の数
-    hc = 70                            # グラフ用に実績を写す列（印刷範囲の外）
+    rows_h = max(last_row, 30) - 2
+    ch.height = max(16.5, rows_h * 0.565)
+    ch.width = 27
     X = Reference(ws, min_col=dc, min_row=4, max_row=3 + n)
-    s1 = Series(Reference(ws, min_col=dc + 1, min_row=4, max_row=3 + n), X, title='上限（5mmごと）')
+    s1 = Series(Reference(ws, min_col=dc + 1, min_row=4, max_row=3 + n), X, title='計算の上限（5mmごと）')
     s1.marker = Marker(symbol='circle', size=4)
     s1.marker.graphicalProperties = GraphicalProperties(solidFill='2A78D6')
     s1.marker.graphicalProperties.line.solidFill = '2A78D6'
-    s1.graphicalProperties = line_props('2A78D6', 2.25)
+    s1.graphicalProperties = line_props('2A78D6', 2)
     s1.smooth = False
     s2 = Series(Reference(ws, min_col=dc + 2, min_row=4, max_row=3 + n), X, title='10mmごとの数字')
     s2.marker = Marker(symbol='none')
@@ -232,163 +315,45 @@ for gi, r in enumerate(rows, start=1):
     s2.dLbls.showCatName = False
     s2.dLbls.showLegendKey = False
     s2.dLbls.position = 't'
-    s3 = Series(Reference(ws, min_col=dc + 3, min_row=4, max_row=3 + n), X, title='下がる所')
-    s3.marker = Marker(symbol='circle', size=8)
-    s3.marker.graphicalProperties = GraphicalProperties(solidFill='C62F2F')
-    s3.marker.graphicalProperties.line.solidFill = 'C62F2F'
+    s3 = Series(Reference(ws, min_col=dc + 3, min_row=4, max_row=3 + n), X, title='計算で下がる所')
+    s3.marker = Marker(symbol='circle', size=7)
+    s3.marker.graphicalProperties = GraphicalProperties(solidFill='9DB8DE')
+    s3.marker.graphicalProperties.line.solidFill = '9DB8DE'
     s3.graphicalProperties = line_props(None, none=True)
-    s4 = Series(Reference(ws, min_col=dc + 4, min_row=4, max_row=5), Reference(ws, min_col=dc + 6, min_row=4, max_row=5), title=f"最小フランジ {r['minOut']}")
-    s4.marker = Marker(symbol='none')
-    s4.graphicalProperties = line_props('888888', 1.25, dash='dash')
-    ch.series.extend([s1, s2, s3, s4])
+    s4 = Series(Reference(ws, min_col=dc + 4, min_row=4, max_row=3 + n), X, title='実績の上限')
+    s4.marker = Marker(symbol='diamond', size=9)
+    s4.marker.graphicalProperties = GraphicalProperties(solidFill='E07B00')
+    s4.marker.graphicalProperties.line.solidFill = 'E07B00'
+    s4.graphicalProperties = line_props('E07B00', 2.75)
+    s4.smooth = False
+    s5 = Series(Reference(ws, min_col=dc + 5, min_row=4, max_row=3 + n), X, title='実績で曲がらない（×）')
+    s5.marker = Marker(symbol='x', size=10)
+    s5.marker.graphicalProperties = GraphicalProperties(noFill=True)
+    s5.marker.graphicalProperties.line.solidFill = 'C62F2F'
+    s5.marker.graphicalProperties.line.width = 28575
+    s5.graphicalProperties = line_props(None, none=True)
+    s6 = Series(Reference(ws, min_col=dc + 7, min_row=4, max_row=5), Reference(ws, min_col=dc + 6, min_row=4, max_row=5), title=f"最小フランジ {r['minOut']}")
+    s6.marker = Marker(symbol='none')
+    s6.graphicalProperties = line_props('888888', 1.25, dash='dash')
+    ch.series.extend([s1, s2, s3, s4, s5, s6])
     if r.get('wMin'):
-        s5 = Series(Reference(ws, min_col=dc + 5, min_row=4, max_row=4), Reference(ws, min_col=dc + 7, min_row=4, max_row=4),
+        s7 = Series(Reference(ws, min_col=dc + 9, min_row=4, max_row=4), Reference(ws, min_col=dc + 8, min_row=4, max_row=4),
                     title=f"いちばん小さい 立上り{r['hLow']}×底W{r['wMin']}")
-        s5.marker = Marker(symbol='square', size=10)
-        s5.marker.graphicalProperties = GraphicalProperties(solidFill='0A7D0A')
-        s5.marker.graphicalProperties.line.solidFill = '0A7D0A'
-        s5.graphicalProperties = line_props(None, none=True)
-        ch.series.append(s5)
-    # 実績（下の欄に入れたもの）を ○＝緑・✕＝赤 でグラフに出す
-    XR = Reference(ws, min_col=hc, min_row=ER, max_row=ER + N_ENT - 1)
-    s6 = Series(Reference(ws, min_col=hc + 1, min_row=ER, max_row=ER + N_ENT - 1), XR, title='実績 ○ 曲がった')
-    s6.marker = Marker(symbol='circle', size=11)
-    s6.marker.graphicalProperties = GraphicalProperties(noFill=True)
-    s6.marker.graphicalProperties.line.solidFill = '0A7D0A'
-    s6.marker.graphicalProperties.line.width = 28575
-    s6.graphicalProperties = line_props(None, none=True)
-    s7 = Series(Reference(ws, min_col=hc + 2, min_row=ER, max_row=ER + N_ENT - 1), XR, title='実績 ✕ 曲がらなかった')
-    s7.marker = Marker(symbol='x', size=11)
-    s7.marker.graphicalProperties = GraphicalProperties(noFill=True)
-    s7.marker.graphicalProperties.line.solidFill = 'C62F2F'
-    s7.marker.graphicalProperties.line.width = 28575
-    s7.graphicalProperties = line_props(None, none=True)
-    ch.series.extend([s6, s7])
+        s7.marker = Marker(symbol='square', size=10)
+        s7.marker.graphicalProperties = GraphicalProperties(solidFill='0A7D0A')
+        s7.marker.graphicalProperties.line.solidFill = '0A7D0A'
+        s7.graphicalProperties = line_props(None, none=True)
+        ch.series.append(s7)
     axes(ch, lo, hi, ymax)
     ch.legend.position = 't'
-    ws.add_chart(ch, 'A3')
-
-    # 右の表：底W（5mm＋いちばん狭い底W）と立上り（下限〜上限）
-    for c in range(1, G_SPAN + 1):
-        ws.column_dimensions[get_column_letter(c)].width = 9
-    ws.column_dimensions[get_column_letter(G_SPAN + 1)].width = 2
-    vals = [(int(k), r['hmax'][k]) for k in sorted(r['hmax'], key=lambda x: int(x)) if lo <= int(k) <= max(hi, lo)]
-    vals = [(W, v) for W, v in vals if W <= hi or v not in (None,)]
-    per = -(-len(vals) // 3)
-    ws.merge_cells(start_row=3, start_column=t0, end_row=3, end_column=t0 + 5)
-    sm = ws.cell(3, t0, f"いちばん小さい断面：立上り {r['hLow']} × 底W {r['wMin']}" if r.get('wMin') else 'この型は曲がらない')
-    sm.font = Font(name=FONT, size=11.5, bold=True, color='0A7D0A')
-    # 底Wを入れると、1mm ごとの答え（立上りの下限〜上限）が出る欄（2026-10-13 ユーザー「底14のときが分からない」）
-    lc = 60                                   # 1mm ごとの答えを置く列（印刷範囲の外）
-    h1 = r.get('h1') or {}
-    for i, k in enumerate(sorted(h1, key=lambda x: int(x))):
-        v = h1[k]
-        txt = ('× 曲がらない' if v is None else f"{r['hLow']}〜なし（上限なし）" if v == 'なし'
-               else f"{v} だけ" if v == r['hLow'] else f"{r['hLow']} 〜 {v}")
-        ws.cell(4 + i, lc, int(k)); ws.cell(4 + i, lc + 1, txt)
-        ws.cell(4 + i, lc + 2, -1 if v is None else 9999 if v == 'なし' else v)   # 計算の上限（✕は -1、上限なしは 9999）
-    nlk = len(h1)
-    L1, L2 = get_column_letter(lc), get_column_letter(lc + 1)
-    IN = f'{get_column_letter(t0 + 2)}4'
-    ws.merge_cells(start_row=4, start_column=t0, end_row=4, end_column=t0 + 1)
-    put(ws, 4, t0, '底Wを入れる →', bold=True, size=11, fill=HEAD)
-    put(ws, 4, t0 + 2, r.get('wMin'), bold=True, size=14, fill=PatternFill('solid', fgColor='FFF2B3'))
-    ws.merge_cells(start_row=4, start_column=t0 + 3, end_row=4, end_column=t0 + 5)
-    wmin = r.get('wMin') or 0
-    f = (f'=IF({IN}="","",IFERROR("立上り "&VLOOKUP(INT({IN}),${L1}$4:${L2}${3 + max(nlk, 1)},2,FALSE),'
-         f'IF(INT({IN})<{wmin},"× 曲がらない（底W {wmin} より狭い）","表は底W 400 まで")))')
-    put(ws, 4, t0 + 3, f, bold=True, size=14, color='0A7D0A')
-    ws.merge_cells(start_row=5, start_column=t0, end_row=5, end_column=t0 + 5)
-    hint = ws.cell(5, t0, '黄色の欄に底W（外寸 mm）を入れると、低いほうの立上り（下限〜上限）が 1mm ごとに出ます')
-    hint.font = Font(name=FONT, size=9.5, color='555555')
-    hint.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    ws.row_dimensions[4].height = 26
-    ws.row_dimensions[5].height = 28
-    ws.merge_cells(start_row=6, start_column=t0, end_row=6, end_column=t0 + 5)
-    go = ws.cell(6, t0, '▼ 実績を入れる所へ（押すと飛びます・グラフの下 37行目）')
-    go.hyperlink = f"#'{ws.title}'!A36"
-    go.font = Font(name=FONT, size=11, bold=True, color='9C5700', underline='single')
-    go.fill = PatternFill('solid', fgColor='FFF2B3')
-    go.alignment = Alignment(horizontal='center', vertical='center')
-    for b in range(3):
-        ws.column_dimensions[get_column_letter(t0 + 2 * b)].width = 7.5
-        ws.column_dimensions[get_column_letter(t0 + 2 * b + 1)].width = 10
-        put(ws, 7, t0 + 2 * b, '底W', bold=True, size=10, fill=HEAD)
-        put(ws, 7, t0 + 2 * b + 1, '立上り', bold=True, size=10, fill=HEAD)
-    d = dict(vals)
-    for idx, (W, v) in enumerate(vals):
-        b, k = divmod(idx, per)
-        rr = 8 + k
-        first = W == r.get('wMin')
-        pv = d.get(W - 5)
-        dip = isinstance(v, (int, float)) and isinstance(pv, (int, float)) and v < pv
-        put(ws, rr, t0 + 2 * b, W, size=10.5, bold=True, fill=MINF if first else WF)
-        if v is None:
-            put(ws, rr, t0 + 2 * b + 1, '×', size=10.5, color='999999')
-        elif v == 'なし':
-            put(ws, rr, t0 + 2 * b + 1, f"{r['hLow']}〜なし", size=10.5, color='0A7D0A')
-        else:
-            put(ws, rr, t0 + 2 * b + 1, (f"{v}だけ" if v == r['hLow'] else f"{r['hLow']}〜{v}"), size=11, bold=dip or first,
-                color='C62F2F' if dip else ('0A7D0A' if first else None), fill=MINF if first else None)
-    for rr in range(6, ER - 2):
+    ws.add_chart(ch, f'{get_column_letter(gcol)}3')
+    for rr in range(3, HR):
+        ws.row_dimensions[rr].height = 22 if rr == 3 else 18
+    end_row = max(last_row, 3 + int(ch.height / 0.53) + 1)
+    for rr in range(last_row + 1, end_row + 1):
         ws.row_dimensions[rr].height = 15
-
-    # ---- 実績を入れる欄（グラフの下）。入れるとグラフに ○✕ が出て、計算と合っているかも出る
-    ecols = [('No', 1), ('日付', 1), ('伝票番号', 1), ('底W', 1), ('立上りH1', 1), ('立上りH2', 1), ('低いほうの\n立上り（自動）', 1),
-             ('曲げ長さ L', 1), ('結果\n○／✕', 1), ('曲げ方', 1), ('✕のときの理由', 1), ('当たった所・ひとこと', 2),
-             ('確かめた人', 2), ('計算では（自動）', 3)]
-    ws.merge_cells(start_row=ER - 2, start_column=1, end_row=ER - 2, end_column=t0 + 5)
-    et = ws.cell(ER - 2, 1, '実績（曲げ屋さんに確かめた結果）を入れる　―　寸法は外寸。入れるとグラフに ○（曲がった）・✕（曲がらなかった）が出て、右端に計算と合っているかが出ます')
-    et.font = Font(name=FONT, size=13, bold=True, color='9C5700')
-    et.fill = PatternFill('solid', fgColor='FFF2B3')
-    et.alignment = Alignment(horizontal='left', vertical='center')
-    ws.row_dimensions[ER - 2].height = 20
-    col = 1
-    cpos = {}
-    for name, w in ecols:
-        if name.startswith('計算では'):
-            col = t0          # 計算の欄は、右の表の下（グラフとの間のすき間の列はとばす）
-        if w > 1:
-            ws.merge_cells(start_row=ER - 1, start_column=col, end_row=ER - 1, end_column=col + w - 1)
-        put(ws, ER - 1, col, name, bold=True, size=9.5, fill=HEAD)
-        cpos[name] = col
-        col += w
-    ws.row_dimensions[ER - 1].height = 28
-    ENTRY = PatternFill('solid', fgColor='FFF7E6')
-    L = lambda name: get_column_letter(cpos[name])
-    hL, hR = get_column_letter(lc), get_column_letter(lc + 2)
-    look = f'${hL}$4:${hR}${3 + max(nlk, 1)}'
-    for k in range(N_ENT):
-        R = ER + k
-        ws.row_dimensions[R].height = 18
-        for name, w in ecols:
-            c = cpos[name]
-            if w > 1:
-                ws.merge_cells(start_row=R, start_column=c, end_row=R, end_column=c + w - 1)
-            if name == 'No':
-                put(ws, R, c, k + 1, size=10)
-            elif name.startswith('低いほう'):
-                put(ws, R, c, f'=IF({L("立上りH1")}{R}="","",IF({L("立上りH2")}{R}="",{L("立上りH1")}{R},MIN({L("立上りH1")}{R},{L("立上りH2")}{R})))', size=10.5, fill=PatternFill('solid', fgColor='EEF3FA'))
-            elif name.startswith('計算では'):
-                W_, G_, I_ = f'{L("底W")}{R}', f'{L("低いほうの\n立上り（自動）")}{R}', f'{L("結果\n○／✕")}{R}'
-                calc = f'IFERROR(AND({G_}>={r["hLow"]},{G_}<=VLOOKUP(INT({W_}),{look},3,FALSE)),FALSE)'
-                f = (f'=IF(OR({W_}="",{G_}=""),"",IF({calc},"計算 ○","計算 ✕")'
-                     f'&IF({I_}="","",IF(({I_}="○")={calc},"（合っている）","（食い違い）")))')
-                put(ws, R, c, f, size=10.5, fill=PatternFill('solid', fgColor='EEF3FA'))
-            else:
-                put(ws, R, c, None, size=10.5, fill=ENTRY, align='left' if name.startswith('当たった') else 'center')
-        # グラフ用（印刷範囲の外）：底W と、○ の高さ・✕ の高さ（入っていなければ #N/A で点を出さない）
-        G_, I_ = f'{L("低いほうの\n立上り（自動）")}{R}', f'{L("結果\n○／✕")}{R}'
-        ws.cell(R, hc, f'=IF({L("底W")}{R}="",NA(),{L("底W")}{R})')
-        ws.cell(R, hc + 1, f'=IF(AND({I_}="○",{G_}<>""),{G_},NA())')
-        ws.cell(R, hc + 2, f'=IF(AND({I_}="✕",{G_}<>""),{G_},NA())')
-    # 選べる欄（▼）。書き方が違ってもエラーにしない
-    for name, items in [('結果\n○／✕', ['○', '✕']), ('曲げ方', ['普通', 'くの字165', 'くの字100', '中押し']),
-                        ('✕のときの理由', ['型に当たった', '曲げた後 抜けない', '長さ（力）が足りない', 'その他'])]:
-        dv = DataValidation(type='list', formula1='"' + ','.join(items) + '"', allow_blank=True, showErrorMessage=False)
-        ws.add_data_validation(dv)
-        dv.add(f'{L(name)}{ER}:{L(name)}{ER + N_ENT - 1}')
-    a3(ws, f'A1:{get_column_letter(t0 + 5)}{ER + N_ENT - 1}')
+    a3(ws, f'A1:{get_column_letter(span)}{end_row}')
+    ws.freeze_panes = ws.cell(HR + 1, 1)
 
 wb.save(out_path)
 print('saved', out_path)

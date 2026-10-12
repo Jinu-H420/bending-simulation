@@ -241,15 +241,40 @@ for gi, r in enumerate(rows, start=1):
     ws.merge_cells(start_row=3, start_column=t0, end_row=3, end_column=t0 + 5)
     sm = ws.cell(3, t0, f"いちばん小さい断面：立上り {r['hLow']} × 底W {r['wMin']}" if r.get('wMin') else 'この型は曲がらない')
     sm.font = Font(name=FONT, size=11.5, bold=True, color='0A7D0A')
+    # 底Wを入れると、1mm ごとの答え（立上りの下限〜上限）が出る欄（2026-10-13 ユーザー「底14のときが分からない」）
+    lc = 60                                   # 1mm ごとの答えを置く列（印刷範囲の外）
+    h1 = r.get('h1') or {}
+    for i, k in enumerate(sorted(h1, key=lambda x: int(x))):
+        v = h1[k]
+        txt = ('× 曲がらない' if v is None else f"{r['hLow']}〜なし（上限なし）" if v == 'なし'
+               else f"{v} だけ" if v == r['hLow'] else f"{r['hLow']} 〜 {v}")
+        ws.cell(4 + i, lc, int(k)); ws.cell(4 + i, lc + 1, txt)
+    nlk = len(h1)
+    L1, L2 = get_column_letter(lc), get_column_letter(lc + 1)
+    IN = f'{get_column_letter(t0 + 2)}4'
+    ws.merge_cells(start_row=4, start_column=t0, end_row=4, end_column=t0 + 1)
+    put(ws, 4, t0, '底Wを入れる →', bold=True, size=11, fill=HEAD)
+    put(ws, 4, t0 + 2, r.get('wMin'), bold=True, size=14, fill=PatternFill('solid', fgColor='FFF2B3'))
+    ws.merge_cells(start_row=4, start_column=t0 + 3, end_row=4, end_column=t0 + 5)
+    wmin = r.get('wMin') or 0
+    f = (f'=IF({IN}="","",IFERROR("立上り "&VLOOKUP(INT({IN}),${L1}$4:${L2}${3 + max(nlk, 1)},2,FALSE),'
+         f'IF(INT({IN})<{wmin},"× 曲がらない（底W {wmin} より狭い）","表は底W 400 まで")))')
+    put(ws, 4, t0 + 3, f, bold=True, size=14, color='0A7D0A')
+    ws.merge_cells(start_row=5, start_column=t0, end_row=5, end_column=t0 + 5)
+    hint = ws.cell(5, t0, '黄色の欄に底W（外寸 mm）を入れると、低いほうの立上り（下限〜上限）が 1mm ごとに出ます')
+    hint.font = Font(name=FONT, size=9.5, color='555555')
+    hint.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    ws.row_dimensions[4].height = 26
+    ws.row_dimensions[5].height = 28
     for b in range(3):
         ws.column_dimensions[get_column_letter(t0 + 2 * b)].width = 7.5
         ws.column_dimensions[get_column_letter(t0 + 2 * b + 1)].width = 10
-        put(ws, 4, t0 + 2 * b, '底W', bold=True, size=10, fill=HEAD)
-        put(ws, 4, t0 + 2 * b + 1, '立上り', bold=True, size=10, fill=HEAD)
+        put(ws, 7, t0 + 2 * b, '底W', bold=True, size=10, fill=HEAD)
+        put(ws, 7, t0 + 2 * b + 1, '立上り', bold=True, size=10, fill=HEAD)
     d = dict(vals)
     for idx, (W, v) in enumerate(vals):
         b, k = divmod(idx, per)
-        rr = 5 + k
+        rr = 8 + k
         first = W == r.get('wMin')
         pv = d.get(W - 5)
         dip = isinstance(v, (int, float)) and isinstance(pv, (int, float)) and v < pv
@@ -261,9 +286,9 @@ for gi, r in enumerate(rows, start=1):
         else:
             put(ws, rr, t0 + 2 * b + 1, (f"{v}だけ" if v == r['hLow'] else f"{r['hLow']}〜{v}"), size=11, bold=dip or first,
                 color='C62F2F' if dip else ('0A7D0A' if first else None), fill=MINF if first else None)
-    for rr in range(4, 4 + max(per, 44) + 1):
+    for rr in range(6, 8 + max(per, 41) + 1):
         ws.row_dimensions[rr].height = 15
-    a3(ws, f'A1:{get_column_letter(t0 + 5)}{4 + max(per, 44)}')
+    a3(ws, f'A1:{get_column_letter(t0 + 5)}{7 + max(per, 41)}')
 
 wb.save(out_path)
 print('saved', out_path)

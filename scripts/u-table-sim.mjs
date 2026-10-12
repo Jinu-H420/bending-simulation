@@ -67,7 +67,20 @@ for (const p of plan) {
     if (ok(info, nobi, t, [H_TOP, wMin, H_TOP])) hmax[wMin] = 'なし';
     else { while (b - a > 1) { const m = Math.floor((a + b) / 2); if (ok(info, nobi, t, [m, wMin, m])) a = m; else b = m; } hmax[wMin] = a; }
   }
-  out.push({ mat, t, V, sel, base: p.base, machine: machine === 'hg2203' ? 'HG2203' : 'HD3504NT', minOut, nobi, hLow, wMin, hmax });
+  // 1mm ごとの上限（早見グラフの「底Wを入れると立上りが出る欄」用）。前の答えから上下を探すと速い
+  const h1 = {};
+  if (wMin != null) {
+    let reachedFree = false;
+    for (let W = wMin; W <= 400; W += 1) {
+      if (reachedFree) { h1[W] = 'なし'; continue; }
+      if (!ok(info, nobi, t, [hLow, W, hLow])) { h1[W] = null; continue; }
+      if (ok(info, nobi, t, [H_TOP, W, H_TOP])) { h1[W] = 'なし'; reachedFree = true; continue; }
+      let a = hLow, b = H_TOP;
+      while (b - a > 1) { const m = Math.floor((a + b) / 2); if (ok(info, nobi, t, [m, W, m])) a = m; else b = m; }
+      h1[W] = a;
+    }
+  }
+  out.push({ mat, t, V, sel, base: p.base, machine: machine === 'hg2203' ? 'HG2203' : 'HD3504NT', minOut, nobi, hLow, wMin, hmax, h1 });
   process.stderr.write(`t${t} V${V}${p.base ? '（基準）' : ''} 最小 ${hLow}×${wMin}\n`);
 }
 process.stdout.write(JSON.stringify(out));

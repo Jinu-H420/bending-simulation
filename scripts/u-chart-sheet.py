@@ -165,7 +165,7 @@ for j, r in enumerate(rows):
     ov.merge_cells(start_row=rr, start_column=cc, end_row=rr, end_column=cc + 2)
     sname = f"t{r['t']} V{r['V']}"
     c = ov.cell(rr, cc, f"V{r['V']}  t{r['t']}{'（小さいV）' if not r['base'] else ''} の実績 →")
-    c.hyperlink = f"#'{sname}'!A6"
+    c.hyperlink = f"#'{sname}'!A7"
     c.font = Font(name=FONT, size=11, bold=True, color='0563C1', underline='single')
     c.alignment = Alignment(horizontal='center', vertical='center')
     c.border = box
@@ -185,6 +185,8 @@ a3(ov, 'A1:X52')
 #   × の行は区切り（× をまたいでは埋めない）。書いた行より外側は埋めない。ほかの行も書けば、それが優先。
 ENTRY = PatternFill('solid', fgColor='FFF2B3')
 KEYF = PatternFill('solid', fgColor='FFD24D')
+RED = Side(style='thick', color='C00000')
+KEYBOX = Border(left=RED, right=RED, top=RED, bottom=RED)
 CALCF = PatternFill('solid', fgColor='EEF3FA')
 ESTF = PatternFill('solid', fgColor='FCE9D9')
 BLK = 2                       # 表を何段（横）に分けるか
@@ -278,13 +280,16 @@ for gi, r in enumerate(rows, start=1):
     put(ws, 4, 1, (f'=IF({IN}="","",IF({EC}="","（実績からの見込みは、前後の★に実績を書くと出ます）",'
                    f'"実績からの見込み {r["hLow"]} 〜 "&{EC}))'), bold=True, size=12, color='B45F06', align='left')
     ws.merge_cells(start_row=5, start_column=1, end_row=5, end_column=tcols)
-    sm = ws.cell(5, 1, f"いちばん小さい断面：立上り {r['hLow']} × 底W {r['wMin']}" if r.get('wMin') else 'この型は曲がらない')
+    put(ws, 5, 1, (f"★ 書く所 {len(keys)}か所：底W " + '・'.join(str(k) for k in keys)) if keys else '',
+        bold=True, size=13, color='C00000', fill=KEYF, align='left')
+    ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=tcols)
+    sm = ws.cell(6, 1, f"いちばん小さい断面：立上り {r['hLow']} × 底W {r['wMin']}" if r.get('wMin') else 'この型は曲がらない')
     sm.font = Font(name=FONT, size=11.5, bold=True, color='0A7D0A')
     sm.alignment = Alignment(horizontal='left', vertical='center')
 
     # ---- 左の表
     per = -(-n // BLK)
-    HR = 6
+    HR = 7
     for b in range(BLK):
         c0 = 1 + b * (nb + 1)
         put(ws, HR, c0, '底W', bold=True, size=10, fill=HEAD)
@@ -301,7 +306,8 @@ for gi, r in enumerate(rows, start=1):
         key = W in keys
         pv = d.get(W - 5)
         dip = isinstance(v, (int, float)) and isinstance(pv, (int, float)) and v < pv
-        wc = put(ws, rr, c0, W, size=10.5, bold=True, fill=KEYF if key else (MINF if first else WF))
+        wc = put(ws, rr, c0, W, size=11 if key else 10.5, bold=True, fill=KEYF if key else (MINF if first else WF),
+                 color='C00000' if key else None)
         if key:
             wc.number_format = '"★"0'
         if v is None:
@@ -311,7 +317,9 @@ for gi, r in enumerate(rows, start=1):
         else:
             put(ws, rr, c0 + 1, (f"{v}だけ" if v == r['hLow'] else f"{r['hLow']}〜{v}"), size=11, bold=dip or first,
                 color='C62F2F' if dip else ('0A7D0A' if first else None), fill=MINF if first else CALCF)
-        put(ws, rr, c0 + 2, None, size=11.5, bold=True, fill=KEYF if key else ENTRY)
+        ec = put(ws, rr, c0 + 2, None, size=11.5, bold=True, fill=KEYF if key else None)
+        if key:
+            ec.border = KEYBOX
         E = f'{get_column_letter(c0 + 2)}{rr}'
         put(ws, rr, c0 + 3, f'=IF(ISNUMBER({Cl(6)}{R}),"{r["hLow"]}〜"&{Cl(6)}{R},{Cl(6)}{R})', size=11, color='B45F06', fill=ESTF)
         # 見込みの計算
@@ -337,6 +345,7 @@ for gi, r in enumerate(rows, start=1):
         ws.cell(R, dc + 4, f'=IF(ISNUMBER({E}),{E},NA())')
         ws.cell(R, dc + 5, f'=IF({isx},{r["hLow"]},NA())')
         ws.cell(R, dc + 10, f'=IF(ISNUMBER({Cl(6)}{R}),{Cl(6)}{R},NA())')
+        ws.cell(R, dc + 11, h if (key and isinstance(h, (int, float))) else None)
     last_row = HR + per
     for rr in range(HR + 1, last_row + 1):
         ws.row_dimensions[rr].height = 16
@@ -348,7 +357,7 @@ for gi, r in enumerate(rows, start=1):
         L = get_column_letter(1 + b * (nb + 1) + 2)
         dv.add(f'{L}{HR + 1}:{L}{last_row}')
     for j, name in enumerate(['底W', '計算の上限', '10mmごとの数字', '下がる所', '実績の上限', '実績で曲がらない',
-                              '最小フランジ x', '最小フランジ y', '小さい x', '小さい y', '見込み']):
+                              '最小フランジ x', '最小フランジ y', '小さい x', '小さい y', '見込み', '★']):
         ws.cell(3, dc + j, name)
     for j, name in enumerate(['計算', '差', '前の底W', '前の差', '次の底W', '次の差', '見込み', '見込み−計算']):
         ws.cell(3, hc + j, name)
@@ -404,7 +413,13 @@ for gi, r in enumerate(rows, start=1):
     s6 = Series(Reference(ws, min_col=dc + 7, min_row=4, max_row=5), Reference(ws, min_col=dc + 6, min_row=4, max_row=5), title=f"最小フランジ {r['minOut']}")
     s6.marker = Marker(symbol='none')
     s6.graphicalProperties = line_props('888888', 1.25, dash='dash')
-    ch.series.extend([s1, s2, s3, s8, s4, s5, s6])
+    s9 = Series(Reference(ws, min_col=dc + 11, min_row=4, max_row=3 + n), XR, title='★ 実績を書く所（赤い丸）')
+    s9.marker = Marker(symbol='circle', size=16)
+    s9.marker.graphicalProperties = GraphicalProperties(noFill=True)
+    s9.marker.graphicalProperties.line.solidFill = 'C00000'
+    s9.marker.graphicalProperties.line.width = 28575
+    s9.graphicalProperties = line_props(None, none=True)
+    ch.series.extend([s1, s2, s3, s9, s8, s4, s5, s6])
     if r.get('wMin'):
         s7 = Series(Reference(ws, min_col=dc + 9, min_row=4, max_row=4), Reference(ws, min_col=dc + 8, min_row=4, max_row=4),
                     title=f"いちばん小さい 立上り{r['hLow']}×底W{r['wMin']}")
@@ -417,7 +432,7 @@ for gi, r in enumerate(rows, start=1):
     ch.legend.position = 't'
     ws.add_chart(ch, f'{get_column_letter(gcol)}3')
     for rr in range(3, HR):
-        ws.row_dimensions[rr].height = 22 if rr <= 4 else 18
+        ws.row_dimensions[rr].height = 22 if rr <= 5 else 18
     end_row = max(last_row, 3 + int(ch.height / 0.53) + 1)
     for rr in range(last_row + 1, end_row + 1):
         ws.row_dimensions[rr].height = 15

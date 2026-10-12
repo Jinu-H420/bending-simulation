@@ -27,7 +27,8 @@ rows = json.load(open(sim_path, encoding='utf-8'))
 rows.sort(key=lambda r: (['鉄', '縞'].index(r['mat']), r['V'], r['t']))
 FONT = 'Meiryo UI'
 TODAY = date.today().isoformat()
-WS = [50, 100, 200]   # u-sheet-sim.mjs と同じ（見本の底W）
+WS = [30, 50, 100, 200]   # u-sheet-sim.mjs と同じ（参考に出す底W）
+PAIRS = 3                 # 「底W ＿ のとき 立上りH上限 ＿」を書ける組の数
 
 # ---------------------------------------------------------------- 図（寸法の取り方）
 rcParams['font.family'] = ['Meiryo', 'Yu Gothic', 'MS Gothic']
@@ -121,17 +122,21 @@ wb = Workbook()
 # ---------------------------------------------------------------- 1枚目：型ごと
 ws = wb.active
 ws.title = '型ごと'
-base_cols = [('下型', 10), ('材質', 8), ('板厚 t', 9), ('最小フランジ\n外寸（表）', 13), ('機械', 17)]
-ent = [('底W 最小\n（立上りを\n一番低くして）', 17)] + [(f'立上りH 上限\n底W={W}', 17) for W in WS] \
-    + [('備考（当たった所・抜けなかった・\n中押しにした など）', 32)]
-sims = [('底W\n最小', 'wMin')] + [(f'H上限\nW={W}', f'h{W}') for W in WS]
-cols = [(h, w * 1.5) for h, w in base_cols] + [(h, w * 1.5) for h, w in ent] + [(h, 15) for h, _ in sims]
+base_cols = [('下型', 11), ('材質', 7), ('板厚\nt', 7), ('最小\nフランジ', 10), ('機械', 13)]
+# 記入：いちばん小さい断面（底W最小と、そのときの立上り）＋「底W を書いて → その立上りH上限」を3組（どの幅でも書ける）
+ent = [('最小\n立上り', 10), ('最小\n底W', 10)]
+for k in range(PAIRS):
+    ent += [(f'底W\n{"①②③"[k]}', 10), (f'H上限\n{"①②③"[k]}', 10)]
+ent += [('備考（当たった所・抜けなかった・\n中押しにした など）', 26)]
+sims = [('最小\n立上り', 'hLow'), ('最小\n底W', 'wMin')] + [(f'H上限\nW{W}', f'h{W}') for W in WS]
+cols = [(h, w * 1.5) for h, w in base_cols] + [(h, w * 1.5) for h, w in ent] + [(h, 13.5) for h, _ in sims]
 widths(ws, cols, 158)
 last = len(cols)
 header(ws, 'コの字曲げ 実績入力シート（型ごと）',
        '書き方　① 寸法はすべて外寸（右の絵）。左右同じ高さ（H1=H2）で見ます。普通に曲げたとき（ヤゲン904061・2か所とも90°）の値を書いてください。'
-       '② 底W最小＝立上りを一番低くして曲げられた一番狭い底W。立上りH上限＝その底Wで曲げられた一番高い立上り（上限が無ければ「なし」、曲げられなければ「不可」）。'
-       '③ 曲げられなかったときは、当たった所（ヤゲン・中間板・ホルダ・柱・ダイ）や「曲げた後に抜けなかった」「中押しにした」を備考に。分かるところだけで構いません。'
+       '② いちばん小さい断面＝立上りを一番低くして曲げられた一番狭い底Wと、そのときの立上り。'
+       '③ 底W（試した幅）＝曲げた底Wをそのまま書く（決まった幅でなくてよい。50より狭くても、間の幅でも）。その右に、その底Wで曲げられた一番高い立上り（上限が無ければ「なし」、曲げられなければ「不可」）。'
+       '④ 曲げられなかったときは、当たった所（ヤゲン・中間板・ホルダ・柱・ダイ）や「曲げた後に抜けなかった」「中押しにした」を備考に。分かるところだけで構いません。'
        f'　（シミュレーションの値は {TODAY} 時点・ヤゲン904061・中間板標準。V12〜V25 はZ曲げで実際より甘く出た型。うすい青＝参考、うすい黄＝記入欄）',
        last + 2)
 ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=max(6, last // 2))
@@ -147,14 +152,14 @@ ws.merge_cells(start_row=HEAD_ROW, start_column=1, end_row=HEAD_ROW, end_column=
 put(ws, HEAD_ROW, 1, '金型・材質・板厚', bold=True, fill=HEAD, align='left')
 c0 = len(base_cols) + 1
 ws.merge_cells(start_row=HEAD_ROW, start_column=c0, end_row=HEAD_ROW, end_column=c0 + len(ent) - 1)
-put(ws, HEAD_ROW, c0, '記 入 ── 実際の値（曲げ屋さんに確かめて書く）', bold=True, fill=ENTRY, align='left')
+put(ws, HEAD_ROW, c0, '記 入 ── 実際の値（底W①〜③は試した幅をそのまま書く）', bold=True, fill=ENTRY, align='left')
 c1 = c0 + len(ent)
 ws.merge_cells(start_row=HEAD_ROW, start_column=c1, end_row=HEAD_ROW, end_column=last)
 put(ws, HEAD_ROW, c1, 'シミュレーション（参考）', bold=True, fill=SIMF, align='left')
 ws.row_dimensions[HEAD_ROW].height = 17
 for i, (h, _) in enumerate(cols, start=1):
     put(ws, SUB_ROW, i, h, bold=True, size=10.5, fill=HEAD if i < c0 else ENTRY if i < c1 else SIMF)
-ws.row_dimensions[SUB_ROW].height = 50
+ws.row_dimensions[SUB_ROW].height = 50   # 見出しが3行になる欄（H上限 W100 など・備考）も切れない高さ
 
 r = SUB_ROW + 1
 cur_mat = None
@@ -169,11 +174,13 @@ for row in rows:
     put(ws, r, 2, row['mat'])
     put(ws, r, 3, row['t'])
     put(ws, r, 4, row['minOut'])
-    put(ws, r, 5, row.get('machine'), size=11)
+    put(ws, r, 5, row.get('machine'), size=9.5)
     for i in range(len(ent)):
         put(ws, r, c0 + i, None, fill=ENTRY)
     for i, (_, key) in enumerate(sims):
         v = row.get(key)
+        if key == 'hLow' and not isinstance(row.get('wMin'), (int, float)):
+            v = '不可'   # 底Wが決まらない型は、立上りも「不可」にそろえる
         put(ws, r, c1 + i, v if v is not None else '—', size=12.5, fill=SIMF)
     ws.row_dimensions[r].height = 16   # これより高いと縦で縮小がかかり、印刷の文字が小さくなる（16→11.5pt、17→10.8pt）
     r += 1

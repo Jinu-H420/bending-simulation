@@ -30,7 +30,7 @@ const selOf = (V, mat) => (mat === '縞' ? SHIMA_SEL[V] : SEL[V]);
 const PUNCH = '904061';
 const DIRS = [1, 1];
 // 記入シートの見本の底W
-export const WS = [50, 100, 200];
+export const WS = [30, 50, 100, 200];   // 参考に出す底W（30 は小さいサイズの目安）
 const H_TOP = 400;   // これより高くても通るなら「なし」（上限なし）
 
 function ok(info, nobi, t, outer) {

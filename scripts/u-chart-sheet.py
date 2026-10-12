@@ -153,10 +153,28 @@ for j, r in enumerate(rows):
     ch.series.append(s)
 axes(ch, 0, 400, 300)
 ch.legend.position = 'r'
-ov.add_chart(ch, 'A3')
-for rr in range(3, 50):
-    ov.row_dimensions[rr].height = 15   # 行の高さを決めておく（既定の高さは Excel の設定で変わり、グラフが印刷で切れる）
-a3(ov, 'A1:X47')
+ov.add_chart(ch, 'A7')
+# 型ごとのシートへ飛ぶ所（押すと、その型の「実績を入れる」表へ）
+ov.merge_cells(start_row=3, start_column=1, end_row=3, end_column=24)
+nv = ov.cell(3, 1, '実績を入れるときは、下の型を押してください（その型のシートの「実績を入れる」表へ飛びます）。各型のシートは Excel の下の見出しからも選べます。')
+nv.font = Font(name=FONT, size=12, bold=True, color='9C5700')
+nv.fill = PatternFill('solid', fgColor='FFF2B3')
+nv.alignment = Alignment(horizontal='left', vertical='center')
+for j, r in enumerate(rows):
+    rr, cc = 4 + j // 8, 1 + (j % 8) * 3
+    ov.merge_cells(start_row=rr, start_column=cc, end_row=rr, end_column=cc + 2)
+    sname = f"t{r['t']} V{r['V']}"
+    c = ov.cell(rr, cc, f"V{r['V']}  t{r['t']}{'（小さいV）' if not r['base'] else ''} の実績 →")
+    c.hyperlink = f"#'{sname}'!A36"
+    c.font = Font(name=FONT, size=11, bold=True, color='0563C1', underline='single')
+    c.alignment = Alignment(horizontal='center', vertical='center')
+    c.border = box
+for rr in range(3, 55):
+    ov.row_dimensions[rr].height = 15
+ov.row_dimensions[3].height = 22
+ov.row_dimensions[4].height = 20
+ov.row_dimensions[5].height = 20   # 行の高さを決めておく（既定の高さは Excel の設定で変わり、グラフが印刷で切れる）
+a3(ov, 'A1:X52')
 
 # ---------------------------------------------------------------- 2枚目から：1型1枚
 for gi, r in enumerate(rows, start=1):
@@ -286,6 +304,12 @@ for gi, r in enumerate(rows, start=1):
     hint.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
     ws.row_dimensions[4].height = 26
     ws.row_dimensions[5].height = 28
+    ws.merge_cells(start_row=6, start_column=t0, end_row=6, end_column=t0 + 5)
+    go = ws.cell(6, t0, '▼ 実績を入れる所へ（押すと飛びます・グラフの下 37行目）')
+    go.hyperlink = f"#'{ws.title}'!A36"
+    go.font = Font(name=FONT, size=11, bold=True, color='9C5700', underline='single')
+    go.fill = PatternFill('solid', fgColor='FFF2B3')
+    go.alignment = Alignment(horizontal='center', vertical='center')
     for b in range(3):
         ws.column_dimensions[get_column_letter(t0 + 2 * b)].width = 7.5
         ws.column_dimensions[get_column_letter(t0 + 2 * b + 1)].width = 10
@@ -315,7 +339,8 @@ for gi, r in enumerate(rows, start=1):
              ('確かめた人', 2), ('計算では（自動）', 3)]
     ws.merge_cells(start_row=ER - 2, start_column=1, end_row=ER - 2, end_column=t0 + 5)
     et = ws.cell(ER - 2, 1, '実績（曲げ屋さんに確かめた結果）を入れる　―　寸法は外寸。入れるとグラフに ○（曲がった）・✕（曲がらなかった）が出て、右端に計算と合っているかが出ます')
-    et.font = Font(name=FONT, size=11.5, bold=True)
+    et.font = Font(name=FONT, size=13, bold=True, color='9C5700')
+    et.fill = PatternFill('solid', fgColor='FFF2B3')
     et.alignment = Alignment(horizontal='left', vertical='center')
     ws.row_dimensions[ER - 2].height = 20
     col = 1

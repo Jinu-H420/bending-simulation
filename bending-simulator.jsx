@@ -1759,6 +1759,18 @@ const BendingSimulator = () => {
     else setSegs(outer.map((o, k) => +Math.max(1, o - (nobiPerBend[k - 1] || 0) - (nobiPerBend[k] || 0)).toFixed(1)));
     setInputMode(m);
   };
+  // かんたん判定から開いたときなどは、いま使う入れ物（例：外寸法）にしか数字が入らず、
+  // ほかの入れ物は前の形（辺の数も違う）のまま残る。辺の数が食い違ったら、いまの形から作り直してそろえる
+  useEffect(() => {
+    const n = bends.length + 1;
+    const act = inputMode === 'outer' ? outerSegs : inputMode === 'inner' ? innerSegs : segs;
+    if (act.length !== n) return;
+    if (segs.length === n && outerSegs.length === n && innerSegs.length === n) return;
+    const outer = act.map((_, k) => outerOfSeg(k));
+    if (outerSegs.length !== n) setOuterSegs(outer);
+    if (innerSegs.length !== n) setInnerSegs(outer.map((o, k) => +Math.max(1, o - t * bendsOnSeg(k, n)).toFixed(1)));
+    if (segs.length !== n) setSegs(outer.map((o, k) => +Math.max(1, o - (nobiPerBend[k - 1] || 0) - (nobiPerBend[k] || 0)).toFixed(1)));
+  }, [segs.length, outerSegs.length, innerSegs.length, bends.length, inputMode]);
   const nowCase = useMemo(() => ({
     die: dieSel, dieFlip, punch: punchType, punchFlip, machine: machineSel,
     mat: matType, t, nobi: baseNobi, segs: effSegs, bends, seq, simOK: allOK,
@@ -2863,7 +2875,8 @@ const BendingSimulator = () => {
               <div className="text-[11px] text-slate-500 font-mono mb-2">内寸法をそのまま展開長として計算（伸び値0）</div>
             )}
             <div className="space-y-1.5">
-              {segs.map((L, i) => (
+              {/* 辺の数は「曲げの数＋1」。入れ物（展開値・外寸法・内寸法）の長さが食い違っても undefined の欄を出さない */}
+              {Array.from({ length: bends.length + 1 }, (_, i) => segs[i]).map((L, i) => (
                 <React.Fragment key={i}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-slate-500 w-10">辺{i + 1}</span>

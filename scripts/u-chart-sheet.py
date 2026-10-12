@@ -23,6 +23,14 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
+from openpyxl.drawing.image import Image as XLImage
+import os
+import tempfile
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib import rcParams
 
 sim_path, out_path = sys.argv[1], sys.argv[2]
 rows = json.load(open(sim_path, encoding='utf-8'))
@@ -120,6 +128,64 @@ def pts_of(r):
     return out
 
 
+# ---------------------------------------------------------------- 寸法の取り方の絵（2026-10-13 ユーザー「どこの寸法か書いていない」）
+rcParams['font.family'] = ['Yu Gothic', 'Meiryo', 'MS Gothic']
+FIG_DIR = tempfile.mkdtemp(prefix='uchart-fig-')
+_figs = {}
+
+
+def dim_fig(A=None):
+    """コの字・ハットの断面と寸法の取り方の絵（png のパス）。ハットは外フランジの長さ A を絵に書く"""
+    if A in _figs:
+        return _figs[A]
+    def arrow(ax, x1, y1, x2, y2, txt, tx, ty, color='#222'):
+        ax.annotate('', xy=(x1, y1), xytext=(x2, y2), arrowprops=dict(arrowstyle='<->', color='#555', lw=1.4))
+        ax.text(tx, ty, txt, ha='center', va='center', fontsize=15, fontweight='bold', color=color)
+    fig, ax = plt.subplots(figsize=(5.6, 2.9))
+    if HAT:
+        ax.plot([0, 45, 45, 125, 125, 170], [0, 0, 60, 60, 0, 0], color='#111', lw=6, solid_joinstyle='miter')
+        arrow(ax, 0, -14, 45, -14, '外フランジ', 22, -28)
+        arrow(ax, 125, -14, 170, -14, '外フランジ', 148, -28)
+        arrow(ax, 31, 0, 31, 60, '立上りH', 8, 34)
+        arrow(ax, 139, 0, 139, 60, '立上りH', 162, 34)
+        arrow(ax, 45, 74, 125, 74, '上面W', 85, 88, color='#C00000')
+        ax.text(85, -50, 'すべて外寸・左右同じ寸法' + (f'・外フランジ {A}mm で計算' if A else ''), fontsize=13, color='#333', ha='center')
+        ax.set_xlim(-22, 192); ax.set_ylim(-60, 100)
+    else:
+        ax.plot([0, 0, 110, 110], [55, 0, 0, 75], color='#111', lw=6, solid_joinstyle='miter')
+        arrow(ax, -14, 0, -14, 55, '立上り\n（低いほう）', -42, 28, color='#C00000')
+        arrow(ax, 124, 0, 124, 75, '立上り', 146, 38)
+        arrow(ax, 0, -14, 110, -14, '底W', 55, -28, color='#C00000')
+        ax.text(55, -50, 'すべて外寸・左右の立上りが違うときは低いほうで見る', fontsize=13, color='#333', ha='center')
+        ax.set_xlim(-70, 175); ax.set_ylim(-60, 90)
+    ax.set_aspect('equal')
+    ax.axis('off')
+    fig.tight_layout(pad=0.1)
+    path = os.path.join(FIG_DIR, f'fig_{A}.png')
+    fig.savefig(path, dpi=150, facecolor='white')
+    plt.close(fig)
+    _figs[A] = path
+    return path
+
+
+def put_fig(ws, A, anchor, width_cm=11.5):
+    img = XLImage(dim_fig(A))
+    w = width_cm / 2.54 * 96
+    img.height = img.height * w / img.width
+    img.width = w
+    ws.add_image(img, anchor)
+    return img.height / 96 * 72          # 高さ（ポイント）
+
+
+def row_after(ws, top_row, height_pt, default_pt=15):
+    """top_row から height_pt ぶん下がった次の行"""
+    acc, r = 0, top_row
+    while acc < height_pt:
+        acc += ws.row_dimensions[r].height or default_pt
+        r += 1
+    return r
+
+
 def graph_range(r):
     ok = [W for W, h, _ in pts_of(r) if h is not None]
     if not ok:
@@ -185,7 +251,8 @@ for rr in range(3, 55):
 ov.row_dimensions[3].height = 22
 ov.row_dimensions[4].height = 20
 ov.row_dimensions[5].height = 20   # 行の高さを決めておく（既定の高さは Excel の設定で変わり、グラフが印刷で切れる）
-a3(ov, 'A1:X52')
+fh = put_fig(ov, None, 'A53', 13)
+a3(ov, f'A1:X{row_after(ov, 53, fh) + 1}')
 
 # ---------------------------------------------------------------- 2枚目から：1型1枚（左に表、右にグラフ）
 # 2026-10-13 ユーザー：「右の表が一部見えない」「表を実績値で埋めたい（下の10行の欄は使えない）」→ 作り直し。
@@ -244,7 +311,7 @@ for gi, r in enumerate(rows, start=1):
     span = gcol + 15
     title(ws, f"{NAME} 早見グラフ {gi}／{len(rows)}　V{r['V']}　{r['sel'].split(':')[1]}・{r['machine']}　鉄 t{r['t']}（{tag}）"
           + (f"　外フランジ {r['A']}" if HAT and r.get('wMin') else ''),
-          ((f'★の赤い枠に、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。外フランジ {r["A"]}mm・左右同じ寸法で計算しています。'
+          ('寸法の取り方はグラフの下の絵。' + (f'★の赤い枠に、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。外フランジ {r["A"]}mm・左右同じ寸法で計算しています。'
             if HAT else
             '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。')
            + f'★だけ書けば、間の行は「見込み」に自動で入ります。いちばん小さい断面が計算と違えば、7行目の赤い枠に（立上り・{WN}）。'
@@ -337,7 +404,7 @@ for gi, r in enumerate(rows, start=1):
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}／実績合わせ {fit['hLow']}×{fit['wMin']}　実績→"
     else:
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}　実績→"
-    put(ws, 7, 1, mtxt, bold=True, size=10 if HAT else 11, color='0A7D0A', fill=MINF, align='left')
+    put(ws, 7, 1, mtxt, bold=True, size=10, color='0A7D0A', fill=MINF, align='left')
     put(ws, 7, nb + 2, '立上り', bold=True, size=10, fill=HEAD)
     put(ws, 7, nb + 4, WN, bold=True, size=10, fill=HEAD)
     for cc, v in ((nb + 3, mn.get('h')), (nb + 5, mn.get('w'))):
@@ -531,9 +598,11 @@ for gi, r in enumerate(rows, start=1):
     ws.add_chart(ch, f'{get_column_letter(gcol)}3')
     for rr in range(3, HR):
         ws.row_dimensions[rr].height = 22 if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else ((32 if mchg else 21) if rr == 7 else 18))
-    end_row = max(last_row, 3 + int(ch.height / 0.53) + 1)
-    for rr in range(last_row + 1, end_row + 1):
+    for rr in range(last_row + 1, last_row + 80):
         ws.row_dimensions[rr].height = 15
+    fr = row_after(ws, 3, ch.height / 2.54 * 72) + 3     # グラフの下端から少しあける（行の高さの見積りが少し短く出るため）
+    fh = put_fig(ws, r.get('A') if HAT and r.get('wMin') else None, f'{get_column_letter(gcol + 2)}{fr}', 15)
+    end_row = max(last_row, row_after(ws, fr, fh))
     a3(ws, f'A1:{get_column_letter(span)}{end_row}')
     ws.freeze_panes = ws.cell(HR + 1, 1)
 

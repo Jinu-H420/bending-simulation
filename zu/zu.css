@@ -227,3 +227,8 @@ button.linkish { font: inherit; font-size: 13px; background: none; border: 0; co
 .rec-edit .re-save { font: inherit; font-weight: 700; padding: 7px 14px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
 .rec-edit .re-cancel { font: inherit; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--sub); cursor: pointer; }
 .rec-edit .re-hint { font-size: 12px; color: var(--muted); }
+
+/* ヤゲンの断面の小さな絵（番号だけでは形が分からないため） */
+.punch-icon { display: inline-flex; align-items: flex-end; gap: 14px; vertical-align: middle; margin: 0 4px; }
+.punch-one { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.punch-cap { font-size: 11px; line-height: 1.25; opacity: .85; text-align: center; }

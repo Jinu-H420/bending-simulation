@@ -168,6 +168,55 @@ def dim_fig(A=None):
     return path
 
 
+_PUNCH = None
+
+
+def punch_lib():
+    """ヤゲンの断面（bending-simulator.jsx の PUNCH_LIB）を node で読む"""
+    global _PUNCH
+    if _PUNCH is None:
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        out = subprocess.run(['node', '-e', "import('./u-curve.mjs').then((m) => process.stdout.write(JSON.stringify(m.E.PUNCH_LIB)))"],
+                             cwd=here, capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        _PUNCH = json.loads(out)
+    return _PUNCH
+
+
+def punch_fig(used):
+    """このシートで使うヤゲン（used＝[(番号, 反転), ...]）の断面を、普通のヤゲン 904061 と同じ縮尺で並べた絵。
+    2026-10-13 ユーザー「80306 とかの番号ではイメージが沸かない」"""
+    key = tuple(used)
+    if key in _figs:
+        return _figs[key]
+    lib = punch_lib()
+    items = [('904061', False)] + [u for u in used if u[0] != '904061' or u[1]]
+    shapes = [[(-x if f else x, y) for x, y in lib[k]['pts']] for k, f in items]
+    top = min(y for sh in shapes for _, y in sh)
+    fig, ax = plt.subplots(figsize=(1.0 + 1.05 * len(items), 3.1))
+    xo = 0
+    for (k, f), sh in zip(items, shapes):
+        x0 = min(x for x, _ in sh)
+        w = max(x for x, _ in sh) - x0
+        xs = [x - x0 + xo for x, _ in sh] + [sh[0][0] - x0 + xo]
+        ys = [-y for _, y in sh] + [-sh[0][1]]
+        base = k == '904061' and not f
+        ax.fill(xs, ys, color='#8a94a3' if base else '#2a78d6', alpha=0.25)
+        ax.plot(xs, ys, color='#6b7380' if base else '#2a78d6', lw=1.4)
+        ax.text(xo + w / 2, -12, ('普通\n' if base else '') + f"{k}{'反転' if f else ''}\n全高{round(-min(y for _, y in sh))}",
+                ha='center', va='top', fontsize=10, fontweight='bold', color='#333' if base else '#1d5aa8')
+        xo += w + 16
+    ax.set_xlim(-6, xo - 10); ax.set_ylim(-48, -top + 6)
+    ax.set_aspect('equal'); ax.axis('off')
+    ax.set_title('ヤゲンの断面（同じ縮尺）', fontsize=11)
+    fig.tight_layout(pad=0.2)
+    path = os.path.join(FIG_DIR, f'punch_{len(_figs)}.png')
+    fig.savefig(path, dpi=150, facecolor='white')
+    plt.close(fig)
+    _figs[key] = path
+    return path
+
+
 def put_fig(ws, A, anchor, width_cm=11.5):
     img = XLImage(dim_fig(A))
     w = width_cm / 2.54 * 96
@@ -320,7 +369,8 @@ for gi, r in enumerate(rows, start=1):
     # ハット：904061 で当たるときは、ほかのヤゲンで曲がれば「曲がる」（hat-alt-sim.mjs。2026-10-13 ユーザー
     #   「他のヤゲンで曲がるなら曲がるになります」）。基準の長さの列に、いちばん広く曲がるヤゲンの範囲とヤゲンの番号を出す
     alt, altN = (r.get('alt') or {}), (r.get('altNarrow') or {})
-    bw = ((7,) + tuple(17 if a == r.get('A') and (alt or altN) else 9.5 for a in FL) + (10, 9)) if HAT else BW
+    bw = ((7,) + tuple(17 if a == r.get('A') and (alt or altN) else 9.5 for a in FL) + (10, 9)) if HAT else \
+        ((BW[0], 16) + BW[2:] if (alt or altN) else BW)     # コの字も、ほかのヤゲンの番号を書くときは計算の列を広く
     blk = 1 if HAT else BLK
     nb = len(bw)
     tcols = blk * nb + (blk - 1)          # 表の列（段のあいだに1列すき間）
@@ -330,7 +380,8 @@ for gi, r in enumerate(rows, start=1):
           + ('　外フランジ別' if HAT else ''),
           ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。基準の長さの列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（シミュレーター・かんたん判定と同じ。くの字特殊ヤゲンは入れていない）。※＝V8でヤゲン71606 は曲げ長さ 835mm（金型1本分）まで。それより長いものは要確認。'
             if HAT else
-            '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。')
+            '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。'
+            '計算の列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（※＝V8でヤゲン71606 は曲げ長さ 835mm まで、それより長いものは要確認）。')
            + f'★だけ書けば、間の行は「見込み」に自動で入ります。いちばん小さい断面が計算と違えば、7行目の赤い枠に（立上り・{WN}）。'
            '保存して Claude に「計算し直して」と言うと、★に合わせて計算そのものを直し、見込みがもっと確かになります（合わない★は赤で知らせます）。'
            + ('' if HAT else '左右の立上りが違うときは低いほうで見ます。')
@@ -345,7 +396,7 @@ for gi, r in enumerate(rows, start=1):
         ws.column_dimensions[get_column_letter(c)].width = 9
 
     lo, hi = graph_range(r)
-    nW = min(map(int, altN)) if HAT and altN else None    # ほかのヤゲンなら曲がる いちばん狭い上面W
+    nW = min(map(int, altN)) if altN else None            # ほかのヤゲンなら曲がる いちばん狭い幅
     hm = dict(r['hmax'])
     if nW is not None:
         hm.setdefault(str(nW), None)
@@ -377,13 +428,25 @@ for gi, r in enumerate(rows, start=1):
         fv = f1.get(k)
         ws.cell(4 + i, lc + 2, fv if isinstance(fv, (int, float)) else None)
     nlk = max(len(h1), 1)
+    if not HAT:
+        # ほかのヤゲンで曲がる狭い幅（904061 のいちばん狭い幅より狭い）と、ほかのヤゲンのほうが高くまで曲がる行は、その答えに
+        rowsAt = {int(ws.cell(4 + i, lc).value): 4 + i for i in range(len(h1))}
+        for k, g in sorted({**alt, **altN}.items(), key=lambda kv: int(kv[0])):
+            txt = f"{g['lo']} 〜 {'なし' if g['hi'] == 'なし' else g['hi']}（ヤゲン{pname(g, r['V'])}）"
+            rr_ = rowsAt.get(int(k))
+            if rr_ is None:
+                rr_ = 4 + nlk
+                nlk += 1
+                ws.cell(rr_, lc, int(k))
+                ws.cell(rr_, lc + 2, g['hi'] if isinstance(g['hi'], (int, float)) else None)
+            ws.cell(rr_, lc + 1, txt)
     L1, L2, L3 = get_column_letter(lc), get_column_letter(lc + 1), get_column_letter(lc + 2)
     ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=2)
     put(ws, 3, 1, f'{WN}を入れる →', bold=True, size=11, fill=HEAD)
     put(ws, 3, 3, r.get('wMin'), bold=True, size=14, fill=ENTRY)
     IN = 'C3'
     ws.merge_cells(start_row=3, start_column=4, end_row=3, end_column=tcols)
-    wmin = r.get('wMin') or 0
+    wmin = min([x for x in (r.get('wMin'), nW) if x is not None], default=0)
     if HAT:
         # 1mm ごとの答えを外フランジごとに。基準の長さの上限は 1mm ごと、それ以外と下限は 5mm の前後の厳しいほう（安全側）
         def rng(lo_d, hi_d, W):
@@ -466,7 +529,7 @@ for gi, r in enumerate(rows, start=1):
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}／実績合わせ {fit['hLow']}×{fit['wMin']}　実績→"
     else:
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}" + ('' if HAT else '　実績→')
-    if HAT and nW is not None:
+    if nW is not None:
         g_ = altN[str(nW)]
         mtxt = f"いちばん小さい断面 {g_['lo']}×{nW}（ヤゲン{pname(g_, r['V'])}）"
     put(ws, 7, 1, mtxt, bold=True, size=10, color='0A7D0A', fill=MINF, align='left')
@@ -530,7 +593,7 @@ for gi, r in enumerate(rows, start=1):
             hv, lv = (d_.get('hmax') or {}).get(str(W)), (d_.get('hmin') or {}).get(str(W))
             put(ws, rr, c0 + CA[a], '×' if hv is None or lv is None else (f"{lv}〜なし" if hv == 'なし' else f"{hv}だけ" if hv == lv else f"{lv}〜{hv}"),
                 size=10.5, color='999999' if hv is None else None, fill=CALCF)
-        if HAT:
+        if True:
             ag = altN.get(str(W)) or alt.get(str(W))
             if ag:                             # ほかのヤゲンのほうが高くまで曲がる → そちらを出す（ヤゲンの番号つき）
                 ac = put(ws, rr, c0 + CA0, f"{ag['lo']}〜{'なし' if ag['hi'] == 'なし' else ag['hi']} ヤゲン{pname(ag, r['V'])}",
@@ -551,7 +614,7 @@ for gi, r in enumerate(rows, start=1):
         D_, P, Q, Wc = f'{Cl(1)}{R}', f'{Cl(2)}{R}', f'{Cl(4)}{R}', f'{WL}{R}'
         ws.cell(R, dc, W)
         fv = fx.get(str(W))
-        if HAT and ag and (fv is None or (H_TOP if ag['hi'] == 'なし' else ag['hi']) > (H_TOP if fv == 'なし' else fv)):
+        if ag and (fv is None or (H_TOP if ag['hi'] == 'なし' else ag['hi']) > (H_TOP if fv == 'なし' else fv)):
             fv = ag['hi']
         if fv is None and fit:                 # 実績合わせで いちばん狭い幅 がずれた行は 1mm ごとの答えから
             fv = (fit.get('h1') or {}).get(str(W))
@@ -663,8 +726,8 @@ for gi, r in enumerate(rows, start=1):
     s9.marker.graphicalProperties.line.width = 28575
     s9.graphicalProperties = line_props(None, none=True)
     ch.series.extend([s1, s2, s3, s9, s8, s4, s5, s6])
-    if HAT and (alt or altN):
-        sa = Series(Reference(ws, min_col=dc + 70, min_row=4, max_row=3 + n), XR, title=f'ほかのヤゲンで曲がる上限（{r.get("A")}）')
+    if alt or altN:
+        sa = Series(Reference(ws, min_col=dc + 70, min_row=4, max_row=3 + n), XR, title='ほかのヤゲンで曲がる上限' + (f'（外フランジ{r.get("A")}）' if HAT else ''))
         sa.marker = Marker(symbol='triangle', size=8)
         sa.marker.graphicalProperties = GraphicalProperties(solidFill='0B6E99')
         sa.marker.graphicalProperties.line.solidFill = '0B6E99'
@@ -713,7 +776,14 @@ for gi, r in enumerate(rows, start=1):
     for rr in range(last_row + 1, last_row + 80):
         ws.row_dimensions[rr].height = 15
     fr = row_after(ws, 3, ch.height / 2.54 * 72) + 3     # グラフの下端から少しあける（行の高さの見積りが少し短く出るため）
-    fh = put_fig(ws, None, f'{get_column_letter(gcol + 2)}{fr}', 15)
+    used = sorted({(g['punch'], bool(g['flip'])) for g in list(alt.values()) + list(altN.values())})
+    fh = put_fig(ws, None, f'{get_column_letter(gcol + (0 if used else 2))}{fr}', 11.5 if used else 15)
+    if used:                                   # このシートに出てくるヤゲンの断面を、寸法の絵の右に（グラフの幅に収める）
+        img = XLImage(punch_fig(used))
+        w_cm = min(14.5, img.width / img.height * 6.5)
+        img.height, img.width = img.height * (w_cm / 2.54 * 96) / img.width, w_cm / 2.54 * 96
+        ws.add_image(img, f'{get_column_letter(gcol + 7)}{fr}')
+        fh = max(fh, img.height / 96 * 72)
     end_row = max(last_row, row_after(ws, fr, fh))
     a3(ws, f'A1:{get_column_letter(span)}{end_row}')
     ws.freeze_panes = ws.cell(HR + 1, 1)

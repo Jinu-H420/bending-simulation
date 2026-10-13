@@ -324,9 +324,13 @@ export function exactLimit(row, shape, x, other, opt = {}) {
   const ok = shape === 'Z'
     ? (a) => geoCheck(row, [a, x, Math.max(other, a)], [1, -1], need, punch, flip).ok
     : (h) => geoCheck(row, [h, x, h], [1, 1], need, punch, flip).ok;
-  if (!ok(lo)) return null;
+  // いちばん低い所（最小フランジ）で当たっても、少し高くすると曲がることがある（V12 t1.2 のコの字は立上り 10 から）。
+  // 最小フランジから 20mm 上まで 1mm ずつ探して、曲がる所から上限を探す（2026-10-13 底W10 が「曲げられない」と出ていた）
+  let lo1 = null;
+  for (let h = Math.ceil(lo); h <= lo + 20; h += 1) if (ok(h)) { lo1 = h; break; }
+  if (lo1 == null) return null;
   if (ok(400)) return Infinity;
-  let a = lo, b = 400;
+  let a = lo1, b = 400;
   while (b - a > 0.5) { const m = (a + b) / 2; if (ok(m)) a = m; else b = m; }
   return Math.floor(a);
 }
@@ -337,7 +341,7 @@ export function limitRanges(row, shape, y, other, opt = {}) {
   if (row.nobi == null) return [];
   const { punch = PUNCH, flip = false, need = -0.05 } = opt;
   const step = shape === 'Z' ? 5 : 10;
-  const from = shape === 'Z' ? 10 : 20, to = shape === 'Z' ? 250 : 300;
+  const from = 10, to = shape === 'Z' ? 250 : 300;   // コの字も 10 から（小さい V・ほかのヤゲンで底W10 が曲がることがある）
   const ok = (x) => (shape === 'Z'
     ? geoCheck(row, [y, x, Math.max(other, y)], [1, -1], need, punch, flip).ok
     : geoCheck(row, [y, x, y], [1, 1], need, punch, flip).ok);

@@ -2688,6 +2688,7 @@ const BendingSimulator = () => {
               <span className="text-sky-300">ほかのヤゲン（くの字など）なら曲がるか調べています…</span>
             ) : altPunch.ok ? (
               <>
+                {!altPunch.ok.special && <PunchThumb id={altPunch.ok.punch} flip={altPunch.ok.flip} />}
                 <span>◇ <b>ヤゲン {altPunch.ok.punch}{altPunch.ok.flip ? '（反転）' : ''}</b> なら曲がります
                   {altPunch.ok.special ? `（くの字の窓に入るので、曲げ長さ ${altPunch.ok.special.win}mm まで）` : ''}
                   {altPunch.ok.lenChk ? <b className="text-amber-300">（要確認：{altPunch.ok.lenChk.why}）</b> : ''}</span>
@@ -3365,6 +3366,24 @@ export default BendingSimulator;
 
 // かんたん判定ページ（check.html）から同じ判定エンジンを使うための公開。
 // 判定の式を書き写すと本体とずれるので、必ずここから取り込む。
+// ヤゲンの断面の小さな絵（src/punch-icon.jsx と同じもの。番号だけでは形が分からないため）。薄い点線は普通のヤゲン 904061
+function PunchThumb({ id, flip }) {
+  const p = PUNCH_LIB[id];
+  if (!p || !p.pts) return null;
+  const mine = p.pts.map(([x, y]) => [flip ? -x : x, y]);
+  const base = id !== '904061' ? PUNCH_LIB['904061'].pts : null;
+  const all = [...mine, ...(base || [])];
+  const minX = Math.min(...all.map((q) => q[0])), maxX = Math.max(...all.map((q) => q[0])), minY = Math.min(...all.map((q) => q[1]));
+  const d = (pts) => `M${pts.map((q) => q.join(',')).join(' L')} Z`;
+  const H = 90, W = Math.round(H * (maxX - minX + 6) / (-minY + 6));
+  return (
+    <svg width={W} height={H} viewBox={`${minX - 3} ${minY - 3} ${maxX - minX + 6} ${-minY + 6}`} className="shrink-0 bg-slate-800/60 rounded">
+      {base && <path d={d(base)} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />}
+      <path d={d(mine)} fill="#38bdf8" fillOpacity="0.3" stroke="#38bdf8" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,

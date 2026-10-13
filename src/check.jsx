@@ -12,6 +12,7 @@ import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON, ou
 import { learned, gapLimit, deviceId, sameKey, byNewest } from './records.js';
 import { LimitChart, LimitDetail, QuickTable } from '../zu/limits.jsx';
 import { RecEditForm } from './RecEdit.jsx';
+import { PunchIcon } from './punch-icon.jsx';
 import ZU_DATA from '../zu/data/zu-data.json';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
 import './check.css';
@@ -347,6 +348,10 @@ function Result({ r, big, now }) {
         <div className="res-body">曲げ順：<b>{seqText(r.seq)}</b></div>
       ) : (
         <div className="res-body">{r.why}{r.ok && r.src === '実績' && r.seq && <span className="sub">　曲げ順：{seqText(r.seq)}</span>}</div>
+      )}
+      {r.ok && r.punch && r.punch !== PUNCH && !r.special && (
+        <div className="res-punch"><PunchIcon id={r.punch} flip={!!r.punchFlip} />
+          <span className="punch-note">ヤゲンの断面（左＝普通のヤゲン、右＝使うヤゲン。同じ縮尺）</span></div>
       )}
       <div className="res-foot">
         片伸び {r.nobi != null ? r.nobi : '—'}（{r.nobiSrc}）

@@ -1,6 +1,7 @@
 // Z曲げ・コの字 曲がるか判定（問い合わせ用）。
 // シミュレーター本体とは別のアプリ。判定の計算だけ本体と同じものを使う（./judge.js）。
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { PunchIcon } from '../src/punch-icon.jsx';
 import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
 import { LimitChart, LimitDetail, QuickTable } from './limits.jsx';
@@ -532,7 +533,7 @@ function App() {
               </div>
               {(isNaka(best) || isAlt(best)) && <MethodLadder r={best} L={Lnum} />}
               <div className="v-body">
-                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.recs && best.recs.length > 0 && best.src !== '実績' && <span className="tag">この型の実績 {best.recs.length}件</span>}{best.punch && <span className="tag">{best.special ? `くの字特殊ヤゲン${best.punch.replace('特殊 くの字', '')}` : `ヤゲン ${best.punch}`}</span>}</div>}
+                {best.grade !== 'ng' && <div>型：<b>{best.die}</b>（{best.machine}）<span className="tag">{best.src === '実績' ? '実績あり' : best.src === '中押し' ? '中押し' : '計算のみ'}</span>{best.recs && best.recs.length > 0 && best.src !== '実績' && <span className="tag">この型の実績 {best.recs.length}件</span>}{best.punch && <span className="tag">{best.special ? `くの字特殊ヤゲン${best.punch.replace('特殊 くの字', '')}` : `ヤゲン ${best.punch}`}</span>}{best.punch && !best.special && <PunchIcon id={best.punch} flip={!!best.punchFlip} h={90} />}</div>}
                 <div>{best.why}</div>
                 {best.grade !== 'ng' && best.src !== '中押し' && best.geo && best.geo.ok && <div className="hint">曲げ順：{seqText(best.geo.seq)}</div>}
                 {best.clash && <div className="hint">⚠ 反対の実績もあります（{recText(best.clash.ng)}）。実績の一覧で確かめてください</div>}

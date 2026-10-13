@@ -272,9 +272,9 @@ BLK = 2                       # 表を何段（横）に分けるか
 BW = (7, 10, 10, 9) if HAT else (7, 10, 8.5, 9)   # 1段の列幅：底W・計算・実績・見込み（ハットは「24〜122」と書くので実績を広く）
 
 
-def pname(g):
-    """ヤゲンの呼び方（反転つき）"""
-    return f"{g['punch']}{'反転' if g['flip'] else ''}"
+def pname(g, V=None):
+    """ヤゲンの呼び方（反転つき）。V8 で 71606 は曲げ長さ 835mm まで（それより長いと要確認）なので ※ をつける"""
+    return f"{g['punch']}{'反転' if g['flip'] else ''}{'※' if V == 8 and g['punch'] == '71606' else ''}"
 
 
 def ent_text(v):
@@ -328,7 +328,7 @@ for gi, r in enumerate(rows, start=1):
     span = gcol + 15
     title(ws, f"{NAME} 早見グラフ {gi}／{len(rows)}　V{r['V']}　{r['sel'].split(':')[1]}・{r['machine']}　鉄 t{r['t']}（{tag}）"
           + ('　外フランジ別' if HAT else ''),
-          ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。基準の長さの列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（シミュレーター・かんたん判定と同じ。くの字特殊ヤゲンは入れていない）。'
+          ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。基準の長さの列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（シミュレーター・かんたん判定と同じ。くの字特殊ヤゲンは入れていない）。※＝V8でヤゲン71606 は曲げ長さ 835mm（金型1本分）まで。それより長いものは要確認。'
             if HAT else
             '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。')
            + f'★だけ書けば、間の行は「見込み」に自動で入ります。いちばん小さい断面が計算と違えば、7行目の赤い枠に（立上り・{WN}）。'
@@ -413,7 +413,7 @@ for gi, r in enumerate(rows, start=1):
                     g = rng(d_.get('hmin') or {}, d_.get('hmax') or {}, W)
                 ag = (altN.get(str(W)) or alt.get(str(W))) if a == r.get('A') else None
                 if ag and (not g or (H_TOP if ag['hi'] == 'なし' else ag['hi']) > g[1]):
-                    parts.append(f"{a}: {ag['lo']}〜{'なし' if ag['hi'] == 'なし' else ag['hi']}（ヤゲン{pname(ag)}）")
+                    parts.append(f"{a}: {ag['lo']}〜{'なし' if ag['hi'] == 'なし' else ag['hi']}（ヤゲン{pname(ag, r['V'])}）")
                     continue
                 parts.append(f"{a}: " + ('×' if not g or g[0] > g[1] else f"{g[0]}だけ" if g[0] == g[1] else
                                           f"{g[0]}〜{'なし' if g[1] >= H_TOP else g[1]}"))
@@ -468,7 +468,7 @@ for gi, r in enumerate(rows, start=1):
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}" + ('' if HAT else '　実績→')
     if HAT and nW is not None:
         g_ = altN[str(nW)]
-        mtxt = f"いちばん小さい断面 {g_['lo']}×{nW}（ヤゲン{pname(g_)}）"
+        mtxt = f"いちばん小さい断面 {g_['lo']}×{nW}（ヤゲン{pname(g_, r['V'])}）"
     put(ws, 7, 1, mtxt, bold=True, size=10, color='0A7D0A', fill=MINF, align='left')
     put(ws, 7, m0, '立上り', bold=True, size=10, fill=HEAD)
     put(ws, 7, m0 + 2, WN, bold=True, size=10, fill=HEAD)
@@ -533,7 +533,7 @@ for gi, r in enumerate(rows, start=1):
         if HAT:
             ag = altN.get(str(W)) or alt.get(str(W))
             if ag:                             # ほかのヤゲンのほうが高くまで曲がる → そちらを出す（ヤゲンの番号つき）
-                ac = put(ws, rr, c0 + CA0, f"{ag['lo']}〜{'なし' if ag['hi'] == 'なし' else ag['hi']} ヤゲン{pname(ag)}",
+                ac = put(ws, rr, c0 + CA0, f"{ag['lo']}〜{'なし' if ag['hi'] == 'なし' else ag['hi']} ヤゲン{pname(ag, r['V'])}",
                          size=9.5, bold=True, color='0B6E99', fill=PatternFill('solid', fgColor='E3F1F8'))
                 ac.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)   # 折り返さず1行に
                 ws.cell(R, dc + 70, H_TOP if ag['hi'] == 'なし' else ag['hi'])

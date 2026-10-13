@@ -281,7 +281,7 @@ function judgeShape({ shape, outer, t, mat, sel, nobiIn, L, recs }) {
   const alt = rescuePunch(row, outer, S.dirs, L || 0, need);
   if (alt.punch) {
     return { ...res, ok: true, method: alt.special ? 'kuno' : 'punch', punch: alt.punch, punchFlip: alt.flip,
-      special: alt.special, seq: alt.seq, minOut: mo && mo.val, hit,
+      special: alt.special, seq: alt.seq, minOut: mo && mo.val, hit, lenChk: alt.lenChk || null,
       learn,
       why: alt.special
         ? `普通のヤゲン 904061 では当たりますが、くの字特殊ヤゲン${alt.punch.replace('特殊 くの字', '')}なら曲がります（曲げ長さ ${alt.special.win}mm まで）`
@@ -335,10 +335,10 @@ function Result({ r, big, now }) {
   const Box = href ? 'a' : 'div';
   const boxProps = href ? { href, target: '_blank', rel: 'noreferrer' } : {};
   return (
-    <Box {...boxProps} className={`res ${r.ok ? 'ok' : 'ng'} ${m || ''} ${big ? 'big' : ''} ${href ? 'link' : ''}`}>
+    <Box {...boxProps} className={`res ${r.ok ? 'ok' : 'ng'} ${m || ''} ${r.ok && r.lenChk ? 'chk' : ''} ${big ? 'big' : ''} ${href ? 'link' : ''}`}>
       <div className="res-head">
-        <span className="mark">{r.ok ? '○' : '✕'}</span>
-        <span className="verdict">{m ? WORD[m](r) : r.ok ? '曲がります' : '曲がりません'}</span>
+        <span className="mark">{r.ok ? (r.lenChk ? '△' : '○') : '✕'}</span>
+        <span className="verdict">{m ? WORD[m](r) : r.ok ? '曲がります' : '曲がりません'}{r.ok && r.lenChk ? '（要確認）' : ''}</span>
         <span className="die">{r.label}（{MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）</span>
         {r.src === '実績' && <span className="tag-act">実績あり</span>}
         {r.clash && <span className="tag-clash">⚠ 反対の実績あり</span>}
@@ -362,6 +362,7 @@ function Result({ r, big, now }) {
           <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中）</span>
         )}
         {r.actNote && <span className="caution">⚠ {r.actNote}</span>}
+        {r.ok && r.lenChk && <span className="caution">⚠ 要確認：{r.lenChk.why}</span>}
         {m === 'naka' && r.naka && r.naka.angle != null && (
           <span className="naka-a">◇ 最初に底を <b>への字 {r.naka.angle}°</b> に曲げる（これより浅いと曲げ戻すときに当たります）
             {r.naka.open != null && <>　山の開き <b>{r.naka.open}°</b>・山の高さ <b>約{r.naka.rise}mm</b>（底の片側 {r.naka.half}mm）</>}

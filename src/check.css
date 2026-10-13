@@ -90,6 +90,9 @@ a.res.link:hover { border-color: var(--accent); }
 .res.naka .mark, .res.naka .verdict { color: var(--naka); }
 .res.punch { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
 .res.punch .mark, .res.punch .verdict { color: var(--accent); }
+/* 要確認（V8＋ヤゲン71606 で L が金型1本分を超えるなど） */
+.res.chk { border-color: #d08a00; background: color-mix(in srgb, #d08a00 10%, var(--card)); }
+.res.chk .mark, .res.chk .verdict { color: #b57400; }
 
 /* 実績の登録 */
 .rec { margin-top: 14px; }

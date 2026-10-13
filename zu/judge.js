@@ -12,7 +12,7 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
-  SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, suteMaxH, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck,
+  SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, suteMaxH, punchLenCheck, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck,
 } from '../bending-simulator.jsx';
 import { learned, gapLimit } from '../src/records.js';
 export { Z_ACT_ON };
@@ -130,16 +130,19 @@ function altPunch(row, outer, dirs, L, need = -0.05) {
   const ids = Object.keys(PUNCH_LIB);
   const order = [...ids.filter((k) => !PUNCH_LIB[k].special && k !== PUNCH), ...ids.filter((k) => PUNCH_LIB[k].special)];
   const cands = [[PUNCH, true], ...order.flatMap((k) => [[k, false], [k, true]])];
-  let win = null;
+  let win = null, chk = null;
   for (const [pid, flip] of cands) {
     const sp = PUNCH_LIB[pid].special;
     if (sp && win && win.punch === pid) continue;
     const r = searchSequences(part, info.vHalf, info.polys, pid, flip, 'std', 1, Math.max(0, 170 - row.t), need);
     if (!r.sols.length) continue;
     if (sp && L > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; continue; }
+    // V8＋71606 などは L に上限（punchLenCheck）。超えるときは後回しにして、ほかに無ければ「要確認」で返す
+    const lc = !sp && punchLenCheck(pid, row.V, L);
+    if (lc) { if (!chk) chk = { punch: pid, flip, seq: r.sols[0], special: null, lenChk: lc }; continue; }
     return { ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win };
   }
-  return { win };
+  return chk ? { ok: chk, win } : { win };
 }
 // くの字の特殊ヤゲンは現場の呼び方で出す（例：くの字特殊ヤゲン165）
 const punchName = (p, flip) => `${p.startsWith('特殊 くの字') ? `くの字特殊ヤゲン${p.replace('特殊 くの字', '')}` : `ヤゲン ${p}`}${flip ? '（反転）' : ''}`;
@@ -217,7 +220,8 @@ export function judgeZ(row, A, S, B, L, need = -0.05) {
   if (alt.ok) {
     return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
       hit: firstHitWhere(row, outer0, dirs0), geo: { ok: true, seq: alt.ok.seq },
-      why: `普通のヤゲン 904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
+      ...(alt.ok.lenChk ? { grade: 'check', lenChk: alt.ok.lenChk } : {}),
+      why: `普通のヤゲン 904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（曲げ長さ ${alt.ok.special.win}mm まで）` : ''}${alt.ok.lenChk ? `。ただし${alt.ok.lenChk.why}` : ''}` };
   }
   const sMin = zSimMinS(row);
   if (sMin != null && S < sMin) return { ...base, grade: 'ng', src: '計算', why: `段差S ${S}mm が狭すぎます（計算で約 ${sMin}mm 以上）`, fix: `段差Sを ${sMin}mm 以上に`, geo };
@@ -243,7 +247,8 @@ export function judgeU(row, H1, W, H2, L, need = -0.05) {
   if (alt.ok) {
     return { ...base, grade: 'alt', src: '計算', punch: alt.ok.punch, punchFlip: alt.ok.flip, special: alt.ok.special,
       hit: firstHitWhere(row, outer0, dirs0), geo: { ok: true, seq: alt.ok.seq },
-      why: `普通のヤゲン 904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（くの字の窓に入るので、曲げ長さ ${alt.ok.special.win}mm まで）` : ''}` };
+      ...(alt.ok.lenChk ? { grade: 'check', lenChk: alt.ok.lenChk } : {}),
+      why: `普通のヤゲン 904061 では当たりますが、${punchName(alt.ok.punch, alt.ok.flip)}なら曲がります${alt.ok.special ? `（くの字の窓に入るので、曲げ長さ ${alt.ok.special.win}mm まで）` : ''}${alt.ok.lenChk ? `。ただし${alt.ok.lenChk.why}` : ''}` };
   }
   // 特殊 くの字なら通るのに、曲げ長さが窓を超えている
   const winFix = alt.win ? `${alt.win.punch}を使い、曲げ長さ L を ${alt.win.win}mm 以下に` : null;
@@ -613,7 +618,7 @@ export { recText };
 // ① 904061 で当たるとき、ほかのヤゲン（くの字を含む）で曲がるか
 export function rescuePunch(row, outer, dirs, L, need = -0.05) {
   const a = altPunch(row, outer, dirs, L, need);
-  return a.ok ? { punch: a.ok.punch, flip: a.ok.flip, seq: a.ok.seq, special: a.ok.special || null, win: a.win } : { win: a.win };
+  return a.ok ? { punch: a.ok.punch, flip: a.ok.flip, seq: a.ok.seq, special: a.ok.special || null, lenChk: a.ok.lenChk || null, win: a.win } : { win: a.win };
 }
 // ② コの字で、中押し（捨て曲げ）なら曲がるか。上型に当たるときだけ効く
 export function nakaPlan(row, H1, W, H2, need = -0.05) {

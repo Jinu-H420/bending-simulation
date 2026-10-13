@@ -1122,6 +1122,15 @@ function downCheck(chain, V, t, vHalf) {
 }
 
 const DIE_UNIT_LEN = 835;
+// ヤゲンと金型の組み合わせで、曲げ長さ L に上限があるもの。超えたら ✕ ではなく「要確認」。
+// 2026-10-13 ユーザー：t1.2 コの字 7×11×7 のように V8 でヤゲン 71606 を使うときは、L を金型1本分（835mm）まで。それ以上は要確認
+const PUNCH_LEN_RULES = [{ punch: '71606', V: 8, maxL: DIE_UNIT_LEN }];
+function punchLenCheck(punch, V, L) {
+  const r = PUNCH_LEN_RULES.find((x) => x.punch === punch && x.V === Number(V));
+  return r && L > r.maxL
+    ? { maxL: r.maxL, why: `V${r.V}でヤゲン ${r.punch} を使うときは、曲げ長さ ${r.maxL}mm（金型1本分）まで。L ${L}mm は要確認` }
+    : null;
+}
 // 金型寸法表の注記：PL22（t22）は一度に曲げられる長さが1500mmまで
 const PL22_MAX_LEN = 1500;
 // 板厚に対して基準（折り曲げ表の赤枠）より小さいVで曲げるときの、曲げられる最長の曲げ長さ L（実績）。
@@ -1702,6 +1711,7 @@ const BendingSimulator = () => {
     return c.length ? c.reduce((a, b) => (a.v <= b.v ? a : b)) : null;
   }, [nobiV, machineSel, t]);
   const lenNG = lenLimit && bendLen > lenLimit.v ? lenLimit : null;
+  const punchLen = punchLenCheck(punchType, nobiV, bendLen);   // V8＋71606 は L835 まで（超えたら要確認）
   // 基準より小さいV：最長Lの実績があればそれで ✕、無ければ「確認中」
   const smallV = useMemo(() => {
     const sv = smallVCheck(matType, t, nobiV);
@@ -1945,7 +1955,7 @@ const BendingSimulator = () => {
     const ids = Object.keys(PUNCH_LIB);
     const order = [...ids.filter((k) => !PUNCH_LIB[k].special), ...ids.filter((k) => PUNCH_LIB[k].special)];
     const cands = order.flatMap((k) => [[k, false], [k, true]]).filter(([k, f]) => !(k === punchType && f === punchFlip));
-    let i = -1, win = null, kuno = [];
+    let i = -1, win = null, kuno = [], chk = null;   // chk＝曲がるが長さの決まりで要確認のヤゲン（ほかに無ければそれを出す）
     const next = () => {
       if (cancel) return;
       // まず、いまのヤゲンのまま曲げ順・突き当てを変えれば通るか。通るなら替える必要は無い
@@ -1961,19 +1971,21 @@ const BendingSimulator = () => {
         setTimeout(next, 0);
         return;
       }
-      if (i >= cands.length) { setAltPunch({ win, kuno }); return; }
+      if (i >= cands.length) { setAltPunch(chk ? { ok: chk, win, kuno } : { win, kuno }); return; }
       const [pid, flip] = cands[i++];
       const sp = PUNCH_LIB[pid].special;
       const r = searchSequences(part, vHalf, diePolys, pid, flip, chukanSel, 1, openGap);
       if (r.sols.length) {
+        const lc = !sp && punchLenCheck(pid, nobiV, bendLen);
         if (sp && bendLen > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; }
+        else if (lc) { if (!chk) chk = { punch: pid, flip, seq: r.sols[0], special: null, lenChk: lc }; }
         else { setAltPunch({ ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win, kuno }); return; }
       }
       setTimeout(next, 0);
     };
     const id = setTimeout(next, 500);
     return () => { cancel = true; clearTimeout(id); };
-  }, [altWorth, part, vHalf, diePolys, chukanSel, openGap, bendLen, punchType, punchFlip, winNG]);
+  }, [altWorth, part, vHalf, diePolys, chukanSel, openGap, bendLen, punchType, punchFlip, winNG, nobiV]);
   const applyAltPunch = () => {
     const a = altPunch && altPunch.ok;
     if (!a) return;
@@ -2665,6 +2677,11 @@ const BendingSimulator = () => {
         )}
 
         {/* ほかのヤゲン（くの字など）。現場の順番：くの字で曲がるならくの字、中押しは最終手段 */}
+        {punchLen && (
+          <div className="rounded-md px-4 py-2 mb-3 border border-amber-600 bg-amber-950/40 text-amber-200 text-sm font-bold">
+            △ 要確認：{punchLen.why}
+          </div>
+        )}
         {altWorth && altPunch && (altPunch.busy || altPunch.ok || altPunch.win || (altPunch.kuno && altPunch.kuno.length > 0)) && (
           <div className="rounded-md px-4 py-2 mb-3 border text-xs bg-sky-950/40 border-sky-700 text-sky-100 flex items-center gap-3 flex-wrap">
             {altPunch.busy ? (
@@ -2672,7 +2689,8 @@ const BendingSimulator = () => {
             ) : altPunch.ok ? (
               <>
                 <span>◇ <b>ヤゲン {altPunch.ok.punch}{altPunch.ok.flip ? '（反転）' : ''}</b> なら曲がります
-                  {altPunch.ok.special ? `（くの字の窓に入るので、曲げ長さ ${altPunch.ok.special.win}mm まで）` : ''}</span>
+                  {altPunch.ok.special ? `（くの字の窓に入るので、曲げ長さ ${altPunch.ok.special.win}mm まで）` : ''}
+                  {altPunch.ok.lenChk ? <b className="text-amber-300">（要確認：{altPunch.ok.lenChk.why}）</b> : ''}</span>
                 <button onClick={applyAltPunch} className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold">このヤゲンにする</button>
               </>
             ) : altPunch.win ? (
@@ -3350,5 +3368,5 @@ export default BendingSimulator;
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, punchLenCheck, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
 };

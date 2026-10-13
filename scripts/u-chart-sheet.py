@@ -322,8 +322,9 @@ BW = (7, 10, 10, 9) if HAT else (7, 10, 8.5, 9)   # 1段の列幅：底W・計�
 
 
 def pname(g, V=None):
-    """ヤゲンの呼び方（反転つき）。V8 で 71606 は曲げ長さ 835mm まで（それより長いと要確認）なので ※ をつける"""
-    return f"{g['punch']}{'反転' if g['flip'] else ''}{'※' if V == 8 and g['punch'] == '71606' else ''}"
+    """ヤゲンの呼び方（反転つき）。V8 で 71606 は曲げ長さ 835mm まで（それより長いと要確認）なので、それを書き添える
+    （2026-10-13 ユーザー「835までというのもわかるように」）"""
+    return f"{g['punch']}{'反転' if g['flip'] else ''}{'（L835まで）' if V == 8 and g['punch'] == '71606' else ''}"
 
 
 def ent_text(v):
@@ -369,8 +370,10 @@ for gi, r in enumerate(rows, start=1):
     # ハット：904061 で当たるときは、ほかのヤゲンで曲がれば「曲がる」（hat-alt-sim.mjs。2026-10-13 ユーザー
     #   「他のヤゲンで曲がるなら曲がるになります」）。基準の長さの列に、いちばん広く曲がるヤゲンの範囲とヤゲンの番号を出す
     alt, altN = (r.get('alt') or {}), (r.get('altNarrow') or {})
-    bw = ((7,) + tuple(17 if a == r.get('A') and (alt or altN) else 9.5 for a in FL) + (10, 9)) if HAT else \
-        ((BW[0], 16) + BW[2:] if (alt or altN) else BW)     # コの字も、ほかのヤゲンの番号を書くときは計算の列を広く
+    l835 = r['V'] == 8 and any(g['punch'] == '71606' for g in list(alt.values()) + list(altN.values()))
+    wa = 22 if l835 else 17 if HAT else 16                # ほかのヤゲンの番号（と L835まで）を書く列の幅
+    bw = ((7,) + tuple(wa if a == r.get('A') and (alt or altN) else 9.5 for a in FL) + (10, 9)) if HAT else \
+        ((BW[0], wa) + BW[2:] if (alt or altN) else BW)     # コの字も、ほかのヤゲンの番号を書くときは計算の列を広く
     blk = 1 if HAT else BLK
     nb = len(bw)
     tcols = blk * nb + (blk - 1)          # 表の列（段のあいだに1列すき間）
@@ -378,10 +381,10 @@ for gi, r in enumerate(rows, start=1):
     span = gcol + 15
     title(ws, f"{NAME} 早見グラフ {gi}／{len(rows)}　V{r['V']}　{r['sel'].split(':')[1]}・{r['machine']}　鉄 t{r['t']}（{tag}）"
           + ('　外フランジ別' if HAT else ''),
-          ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。基準の長さの列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（シミュレーター・かんたん判定と同じ。くの字特殊ヤゲンは入れていない）。※＝V8でヤゲン71606 は曲げ長さ 835mm（金型1本分）まで。それより長いものは要確認。'
+          ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。基準の長さの列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（シミュレーター・かんたん判定と同じ。くの字特殊ヤゲンは入れていない）。「（L835まで）」＝V8でヤゲン71606 を使うときは曲げ長さ 835mm（金型1本分）まで。それより長いものは要確認。'
             if HAT else
             '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。'
-            '計算の列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（※＝V8でヤゲン71606 は曲げ長さ 835mm まで、それより長いものは要確認）。')
+            '計算の列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（「L835まで」＝V8でヤゲン71606 を使うときは曲げ長さ 835mm（金型1本分）まで。それより長いものは要確認）。')
            + f'★だけ書けば、間の行は「見込み」に自動で入ります。いちばん小さい断面が計算と違えば、7行目の赤い枠に（立上り・{WN}）。'
            '保存して Claude に「計算し直して」と言うと、★に合わせて計算そのものを直し、見込みがもっと確かになります（合わない★は赤で知らせます）。'
            + ('' if HAT else '左右の立上りが違うときは低いほうで見ます。')
@@ -443,7 +446,7 @@ for gi, r in enumerate(rows, start=1):
     L1, L2, L3 = get_column_letter(lc), get_column_letter(lc + 1), get_column_letter(lc + 2)
     ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=2)
     put(ws, 3, 1, f'{WN}を入れる →', bold=True, size=11, fill=HEAD)
-    put(ws, 3, 3, r.get('wMin'), bold=True, size=14, fill=ENTRY)
+    put(ws, 3, 3, nW if nW is not None else r.get('wMin'), bold=True, size=14, fill=ENTRY)   # はじめは いちばん狭い幅
     IN = 'C3'
     ws.merge_cells(start_row=3, start_column=4, end_row=3, end_column=tcols)
     wmin = min([x for x in (r.get('wMin'), nW) if x is not None], default=0)

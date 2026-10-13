@@ -334,32 +334,7 @@ def ent_text(v):
     return v
 
 
-def key_ws(vals, alt_ws=(), nW=None):
-    """書いてもらう底W（★）
-    ・いちばん狭い幅（ほかのヤゲンも入れた nW と、904061 のいちばん狭い幅）と いちばん広い幅
-    ・赤字（底Wを広げたのに上限が下がる所）が本当かを実績で確かめるため、赤字のかたまりごとに
-      手前の山（赤字の1つ前の行）と谷（赤字のいちばん低い行）（2026-10-14 ユーザー「赤字は本当か実績で検証したい」）
-    ・100mm ごと（近すぎるものは省く）"""
-    calcs = [(W, v) for W, v in vals if isinstance(v, (int, float))]
-    if not calcs:
-        return [nW] if nW is not None else []
-    keys = [calcs[0][0], calcs[-1][0]] + ([nW] if nW is not None else [])
-    red = [i for i in range(1, len(calcs))
-           if calcs[i][0] not in alt_ws and calcs[i][1] < calcs[i - 1][1] and calcs[i][0] - calcs[i - 1][0] <= 10]
-    runs = []
-    for i in red:
-        if runs and i == runs[-1][-1] + 1:
-            runs[-1].append(i)
-        else:
-            runs.append([i])
-    for run in runs:
-        keys.append(calcs[run[0] - 1][0])                       # 山
-        keys.append(calcs[min(run, key=lambda i: calcs[i][1])][0])   # 谷
-    have = {W for W, _ in calcs}
-    for W in ([50] if calcs[0][0] < 40 else []) + list(range(100, calcs[-1][0], 100)):
-        if W in have and all(abs(W - k) >= 20 for k in keys):
-            keys.append(W)
-    return sorted(set(keys))
+from u_keys import keys_for   # ★の決め方（まとめの実績記入と同じ★にするため共通）
 
 
 for gi, r in enumerate(rows, start=1):
@@ -411,8 +386,7 @@ for gi, r in enumerate(rows, start=1):
     vals = [(int(k), hm[k]) for k in sorted(hm, key=lambda x: int(x)) if lo <= int(k) <= hi
             and (not HAT or int(k) % 10 == 0 or int(k) == r.get('wMin') or int(k) == nW or k in (r.get('entries') or {}))]
     # ↑ハットは列が多いので 10mm ごと（実績が書いてある幅は行を残す。書いた実績が消えないように）
-    keys = key_ws(vals, {int(k) for k in (r.get('alt') or {})} | {int(k) for k in (r.get('altNarrow') or {})},
-                  min(map(int, r['altNarrow'])) if r.get('altNarrow') else None)
+    keys = keys_for(r, HAT)
     n = len(vals)
     fx = fit['hmax'] if fit else r['hmax']     # 見込みの元にする計算（実績に合わせたものがあればそれ）
     ents = r.get('entries') or {}

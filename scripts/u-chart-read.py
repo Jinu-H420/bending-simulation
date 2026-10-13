@@ -39,6 +39,41 @@ def num(v):
 
 wb = load_workbook(sys.argv[1])
 out = []
+if '実績の記入' in wb.sheetnames:
+    # まとめ（u-summary.py）の記入シート：1型2行。下の行の印刷範囲の外（60・61列）に板厚・V、上の行の 62列〜 に★の幅
+    ws = wb['実績の記入']
+    hr = 4
+    head = [str(ws.cell(hr, c).value or '') for c in range(1, 40)]
+    for rb in range(6, 200):
+        t, V = ws.cell(rb, 60).value, ws.cell(rb, 61).value
+        if t is None:
+            continue
+        ra = rb - 1
+        ents = {}
+        k = 0
+        while True:                            # ★：62列〜 に幅、4列〜 に書いた値
+            W = ws.cell(ra, 62 + k).value
+            if not isinstance(W, (int, float)):
+                break
+            v = num(ws.cell(rb, 4 + k).value)
+            if v is not None:
+                ents[str(int(W))] = v
+            k += 1
+        nk = max(k, 1)
+        # ほかの幅：★の列の右（見出しに「ほかの」がある列から）
+        fc = next((c for c in range(1, 40) if head[c - 1].startswith('ほかの')), None)
+        if fc:
+            for c in range(fc, fc + 6):
+                W, v = num(ws.cell(ra, c).value), num(ws.cell(rb, c).value)
+                if isinstance(W, (int, float)) and v is not None:
+                    ents[str(int(W))] = v
+        d = {'t': t, 'V': int(V), 'entries': ents}
+        h, w = num(ws.cell(rb, 2).value), num(ws.cell(rb, 3).value)
+        if isinstance(h, (int, float)) and isinstance(w, (int, float)):
+            d['min'] = {'h': h, 'w': w}
+        out.append(d)
+    json.dump(out, sys.stdout, ensure_ascii=False)
+    sys.exit(0)
 for ws in wb.worksheets[1:]:
     m = re.fullmatch(r't([\d.]+) V(\d+)', ws.title)
     if not m:

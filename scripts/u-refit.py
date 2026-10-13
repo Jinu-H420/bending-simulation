@@ -30,7 +30,24 @@ def run(args, out=None):
 
 
 ent = os.path.join(tmp, 'entries.json')
-run([sys.executable, os.path.join(HERE, 'u-chart-read.py'), src], ent)
+# 型ごとのシートと、まとめ（表まとめ・グラフまとめ）の「実績の記入」の両方を読む。
+# 同じ型・同じ幅に違う値が書いてあれば、あとで保存したファイルのほうを使う（2026-10-14）
+stem0 = os.path.splitext(os.path.basename(src))[0]
+srcs = [src] + [p for p in (os.path.join(os.path.dirname(src), stem0.replace('早見グラフ', k) + '.xlsx') for k in ('表まとめ', 'グラフまとめ'))
+                if os.path.exists(p)]
+merged = {}
+for p in sorted(srcs, key=os.path.getmtime):
+    one = os.path.join(tmp, 'one.json')
+    run([sys.executable, os.path.join(HERE, 'u-chart-read.py'), p], one)
+    for d in json.load(open(one, encoding='utf-8')):
+        m = merged.setdefault((d['t'], d['V']), {'t': d['t'], 'V': d['V'], 'entries': {}})
+        for W, v in d['entries'].items():
+            if W in m['entries'] and m['entries'][W] != v:
+                print(f"t{d['t']} V{d['V']} 幅{W}：{m['entries'][W]} → {v}（{os.path.basename(p)} のほうが新しい）")
+            m['entries'][W] = v
+        if d.get('min'):
+            m['min'] = d['min']
+json.dump(list(merged.values()), open(ent, 'w', encoding='utf-8'), ensure_ascii=False)
 n = {f"t{d['t']} V{d['V']}": len(d['entries']) for d in json.load(open(ent, encoding='utf-8')) if d['entries']}
 print('実績のある型:', n or 'なし')
 fitted = os.path.join(tmp, 'fit.json')

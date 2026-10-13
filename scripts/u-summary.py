@@ -3,6 +3,9 @@
 #   表まとめ  ：A3縦1枚。縦＝底W（コの字 5mm・ハット 10mm）、横＝16型。数字＝立上りの上限（ハットは下限〜上限）
 #   グラフまとめ：A3横2枚。1枚に8型（4×2）の小さいグラフ（Excel のグラフ）
 #   どちらも、計算し直してあれば実績合わせの値、ヤゲン904061 で当たってもほかのヤゲンで曲がれば青（番号はセルの右に小さく）。
+#   どちらにも「実績の記入」シート（A3横1枚・1型2行）を付ける（2026-10-14 ユーザー「まとめたものにも実績を入力する欄が必要」）。
+#     ★の幅（u_keys.py＝型ごとのシートと同じ）・いちばん小さい断面（必ず記入）・ほかの幅3つ。グラフまとめはそのシートの値をグラフに点で出す。
+#     u-chart-read.py が読み、u-refit.py が型ごとのシートの実績と合わせて（同じ所が違えば新しく保存したファイルを使う）計算し直す。
 #   使い方: python scripts/u-summary.py <u-table.json か 合わせた.json> <表まとめ.xlsx> <グラフまとめ.xlsx>
 #           （u-refit.py が早見グラフと一緒に作り直す）
 import json
@@ -18,6 +21,9 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
+from openpyxl.worksheet.datavalidation import DataValidation
+
+from u_keys import keys_for
 
 src, out_table, out_chart = sys.argv[1], sys.argv[2], sys.argv[3]
 rows = json.load(open(src, encoding='utf-8'))
@@ -90,6 +96,118 @@ def label(r):
     return f"V{r['V']}\nt{r['t']}" + ('' if r['base'] else '\n小さいV')
 
 
+# ================================================================ 実績の記入（表まとめ・グラフまとめの両方に付ける）
+KEYF = PatternFill('solid', fgColor='FFD24D')
+RED = Side(style='thick', color='C00000')
+KEYBOX = Border(left=RED, right=RED, top=RED, bottom=RED)
+KEYS = [keys_for(r, HAT) for r in rows]
+NK = max([len(k) for k in KEYS] + [1])
+NF = 3                                   # ほかの幅の欄の数
+EC0 = 4                                  # ★の最初の列
+FC0 = EC0 + NK                           # ほかの幅の最初の列
+HC = 60                                  # 印刷範囲の外：t・V・グラフ用の数字
+ER0 = 5                                  # 1型目の上の行
+
+
+def ent_text(v):
+    if isinstance(v, dict):
+        return f"{v.get('lo', '')}〜{v.get('hi', '')}"
+    return v
+
+
+def entry_sheet(wb):
+    """実績の記入シート。1型2行（上＝幅と計算、下＝実績を書く欄）。返り値：型ごとの上の行"""
+    ws = wb.create_sheet('実績の記入')
+    last = get_column_letter(FC0 + NF - 1)
+    ws.merge_cells(f'A1:{last}1')
+    c = ws.cell(1, 1, f'{NAME}　実績の記入（全部の型）　株式会社高橋鉄骨')
+    c.font = Font(name=FONT, size=15, bold=True)
+    ws.merge_cells(f'A2:{last}2')
+    c = ws.cell(2, 1, ('★の赤い枠に、その' + WN + 'で実際に曲げられた'
+                       + ('立上りの範囲を「24〜75」のように（上だけなら 75）' if HAT else '一番高い立上り（外寸）を')
+                       + '書いてください。曲がらなかったら ×。上の小さい字は計算の値。いちばん小さい断面は必ず書いてください。'
+                       + 'ほかの' + WN + 'で確かめたときは、右の欄の上に' + WN + '、下に立上りを。'
+                       + '書いたら保存して Claude に「計算し直して」。型ごとのシート（' + NAME + '_早見グラフ_A3.xlsx）に書いても同じです。'))
+    c.font = Font(name=FONT, size=10)
+    c.alignment = Alignment(wrap_text=True, vertical='top')
+    ws.row_dimensions[2].height = 30
+    put(ws, 4, 1, '型', bold=True, fill=HEAD)
+    ws.merge_cells(start_row=4, start_column=2, end_row=4, end_column=3)
+    put(ws, 4, 2, '★必ず記入\nいちばん小さい断面（立上り｜' + WN + '）', bold=True, size=8.5, fill=KEYF, color='C00000')
+    ws.merge_cells(start_row=4, start_column=EC0, end_row=4, end_column=FC0 - 1)
+    put(ws, 4, EC0, f'★の{WN}で実際に曲げられた' + ('立上り（下限〜上限）' if HAT else '一番高い立上り'), bold=True, size=10, fill=KEYF)
+    ws.merge_cells(start_row=4, start_column=FC0, end_row=4, end_column=FC0 + NF - 1)
+    put(ws, 4, FC0, f'ほかの{WN}（上に{WN}、下に立上り）', bold=True, size=9, fill=HEAD)
+    ws.row_dimensions[4].height = 44
+    dv = DataValidation(type='custom', formula1='TRUE', allow_blank=True, showErrorMessage=False)
+    tops = []
+    for j, r in enumerate(rows):
+        ra, rb = ER0 + 2 * j, ER0 + 2 * j + 1
+        tops.append(ra)
+        ws.merge_cells(start_row=ra, start_column=1, end_row=rb, end_column=1)
+        put(ws, ra, 1, label(r).replace('\n', ' ', 1), bold=True, size=10, fill=HEAD)
+        ws.cell(rb, 1).border = box
+        ents = r.get('entries') or {}
+        mn = r.get('minAct') or {}
+        h, w, g = smallest(r)
+        ws.merge_cells(start_row=ra, start_column=2, end_row=ra, end_column=3)
+        put(ws, ra, 2, (f'計算 {h}×{w}' + (f' {pname(g, r["V"])}' if g else '')) if w else '計算では×', size=8, color='555555', fill=MINF)
+        for cc, v in ((2, mn.get('h')), (3, mn.get('w'))):
+            e = put(ws, rb, cc, v, bold=True, size=11, fill=KEYF)
+            e.border = KEYBOX
+        keys = KEYS[j]
+        for k in range(NK):
+            cc = EC0 + k
+            if k < len(keys):
+                W = keys[k]
+                lo, hi, gg = best(r, W)
+                ct = '×' if hi is None else (f"{lo}〜{'なし' if hi == 'なし' else hi}" if HAT else f"{'なし' if hi == 'なし' else hi}")
+                put(ws, ra, cc, f'★{W}　計算 {ct}' + (f' {gg["punch"]}' if gg else ''), size=8, bold=True,
+                    color='0B6E99' if gg else 'C00000', fill=PatternFill('solid', fgColor='FFF6D6'))
+                e = put(ws, rb, cc, ent_text(ents.get(str(W))), bold=True, size=11, fill=KEYF)
+                e.border = KEYBOX
+                ws.cell(ra, HC + 2 + k, W)                                      # グラフ用：幅
+            else:
+                put(ws, ra, cc, None, fill=PatternFill('solid', fgColor='F2F2F2'))
+                put(ws, rb, cc, None, fill=PatternFill('solid', fgColor='F2F2F2'))
+            E = f'{get_column_letter(cc)}{rb}'
+            T_ = f'SUBSTITUTE(SUBSTITUTE({E},"~","〜"),"-","〜")'
+            ws.cell(rb, HC + 2 + k, f'=IF(ISNUMBER({E}),{E},IFERROR(VALUE(MID({T_},FIND("〜",{T_})+1,9)),NA()))')
+            ws.cell(rb, HC + 20 + k, f'=IF(OR({E}="×",{E}="✕"),{(r.get("fit") or r).get("hLow") or 0},NA())')
+        # 型ごとのシートで ★以外の幅に書いた実績は、ほかの幅の欄へ
+        others = [(int(W), v) for W, v in ents.items() if int(W) not in keys][:NF]
+        for i in range(NF):
+            cc = FC0 + i
+            Wv, Hv = others[i] if i < len(others) else (None, None)
+            put(ws, ra, cc, Wv, bold=True, size=10, fill=ENTRYF)
+            put(ws, rb, cc, ent_text(Hv), bold=True, size=11, fill=ENTRYF)
+            A_, E = f'{get_column_letter(cc)}{ra}', f'{get_column_letter(cc)}{rb}'
+            T_ = f'SUBSTITUTE(SUBSTITUTE({E},"~","〜"),"-","〜")'
+            ws.cell(ra, HC + 2 + NK + i, f'=IF(ISNUMBER({A_}),{A_},NA())')
+            ws.cell(rb, HC + 2 + NK + i, f'=IF(ISNUMBER({E}),{E},IFERROR(VALUE(MID({T_},FIND("〜",{T_})+1,9)),NA()))')
+            ws.cell(rb, HC + 20 + NK + i, f'=IF(OR({E}="×",{E}="✕"),{(r.get("fit") or r).get("hLow") or 0},NA())')
+        # いちばん小さい断面の実績もグラフへ
+        ws.cell(ra, HC + 2 + NK + NF, f'=IF(AND(ISNUMBER(B{rb}),ISNUMBER(C{rb})),C{rb},NA())')
+        ws.cell(rb, HC + 2 + NK + NF, f'=IF(AND(ISNUMBER(B{rb}),ISNUMBER(C{rb})),B{rb},NA())')
+        ws.cell(rb, HC + 20 + NK + NF, '=NA()')
+        ws.cell(rb, HC, r['t']); ws.cell(rb, HC + 1, r['V'])                    # 読むとき用：板厚・V
+        ws.row_dimensions[ra].height = 28
+        ws.row_dimensions[rb].height = 24
+    ws.cell(4, HC, '板厚'); ws.cell(4, HC + 1, 'V'); ws.cell(4, HC + 2, '上＝幅・下＝実績（グラフ用）')
+    ws.column_dimensions['A'].width = 13
+    ws.column_dimensions['B'].width = 8
+    ws.column_dimensions['C'].width = 8
+    for k in range(NK):
+        ws.column_dimensions[get_column_letter(EC0 + k)].width = 16 if HAT else 14
+    for i in range(NF):
+        ws.column_dimensions[get_column_letter(FC0 + i)].width = 10
+    ws.freeze_panes = ws.cell(ER0, 2)
+    a3(ws, f'A1:{last}{ER0 + 2 * len(rows) - 1}', landscape=True)
+    return ws, tops
+
+
+ENTRYF = PatternFill('solid', fgColor='FFF2B3')
+
 # ================================================================ 表まとめ（A3縦1枚）
 wb = Workbook()
 ws = wb.active
@@ -152,6 +270,7 @@ for j, r in enumerate(rows):
     ws.column_dimensions[get_column_letter(2 + j)].width = (17 if wide else 11.5) if HAT else (14 if wide else 8.5)
 ws.freeze_panes = ws.cell(HR + 5, 2)
 a3(ws, f'A1:{get_column_letter(n + 1)}{HR + 4 + len(Ws)}', landscape=HAT)   # ハットは行が少ないので横で大きく
+entry_sheet(wb)
 wb.save(out_table)
 print('saved', out_table)
 
@@ -170,19 +289,22 @@ def line_props(color, width=2.0, dash=None, none=False):
 
 
 wb = Workbook()
+ews, ETOPS = None, None
 PER = 8
 pages = [rows[i:i + PER] for i in range(0, n, PER)]
 dc = 40
 for pi, page in enumerate(pages, start=1):
     ws = wb.active if pi == 1 else wb.create_sheet()
     ws.title = f'グラフまとめ{pi}'
+    if ews is None:
+        ews, ETOPS = entry_sheet(wb)          # 書いた実績をグラフに点で出すため、同じブックに記入シート
     ws.merge_cells('A1:AB1')
     c = ws.cell(1, 1, f'{NAME} 早見グラフ（まとめ {pi}／{len(pages)}）　横＝{WN}、縦＝{"立上り" if HAT else "低いほうの立上り"}（外寸mm）　株式会社高橋鉄骨')
     c.font = Font(name=FONT, size=15, bold=True)
     ws.merge_cells('A2:AB2')
     c = ws.cell(2, 1, ('青の線＝曲げられる上限（ヤゲン904061、計算し直してあれば実績合わせ）。▲＝ほかのヤゲンなら曲がる上限。'
                        + ('点線＝下限（これより低いと上面が上型に近づいて当たる）。外フランジは型ごとの基準の長さ。' if HAT else '')
-                       + '●＝いちばん小さい断面。数字は型ごとのシート・表まとめを見てください。'
+                       + '●＝いちばん小さい断面。◆＝書いた実績（「実績の記入」シートに書くとすぐ出る）、×＝曲がらなかった実績。数字は型ごとのシート・表まとめを見てください。'
                        f'計算は {TODAY} 時点。'))
     c.font = Font(name=FONT, size=10)
     for k, r in enumerate(page):
@@ -226,6 +348,21 @@ for pi, page in enumerate(pages, start=1):
             s4.marker.graphicalProperties.line.solidFill = '0A7D0A'
             s4.graphicalProperties = line_props(None, none=True)
             ch.series.append(s4)
+        # 書いた実績（「実績の記入」シートの値。書くとすぐ点が出る）
+        jj = rows.index(r)
+        ra, rb = ETOPS[jj], ETOPS[jj] + 1
+        XE = Reference(ews, min_col=HC + 2, max_col=HC + 2 + NK + NF, min_row=ra)
+        s5 = Series(Reference(ews, min_col=HC + 2, max_col=HC + 2 + NK + NF, min_row=rb), XE, title='実績')
+        s5.marker = Marker(symbol='diamond', size=8)
+        s5.marker.graphicalProperties = GraphicalProperties(solidFill='E07B00')
+        s5.marker.graphicalProperties.line.solidFill = '7A3E00'
+        s5.graphicalProperties = line_props(None, none=True)
+        s6 = Series(Reference(ews, min_col=HC + 20, max_col=HC + 20 + NK + NF, min_row=rb), XE, title='曲がらなかった')
+        s6.marker = Marker(symbol='x', size=9)
+        s6.marker.graphicalProperties = GraphicalProperties(noFill=True)
+        s6.marker.graphicalProperties.line.solidFill = 'C62F2F'
+        s6.graphicalProperties = line_props(None, none=True)
+        ch.series.extend([s5, s6])
         ch.x_axis.title = f'{WN}（mm）'
         ch.y_axis.title = '立上り（mm）'
         ch.x_axis.scaling.min, ch.x_axis.scaling.max = 0, H_TOP

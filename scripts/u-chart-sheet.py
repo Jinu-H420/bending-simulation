@@ -334,22 +334,27 @@ def ent_text(v):
     return v
 
 
-def key_ws(vals):
-    """書いてもらう底W（★）：いちばん狭い・いちばん広い・計算の山と谷・100mm ごと（近すぎるものは省く）"""
+def key_ws(vals, alt_ws=(), nW=None):
+    """書いてもらう底W（★）
+    ・いちばん狭い幅（ほかのヤゲンも入れた nW と、904061 のいちばん狭い幅）と いちばん広い幅
+    ・赤字（底Wを広げたのに上限が下がる所）が本当かを実績で確かめるため、赤字のかたまりごとに
+      手前の山（赤字の1つ前の行）と谷（赤字のいちばん低い行）（2026-10-14 ユーザー「赤字は本当か実績で検証したい」）
+    ・100mm ごと（近すぎるものは省く）"""
     calcs = [(W, v) for W, v in vals if isinstance(v, (int, float))]
     if not calcs:
-        return []
-    keys = [calcs[0][0], calcs[-1][0]]
-    for a in range(len(calcs) - 1):
-        if calcs[a + 1][1] < calcs[a][1]:
-            keys.append(calcs[a][0])
-            b, m = a + 1, a + 1
-            while b < len(calcs) and calcs[b][1] <= calcs[a][1]:
-                if calcs[b][1] < calcs[m][1]:
-                    m = b
-                b += 1
-            keys.append(calcs[m][0])
-            break
+        return [nW] if nW is not None else []
+    keys = [calcs[0][0], calcs[-1][0]] + ([nW] if nW is not None else [])
+    red = [i for i in range(1, len(calcs))
+           if calcs[i][0] not in alt_ws and calcs[i][1] < calcs[i - 1][1] and calcs[i][0] - calcs[i - 1][0] <= 10]
+    runs = []
+    for i in red:
+        if runs and i == runs[-1][-1] + 1:
+            runs[-1].append(i)
+        else:
+            runs.append([i])
+    for run in runs:
+        keys.append(calcs[run[0] - 1][0])                       # 山
+        keys.append(calcs[min(run, key=lambda i: calcs[i][1])][0])   # 谷
     have = {W for W, _ in calcs}
     for W in ([50] if calcs[0][0] < 40 else []) + list(range(100, calcs[-1][0], 100)):
         if W in have and all(abs(W - k) >= 20 for k in keys):
@@ -406,7 +411,8 @@ for gi, r in enumerate(rows, start=1):
     vals = [(int(k), hm[k]) for k in sorted(hm, key=lambda x: int(x)) if lo <= int(k) <= hi
             and (not HAT or int(k) % 10 == 0 or int(k) == r.get('wMin') or int(k) == nW or k in (r.get('entries') or {}))]
     # ↑ハットは列が多いので 10mm ごと（実績が書いてある幅は行を残す。書いた実績が消えないように）
-    keys = key_ws(vals)
+    keys = key_ws(vals, {int(k) for k in (r.get('alt') or {})} | {int(k) for k in (r.get('altNarrow') or {})},
+                  min(map(int, r['altNarrow'])) if r.get('altNarrow') else None)
     n = len(vals)
     fx = fit['hmax'] if fit else r['hmax']     # 見込みの元にする計算（実績に合わせたものがあればそれ）
     ents = r.get('entries') or {}
@@ -505,7 +511,7 @@ for gi, r in enumerate(rows, start=1):
     put(ws, 4, 1, (f'=IF({IN}="","",IF({EC}="","（実績からの見込みは、前後の★に実績を書くと出ます）",'
                    f'"実績からの見込み{"（外フランジ " + str(r["A"]) + "）" if HAT else ""} {r["hLow"]} 〜 "&{EC}))'), bold=True, size=12, color='B45F06', align='left')
     ws.merge_cells(start_row=5, start_column=1, end_row=5, end_column=tcols)
-    put(ws, 5, 1, (f"★ 書く所 {len(keys)}か所：{WN} " + '・'.join(str(k) for k in keys)) if keys else
+    put(ws, 5, 1, (f"★ {len(keys)}か所：{WN} " + '・'.join(str(k) for k in keys) + '（＋7行目）') if keys else
         ('この型は計算ではハットに曲がらない（外フランジ150まで試した）。曲がった実績があれば表に書いてください' if HAT else ''),
         bold=True, size=13, color='C00000', fill=KEYF, align='left')
     ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=tcols)
@@ -535,7 +541,8 @@ for gi, r in enumerate(rows, start=1):
     if nW is not None:
         g_ = altN[str(nW)]
         mtxt = f"いちばん小さい断面 {g_['lo']}×{nW}（ヤゲン{pname(g_, r['V'])}）"
-    put(ws, 7, 1, mtxt, bold=True, size=10, color='0A7D0A', fill=MINF, align='left')
+    mtxt = '★必ず記入　' + mtxt                # いちばん小さい所は必ず書いてもらう（2026-10-14 ユーザー）
+    put(ws, 7, 1, mtxt, bold=True, size=10, color='C00000', fill=KEYF, align='left')
     put(ws, 7, m0, '立上り', bold=True, size=10, fill=HEAD)
     put(ws, 7, m0 + 2, WN, bold=True, size=10, fill=HEAD)
     for cc, v in ((m0 + 1, mn.get('h')), (m0 + 3, mn.get('w'))):
@@ -775,7 +782,7 @@ for gi, r in enumerate(rows, start=1):
     ch.legend.position = 't'
     ws.add_chart(ch, f'{get_column_letter(gcol)}3')
     for rr in range(3, HR):
-        ws.row_dimensions[rr].height = (46 if HAT and rr == 3 else 22) if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else ((32 if mchg or HAT else 21) if rr == 7 else 18))
+        ws.row_dimensions[rr].height = (46 if HAT and rr == 3 else 22) if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else (32 if rr == 7 else 18))
     for rr in range(last_row + 1, last_row + 80):
         ws.row_dimensions[rr].height = 15
     fr = row_after(ws, 3, ch.height / 2.54 * 72) + 3     # グラフの下端から少しあける（行の高さの見積りが少し短く出るため）

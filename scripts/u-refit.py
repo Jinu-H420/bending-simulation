@@ -3,6 +3,7 @@
 #   2. 型ごとに計算を実績に合わせる（u-fit.mjs。実績のある型だけ。コの字 1型 約1分、ハット 1型 約10分）
 #   3. 書いた実績を持ち越して早見グラフを作り直す（u-chart-sheet.py）。元のファイルは 実績シート\履歴\ に残す
 #   4. 印刷見本PDFも作り直す（xlsx2pdf.py）
+#   5. まとめ（表まとめ・グラフまとめ。u-summary.py）も同じ数字で作り直して、同じフォルダに置く（＋PDF）
 #   使い方: python scripts/u-refit.py [早見グラフ.xlsx]   （省略すると共有フォルダのコの字）
 #           python scripts/u-refit.py --hat                 （共有フォルダのハット。ファイル名に「ハット」があればハットとして扱う）
 #   Excel で開いたままだと上書きできないので、閉じてもらってから。
@@ -45,6 +46,19 @@ shutil.copy2(src, os.path.join(hist, f"{stem}_{datetime.now():%Y%m%d-%H%M}.xlsx"
 shutil.copy2(new, src)
 shutil.copy2(pdf, os.path.join(os.path.dirname(src), f'{stem}_印刷見本.pdf'))
 print('作り直した:', src)
+# まとめ（2026-10-14 ユーザー「Vと板厚ごとだと印刷する枚数が多い。表をまとめたものとグラフをまとめたものを追加で」）
+dst = os.path.dirname(src)
+tbl = os.path.join(tmp, stem.replace('早見グラフ', '表まとめ') + '.xlsx')
+gph = os.path.join(tmp, stem.replace('早見グラフ', 'グラフまとめ') + '.xlsx')
+run([sys.executable, os.path.join(HERE, 'u-summary.py'), fitted, tbl, gph])
+for f in (tbl, gph):
+    out = os.path.join(dst, os.path.basename(f))
+    try:
+        shutil.copy2(f, out)
+        run([sys.executable, os.path.join(HERE, 'xlsx2pdf.py'), out, os.path.splitext(out)[0] + '_印刷見本.pdf'])
+        print('作り直した:', out)
+    except PermissionError:
+        print('開かれていて置けなかった（閉じてからもう一度）:', out)
 for d in json.load(open(fitted, encoding='utf-8')):
     f = d.get('fit')
     if f:

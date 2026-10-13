@@ -63,7 +63,7 @@ for ws in wb.worksheets[1:]:
     # いちばん小さい断面の実績（見出しの上の「いちばん小さい断面」の行。「立上り」「底W」の右の欄）
     mn = {}
     for r in range(1, hr):
-        if str(ws.cell(r, 1).value or '').startswith('いちばん小さい断面'):
+        if 'いちばん小さい断面' in str(ws.cell(r, 1).value or ''):
             for c in range(2, 30):
                 lab = ws.cell(r, c).value
                 if lab in ('立上り', '底W', '上面W'):

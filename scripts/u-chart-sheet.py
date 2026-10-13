@@ -402,7 +402,7 @@ for gi, r in enumerate(rows, start=1):
                 parts.append(f"{a}: " + ('×' if not g or g[0] > g[1] else f"{g[0]}だけ" if g[0] == g[1] else
                                           f"{g[0]}〜{'なし' if g[1] >= H_TOP else g[1]}"))
             ws.cell(4 + i, lt, W)
-            ws.cell(4 + i, lt + 1, '外フランジ ' + '　'.join(parts))
+            ws.cell(4 + i, lt + 1, '立上りH　外フランジ ' + '　'.join(parts))
         T1, T2 = get_column_letter(lt), get_column_letter(lt + 1)
         put(ws, 3, 4, f'=IF({IN}="","",IFERROR(VLOOKUP(INT({IN}),${T1}$4:${T2}${3 + W_TOP - 4},2,FALSE),"表は{WN} 5〜{W_TOP}"))',
             bold=True, size=11, color='0A7D0A', align='left')
@@ -472,14 +472,14 @@ for gi, r in enumerate(rows, start=1):
         put(ws, HR, c0, WN, bold=True, size=10 if not HAT else 9.5, fill=HEAD)
         if HAT:
             for a in FL:
-                put(ws, HR, c0 + CA[a], f'外フランジ\n{a}' + ('（基準）' if a == r.get('A') else ''), bold=True, size=9,
+                put(ws, HR, c0 + CA[a], f'立上りH\n外フランジ\n{a}' + ('基準' if a == r.get('A') else ''), bold=True, size=8.5,
                     fill=MINF if a == r.get('A') else HEAD)
         else:
             put(ws, HR, c0 + 1, '計算の立上り\n下限〜上限', bold=True, size=9.5, fill=HEAD)
-        put(ws, HR, c0 + CE, f'実績（{r.get("A")}）\n下限〜上限' if HAT else '実績\n（記入）', bold=True, size=9 if HAT else 10, fill=KEYF)
-        put(ws, HR, c0 + CS, ('見込み\n実績合わせ' if fit else '見込み\n（自動）') if not HAT else f'見込み\n（{r.get("A")}）',
-            bold=True, size=9 if (fit or HAT) else 9.5, fill=ESTF)
-    ws.row_dimensions[HR].height = 42
+        put(ws, HR, c0 + CE, f'実績 立上りH\n外フランジ{r.get("A")}\n下限〜上限' if HAT else '実績\n（記入）', bold=True, size=8.5 if HAT else 10, fill=KEYF)
+        put(ws, HR, c0 + CS, ('見込み\n実績合わせ' if fit else '見込み\n（自動）') if not HAT else f'見込み\n立上りH\n（{r.get("A")}）',
+            bold=True, size=8.5 if HAT else 9 if fit else 9.5, fill=ESTF)
+    ws.row_dimensions[HR].height = 46 if HAT else 42
     d = dict(vals)
     for idx, (W, v) in enumerate(vals):
         b, k = divmod(idx, per)

@@ -2,6 +2,7 @@
 //   u-table-sim.mjs（表を作る）と u-fit.mjs（実績に合わせる）で使う。
 //   形 shape：'U'＝コの字（立上り H － 底W － 立上り H。低いほうの立上りで見る）
 //             'HAT'＝ハット（外フランジA － 立上りH － 上面W － 立上りH － 外フランジA。A は型ごとに固定（50mm、曲がらなければ長く））
+//   ヤゲンはふつう 904061。c.punch・c.flip を入れるとそのヤゲン（反転）で見る（hat-alt-sim.mjs：ほかのヤゲンなら）
 //   実績に合わせるとき（u-fit.mjs）は型ごとに2つの値を動かす。prm = { need, ang }
 //     need＝当たりとみなす境目（mm）。既定 -0.05（0.05mm 食い込んだら当たり）。マイナスほど甘く、線が上がる
 //     ang ＝曲げ角度（°）。既定 90。山と谷が左右に動く（V25 t4.5：88°で山 95、90°で 100、92°で 105、95°で 110）
@@ -11,7 +12,7 @@ const lines = readFileSync(new URL('../bending-simulator.jsx', import.meta.url),
 const end = lines.findIndex((l) => l.startsWith('function FinishedPreview'));
 export const E = new Function(
   lines.slice(0, end).filter((l) => !l.startsWith('import ')).join('\n') +
-  '\nreturn {resolveDie,searchSequences,lookupTable,NOBI_TABLE,MINOUT_TABLE,pickDie};'
+  '\nreturn {resolveDie,searchSequences,lookupTable,NOBI_TABLE,MINOUT_TABLE,pickDie,PUNCH_LIB};'
 )();
 
 export const PUNCH = '904061';
@@ -62,7 +63,7 @@ export function ok(c, outer, prm = P0) {
   const flat = outer.map((L, i) => L - (i > 0 ? nobi : 0) - (i < outer.length - 1 ? nobi : 0));
   if (flat.some((x) => x <= 0.5)) return false;
   const part = { t, segs: flat, bends: dirs.map((d) => ({ angle: prm.ang, dir: d })), grow: dirs.map(() => nobi - t / 2) };
-  return E.searchSequences(part, info.vHalf, info.polys, PUNCH, false, 'std', 1, Math.max(0, 170 - t), prm.need).sols.length > 0;
+  return E.searchSequences(part, info.vHalf, info.polys, c.punch || PUNCH, !!c.flip, 'std', 1, Math.max(0, 170 - t), prm.need).sols.length > 0;
 }
 const okHW = (c, h, W, prm) => ok(c, outerOf(c, h, W), prm);
 

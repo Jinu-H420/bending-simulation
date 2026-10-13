@@ -272,6 +272,11 @@ BLK = 2                       # 表を何段（横）に分けるか
 BW = (7, 10, 10, 9) if HAT else (7, 10, 8.5, 9)   # 1段の列幅：底W・計算・実績・見込み（ハットは「24〜122」と書くので実績を広く）
 
 
+def pname(g):
+    """ヤゲンの呼び方（反転つき）"""
+    return f"{g['punch']}{'反転' if g['flip'] else ''}"
+
+
 def ent_text(v):
     """書いてある実績を表に戻す（ハットの範囲 {lo, hi} は「25〜75」に）"""
     if isinstance(v, dict):
@@ -312,7 +317,10 @@ for gi, r in enumerate(rows, start=1):
     CA = {a: 1 + j for j, a in enumerate(FL)}            # 計算の列（段の中の位置）
     CA0 = CA[r.get('A')] if HAT else 1
     CE, CS = 1 + len(FL), 2 + len(FL)                    # 実績・見込みの列
-    bw = ((7,) + tuple(9.5 for _ in FL) + (10, 9)) if HAT else BW
+    # ハット：904061 で当たるときは、ほかのヤゲンで曲がれば「曲がる」（hat-alt-sim.mjs。2026-10-13 ユーザー
+    #   「他のヤゲンで曲がるなら曲がるになります」）。基準の長さの列に、いちばん広く曲がるヤゲンの範囲とヤゲンの番号を出す
+    alt, altN = (r.get('alt') or {}), (r.get('altNarrow') or {})
+    bw = ((7,) + tuple(17 if a == r.get('A') and (alt or altN) else 9.5 for a in FL) + (10, 9)) if HAT else BW
     blk = 1 if HAT else BLK
     nb = len(bw)
     tcols = blk * nb + (blk - 1)          # 表の列（段のあいだに1列すき間）
@@ -320,7 +328,7 @@ for gi, r in enumerate(rows, start=1):
     span = gcol + 15
     title(ws, f"{NAME} 早見グラフ {gi}／{len(rows)}　V{r['V']}　{r['sel'].split(':')[1]}・{r['machine']}　鉄 t{r['t']}（{tag}）"
           + ('　外フランジ別' if HAT else ''),
-          ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。'
+          ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。基準の長さの列は、ヤゲン904061 で当たってもほかのヤゲンで曲がれば「曲がる」として、そのヤゲンの番号を書いています（シミュレーター・かんたん判定と同じ。くの字特殊ヤゲンは入れていない）。'
             if HAT else
             '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。')
            + f'★だけ書けば、間の行は「見込み」に自動で入ります。いちばん小さい断面が計算と違えば、7行目の赤い枠に（立上り・{WN}）。'
@@ -337,8 +345,12 @@ for gi, r in enumerate(rows, start=1):
         ws.column_dimensions[get_column_letter(c)].width = 9
 
     lo, hi = graph_range(r)
-    vals = [(int(k), r['hmax'][k]) for k in sorted(r['hmax'], key=lambda x: int(x)) if lo <= int(k) <= hi
-            and (not HAT or int(k) % 10 == 0 or int(k) == r.get('wMin') or k in (r.get('entries') or {}))]
+    nW = min(map(int, altN)) if HAT and altN else None    # ほかのヤゲンなら曲がる いちばん狭い上面W
+    hm = dict(r['hmax'])
+    if nW is not None:
+        hm.setdefault(str(nW), None)
+    vals = [(int(k), hm[k]) for k in sorted(hm, key=lambda x: int(x)) if lo <= int(k) <= hi
+            and (not HAT or int(k) % 10 == 0 or int(k) == r.get('wMin') or int(k) == nW or k in (r.get('entries') or {}))]
     # ↑ハットは列が多いので 10mm ごと（実績が書いてある幅は行を残す。書いた実績が消えないように）
     keys = key_ws(vals)
     n = len(vals)
@@ -399,6 +411,10 @@ for gi, r in enumerate(rows, start=1):
                 else:
                     d_ = byA.get(str(a)) or {}
                     g = rng(d_.get('hmin') or {}, d_.get('hmax') or {}, W)
+                ag = (altN.get(str(W)) or alt.get(str(W))) if a == r.get('A') else None
+                if ag and (not g or (H_TOP if ag['hi'] == 'なし' else ag['hi']) > g[1]):
+                    parts.append(f"{a}: {ag['lo']}〜{'なし' if ag['hi'] == 'なし' else ag['hi']}（ヤゲン{pname(ag)}）")
+                    continue
                 parts.append(f"{a}: " + ('×' if not g or g[0] > g[1] else f"{g[0]}だけ" if g[0] == g[1] else
                                           f"{g[0]}〜{'なし' if g[1] >= H_TOP else g[1]}"))
             ws.cell(4 + i, lt, W)
@@ -450,6 +466,9 @@ for gi, r in enumerate(rows, start=1):
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}／実績合わせ {fit['hLow']}×{fit['wMin']}　実績→"
     else:
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}" + ('' if HAT else '　実績→')
+    if HAT and nW is not None:
+        g_ = altN[str(nW)]
+        mtxt = f"いちばん小さい断面 {g_['lo']}×{nW}（ヤゲン{pname(g_)}）"
     put(ws, 7, 1, mtxt, bold=True, size=10, color='0A7D0A', fill=MINF, align='left')
     put(ws, 7, m0, '立上り', bold=True, size=10, fill=HEAD)
     put(ws, 7, m0 + 2, WN, bold=True, size=10, fill=HEAD)
@@ -511,6 +530,13 @@ for gi, r in enumerate(rows, start=1):
             hv, lv = (d_.get('hmax') or {}).get(str(W)), (d_.get('hmin') or {}).get(str(W))
             put(ws, rr, c0 + CA[a], '×' if hv is None or lv is None else (f"{lv}〜なし" if hv == 'なし' else f"{hv}だけ" if hv == lv else f"{lv}〜{hv}"),
                 size=10.5, color='999999' if hv is None else None, fill=CALCF)
+        if HAT:
+            ag = altN.get(str(W)) or alt.get(str(W))
+            if ag:                             # ほかのヤゲンのほうが高くまで曲がる → そちらを出す（ヤゲンの番号つき）
+                ac = put(ws, rr, c0 + CA0, f"{ag['lo']}〜{'なし' if ag['hi'] == 'なし' else ag['hi']} ヤゲン{pname(ag)}",
+                         size=9.5, bold=True, color='0B6E99', fill=PatternFill('solid', fgColor='E3F1F8'))
+                ac.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)   # 折り返さず1行に
+                ws.cell(R, dc + 70, H_TOP if ag['hi'] == 'なし' else ag['hi'])
         ec = put(ws, rr, c0 + CE, ent_text(ents.get(str(W))), size=11.5 if not HAT else 10.5, bold=True, fill=KEYF if key else None)
         if key:
             ec.border = KEYBOX
@@ -525,6 +551,8 @@ for gi, r in enumerate(rows, start=1):
         D_, P, Q, Wc = f'{Cl(1)}{R}', f'{Cl(2)}{R}', f'{Cl(4)}{R}', f'{WL}{R}'
         ws.cell(R, dc, W)
         fv = fx.get(str(W))
+        if HAT and ag and (fv is None or (H_TOP if ag['hi'] == 'なし' else ag['hi']) > (H_TOP if fv == 'なし' else fv)):
+            fv = ag['hi']
         if fv is None and fit:                 # 実績合わせで いちばん狭い幅 がずれた行は 1mm ごとの答えから
             fv = (fit.get('h1') or {}).get(str(W))
         ws.cell(R, hc, fv if isinstance(fv, (int, float)) else None)
@@ -635,6 +663,13 @@ for gi, r in enumerate(rows, start=1):
     s9.marker.graphicalProperties.line.width = 28575
     s9.graphicalProperties = line_props(None, none=True)
     ch.series.extend([s1, s2, s3, s9, s8, s4, s5, s6])
+    if HAT and (alt or altN):
+        sa = Series(Reference(ws, min_col=dc + 70, min_row=4, max_row=3 + n), XR, title=f'ほかのヤゲンで曲がる上限（{r.get("A")}）')
+        sa.marker = Marker(symbol='triangle', size=8)
+        sa.marker.graphicalProperties = GraphicalProperties(solidFill='0B6E99')
+        sa.marker.graphicalProperties.line.solidFill = '0B6E99'
+        sa.graphicalProperties = line_props(None, none=True)
+        ch.series.append(sa)
     AC = ['2CA02C', '8C564B', '9467BD', 'D62728']
     for j, a in enumerate(x for x in FL if x is not None and x != r.get('A')):
         for k, (nm, dash) in enumerate(((f'外フランジ{a} 上限', None), (f'外フランジ{a} 下限', 'sysDot'))):
@@ -674,7 +709,7 @@ for gi, r in enumerate(rows, start=1):
     ch.legend.position = 't'
     ws.add_chart(ch, f'{get_column_letter(gcol)}3')
     for rr in range(3, HR):
-        ws.row_dimensions[rr].height = (34 if HAT and rr == 3 else 22) if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else ((32 if mchg or HAT else 21) if rr == 7 else 18))
+        ws.row_dimensions[rr].height = (46 if HAT and rr == 3 else 22) if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else ((32 if mchg or HAT else 21) if rr == 7 else 18))
     for rr in range(last_row + 1, last_row + 80):
         ws.row_dimensions[rr].height = 15
     fr = row_after(ws, 3, ch.height / 2.54 * 72) + 3     # グラフの下端から少しあける（行の高さの見積りが少し短く出るため）

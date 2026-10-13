@@ -338,7 +338,8 @@ for gi, r in enumerate(rows, start=1):
 
     lo, hi = graph_range(r)
     vals = [(int(k), r['hmax'][k]) for k in sorted(r['hmax'], key=lambda x: int(x)) if lo <= int(k) <= hi
-            and (not HAT or int(k) % 10 == 0 or int(k) == r.get('wMin'))]     # ハットは列が多いので 10mm ごと
+            and (not HAT or int(k) % 10 == 0 or int(k) == r.get('wMin') or k in (r.get('entries') or {}))]
+    # ↑ハットは列が多いので 10mm ごと（実績が書いてある幅は行を残す。書いた実績が消えないように）
     keys = key_ws(vals)
     n = len(vals)
     fx = fit['hmax'] if fit else r['hmax']     # 見込みの元にする計算（実績に合わせたものがあればそれ）
@@ -390,10 +391,11 @@ for gi, r in enumerate(rows, start=1):
             for a in FL:
                 if a == r.get('A'):
                     # 基準の長さは 1mm ごとの上限がある。下限は前後の 5mm で分かるほう（なければ いちばん低い立上り）
-                    u = h1.get(str(W))
-                    ls = [clows.get(str(x)) for x in {W - W % 5, W + (-W) % 5}]
+                    s0 = fit or r                      # 計算し直してあれば実績合わせの値
+                    u = (s0.get('h1') or {}).get(str(W))
+                    ls = [(s0.get('hmin') or {}).get(str(x)) for x in {W - W % 5, W + (-W) % 5}]
                     ls = [x for x in ls if isinstance(x, (int, float))]
-                    g = (max(ls) if ls else r['hLow'], H_TOP if u == 'なし' else u) if u is not None else None
+                    g = (max(ls) if ls else s0['hLow'], H_TOP if u == 'なし' else u) if u is not None else None
                 else:
                     d_ = byA.get(str(a)) or {}
                     g = rng(d_.get('hmin') or {}, d_.get('hmax') or {}, W)
@@ -428,7 +430,7 @@ for gi, r in enumerate(rows, start=1):
     bads = [k for k in fit['checks'] if k['bad']] if fit else []
     if fit:
         nchk = len(fit['checks'])
-        ftxt = (f"実績に合わせて計算し直し済み：{nchk}か所中 {nchk - len(bads)}か所が合う" +
+        ftxt = (f"実績に合わせて計算し直し済み{'（表の外フランジの列も実績合わせ）' if HAT else ''}：{nchk}か所中 {nchk - len(bads)}か所が合う" +
                 ''.join((f"　合わない いちばん小さい{k['act']}（計算では曲がらない）" if k.get('kind') == 'min' else
                          f"　合わない {WN}{k['W']}（実績{k['act']}／計算{'×' if k['fit'] is None else k['fit']}）") for k in bads) +
                 (f"　※実績の立上り {fit['minLow']['h']} は最小フランジの表（{r['minOut']}）より低い → 表を直すか確認"
@@ -492,6 +494,9 @@ for gi, r in enumerate(rows, start=1):
         if key:
             wc.number_format = '"★"0'
         lw = clows.get(str(W)) or r['hLow']
+        if HAT and fit:                        # ハットは外フランジの列をそろえて、計算し直してあれば実績合わせの値を出す
+            v = fit['hmax'].get(str(W), (fit.get('h1') or {}).get(str(W)))
+            lw = (fit.get('hmin') or {}).get(str(W)) or fit['hLow']
         if v is None:
             put(ws, rr, c0 + CA0, '×', size=10.5, color='999999', fill=CALCF)
         elif v == 'なし':

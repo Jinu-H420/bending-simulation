@@ -149,7 +149,7 @@ def dim_fig(A=None):
         arrow(ax, 31, 0, 31, 60, '立上りH', 8, 34)
         arrow(ax, 139, 0, 139, 60, '立上りH', 162, 34)
         arrow(ax, 45, 74, 125, 74, '上面W', 85, 88, color='#C00000')
-        ax.text(85, -50, 'すべて外寸・左右同じ寸法' + (f'・外フランジ {A}mm で計算' if A else ''), fontsize=13, color='#333', ha='center')
+        ax.text(85, -50, 'すべて外寸・左右同じ寸法・外フランジの長さは表の列ごと', fontsize=13, color='#333', ha='center')
         ax.set_xlim(-22, 192); ax.set_ylim(-60, 100)
     else:
         ax.plot([0, 0, 110, 110], [55, 0, 0, 75], color='#111', lw=6, solid_joinstyle='miter')
@@ -305,33 +305,42 @@ def key_ws(vals):
 for gi, r in enumerate(rows, start=1):
     tag = '基準金型' if r['base'] else '小さいV'
     ws = wb.create_sheet(f"t{r['t']} V{r['V']}")
-    nb = len(BW)
-    tcols = BLK * nb + (BLK - 1)          # 表の列（段のあいだに1列すき間）
+    fit = r.get('fit')
+    # ハット：外フランジの長さごとの列（2026-10-13 ユーザー「外フランジも考慮したシートに」）。基準の長さ（r['A']）の列が ★・見込み の元
+    FL = [a for a in (r.get('flanges') or [r.get('A')]) if a] if HAT else [None]
+    byA = ((fit or {}).get('byA') or r.get('byA') or {}) if HAT else {}
+    CA = {a: 1 + j for j, a in enumerate(FL)}            # 計算の列（段の中の位置）
+    CA0 = CA[r.get('A')] if HAT else 1
+    CE, CS = 1 + len(FL), 2 + len(FL)                    # 実績・見込みの列
+    bw = ((7,) + tuple(9.5 for _ in FL) + (10, 9)) if HAT else BW
+    blk = 1 if HAT else BLK
+    nb = len(bw)
+    tcols = blk * nb + (blk - 1)          # 表の列（段のあいだに1列すき間）
     gcol = tcols + 2                      # グラフの始まりの列（表の右に1列あける）
     span = gcol + 15
     title(ws, f"{NAME} 早見グラフ {gi}／{len(rows)}　V{r['V']}　{r['sel'].split(':')[1]}・{r['machine']}　鉄 t{r['t']}（{tag}）"
-          + (f"　外フランジ {r['A']}" if HAT and r.get('wMin') else ''),
-          ('寸法の取り方はグラフの下の絵。' + (f'★の赤い枠に、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。外フランジ {r["A"]}mm・左右同じ寸法で計算しています。'
+          + ('　外フランジ別' if HAT else ''),
+          ('寸法の取り方はグラフの下の絵。' + (f'表は外フランジの長さごと（{"・".join(str(a) for a in (r.get("flanges") or [r["A"]]))}mm）。★の赤い枠には、外フランジ {r["A"]}mm 前後の品物で、実際に曲げられた立上りの範囲を「25〜75」のように書いてください（上だけなら 75、曲がらなかったら ×）。計算し直すと、ほかの長さの列も一緒に合わせ直します。'
             if HAT else
             '★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください（曲がらなかったら ×）。')
            + f'★だけ書けば、間の行は「見込み」に自動で入ります。いちばん小さい断面が計算と違えば、7行目の赤い枠に（立上り・{WN}）。'
            '保存して Claude に「計算し直して」と言うと、★に合わせて計算そのものを直し、見込みがもっと確かになります（合わない★は赤で知らせます）。'
            + ('' if HAT else '左右の立上りが違うときは低いほうで見ます。')
            + f'計算は {TODAY} 時点・ヤゲン904061・中間板標準・普通に曲げたとき。'), span)
-    for b in range(BLK):
-        for k, w in enumerate(BW):
+    for b in range(blk):
+        for k, w in enumerate(bw):
             ws.column_dimensions[get_column_letter(1 + b * (nb + 1) + k)].width = w
-        if b < BLK - 1:
+        if b < blk - 1:
             ws.column_dimensions[get_column_letter(1 + b * (nb + 1) + nb)].width = 1.5
     ws.column_dimensions[get_column_letter(gcol - 1)].width = 2
     for c in range(gcol, span + 1):
         ws.column_dimensions[get_column_letter(c)].width = 9
 
     lo, hi = graph_range(r)
-    vals = [(int(k), r['hmax'][k]) for k in sorted(r['hmax'], key=lambda x: int(x)) if lo <= int(k) <= hi]
+    vals = [(int(k), r['hmax'][k]) for k in sorted(r['hmax'], key=lambda x: int(x)) if lo <= int(k) <= hi
+            and (not HAT or int(k) % 10 == 0 or int(k) == r.get('wMin'))]     # ハットは列が多いので 10mm ごと
     keys = key_ws(vals)
     n = len(vals)
-    fit = r.get('fit')
     fx = fit['hmax'] if fit else r['hmax']     # 見込みの元にする計算（実績に合わせたものがあればそれ）
     ents = r.get('entries') or {}
     lows = (fit if fit and 'hmin' in fit else r).get('hmin') or {}   # ハットの下限（その幅ごと）
@@ -362,9 +371,43 @@ for gi, r in enumerate(rows, start=1):
     IN = 'C3'
     ws.merge_cells(start_row=3, start_column=4, end_row=3, end_column=tcols)
     wmin = r.get('wMin') or 0
-    put(ws, 3, 4, (f'=IF({IN}="","",IFERROR("計算の立上り "&VLOOKUP(INT({IN}),${L1}$4:${L2}${3 + nlk},2,FALSE),'
-                   f'IF(INT({IN})<{wmin},"× 曲がらない（{WN} {wmin} より狭い）","表は{WN} {W_TOP} まで")))'),
-        bold=True, size=13, color='0A7D0A', align='left')
+    if HAT:
+        # 1mm ごとの答えを外フランジごとに。基準の長さの上限は 1mm ごと、それ以外と下限は 5mm の前後の厳しいほう（安全側）
+        def rng(lo_d, hi_d, W):
+            if str(W) in hi_d:                 # その幅の答えがあれば（5mm ごと・いちばん狭い幅）それ
+                h_, l_ = hi_d[str(W)], lo_d.get(str(W))
+                return None if h_ is None or l_ is None else (l_, H_TOP if h_ == 'なし' else h_)
+            f, c = W - W % 5, W + (-W) % 5
+            his = [hi_d.get(str(x)) for x in {f, c}]
+            los = [lo_d.get(str(x)) for x in {f, c}]
+            if any(v is None for v in his + los):
+                return None
+            his = [H_TOP if v == 'なし' else v for v in his]
+            return max(los), min(his)
+        lt = lc + 10
+        for i, W in enumerate(range(5, W_TOP + 1)):
+            parts = []
+            for a in FL:
+                if a == r.get('A'):
+                    # 基準の長さは 1mm ごとの上限がある。下限は前後の 5mm で分かるほう（なければ いちばん低い立上り）
+                    u = h1.get(str(W))
+                    ls = [clows.get(str(x)) for x in {W - W % 5, W + (-W) % 5}]
+                    ls = [x for x in ls if isinstance(x, (int, float))]
+                    g = (max(ls) if ls else r['hLow'], H_TOP if u == 'なし' else u) if u is not None else None
+                else:
+                    d_ = byA.get(str(a)) or {}
+                    g = rng(d_.get('hmin') or {}, d_.get('hmax') or {}, W)
+                parts.append(f"{a}: " + ('×' if not g or g[0] > g[1] else f"{g[0]}だけ" if g[0] == g[1] else
+                                          f"{g[0]}〜{'なし' if g[1] >= H_TOP else g[1]}"))
+            ws.cell(4 + i, lt, W)
+            ws.cell(4 + i, lt + 1, '外フランジ ' + '　'.join(parts))
+        T1, T2 = get_column_letter(lt), get_column_letter(lt + 1)
+        put(ws, 3, 4, f'=IF({IN}="","",IFERROR(VLOOKUP(INT({IN}),${T1}$4:${T2}${3 + W_TOP - 4},2,FALSE),"表は{WN} 5〜{W_TOP}"))',
+            bold=True, size=11, color='0A7D0A', align='left')
+    else:
+        put(ws, 3, 4, (f'=IF({IN}="","",IFERROR("計算の立上り "&VLOOKUP(INT({IN}),${L1}$4:${L2}${3 + nlk},2,FALSE),'
+                       f'IF(INT({IN})<{wmin},"× 曲がらない（{WN} {wmin} より狭い）","表は{WN} {W_TOP} まで")))'),
+            bold=True, size=13, color='0A7D0A', align='left')
     # 1mm ごとの見込み：1mm の計算 ＋ 前後の表の行の（見込み−計算）を按分
     WR = f'${WL}$4:${WL}${3 + n}'
     OR_ = f'${Cl(7)}$4:${Cl(7)}${3 + n}'
@@ -376,7 +419,7 @@ for gi, r in enumerate(rows, start=1):
     ws[EC] = f'=IF({IN}="","",IFERROR(ROUND(VLOOKUP({X},${L1}$4:${L3}${3 + nlk},3,FALSE)+{off},0),""))'
     ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=tcols)
     put(ws, 4, 1, (f'=IF({IN}="","",IF({EC}="","（実績からの見込みは、前後の★に実績を書くと出ます）",'
-                   f'"実績からの見込み {r["hLow"]} 〜 "&{EC}))'), bold=True, size=12, color='B45F06', align='left')
+                   f'"実績からの見込み{"（外フランジ " + str(r["A"]) + "）" if HAT else ""} {r["hLow"]} 〜 "&{EC}))'), bold=True, size=12, color='B45F06', align='left')
     ws.merge_cells(start_row=5, start_column=1, end_row=5, end_column=tcols)
     put(ws, 5, 1, (f"★ 書く所 {len(keys)}か所：{WN} " + '・'.join(str(k) for k in keys)) if keys else
         ('この型は計算ではハットに曲がらない（外フランジ150まで試した）。曲がった実績があれば表に書いてください' if HAT else ''),
@@ -393,27 +436,28 @@ for gi, r in enumerate(rows, start=1):
         warn = bads or fit.get('minLow')
         put(ws, 6, 1, ftxt, bold=True, size=11, color='C00000' if warn else '0A7D0A', fill=BADF if warn else MINF, align='left')
     else:
-        put(ws, 6, 1, '★や「いちばん小さい」の実績を書いて保存したら、Claude に「計算し直して」と言ってください', size=10.5, color='666666', align='left')
+        put(ws, 6, 1, '実績を書いて保存したら、Claude に「計算し直して」', size=10.5, color='666666', align='left')
     # いちばん小さい断面：計算と、実績を書く欄（立上り・底W）。2026-10-13 ユーザー「最小が実績と違うとき」
     mn = r.get('minAct') or {}
-    ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=nb)
+    m0 = max(nb - 3, 2) if HAT else nb + 2      # 「立上り」の見出しの列
+    ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=m0 - 1 if HAT else nb)
     mchg = bool(fit and r.get('wMin') and (fit['hLow'], fit['wMin']) != (r['hLow'], r['wMin']))
     if not r.get('wMin'):
         mtxt = 'いちばん小さい断面 計算では曲がらない 実績→'
     elif mchg:
         mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}／実績合わせ {fit['hLow']}×{fit['wMin']}　実績→"
     else:
-        mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}　実績→"
+        mtxt = f"いちばん小さい断面 計算 {r['hLow']}×{r['wMin']}" + ('' if HAT else '　実績→')
     put(ws, 7, 1, mtxt, bold=True, size=10, color='0A7D0A', fill=MINF, align='left')
-    put(ws, 7, nb + 2, '立上り', bold=True, size=10, fill=HEAD)
-    put(ws, 7, nb + 4, WN, bold=True, size=10, fill=HEAD)
-    for cc, v in ((nb + 3, mn.get('h')), (nb + 5, mn.get('w'))):
+    put(ws, 7, m0, '立上り', bold=True, size=10, fill=HEAD)
+    put(ws, 7, m0 + 2, WN, bold=True, size=10, fill=HEAD)
+    for cc, v in ((m0 + 1, mn.get('h')), (m0 + 3, mn.get('w'))):
         e7 = put(ws, 7, cc, v, bold=True, size=12, fill=KEYF)
         e7.border = KEYBOX
-    MH, MW = f'{get_column_letter(nb + 3)}7', f'{get_column_letter(nb + 5)}7'
+    MH, MW = f'{get_column_letter(m0 + 1)}7', f'{get_column_letter(m0 + 3)}7'
 
     # ---- 左の表
-    per = -(-n // BLK)
+    per = -(-n // blk)
     # 合わない★の前後（書いてある隣の行まで）は要確認
     eW = sorted(int(k) for k in ents)
     badW = set()
@@ -421,12 +465,18 @@ for gi, r in enumerate(rows, start=1):
         lo_ = max([w for w in eW if w < k['W']], default=k['W'])
         hi_ = min([w for w in eW if w > k['W']], default=k['W'])
         badW |= {W for W, _ in vals if lo_ < W < hi_ or W == k['W']}
-    for b in range(BLK):
+    for b in range(blk):
         c0 = 1 + b * (nb + 1)
         put(ws, HR, c0, WN, bold=True, size=10 if not HAT else 9.5, fill=HEAD)
-        put(ws, HR, c0 + 1, '計算の立上り\n下限〜上限', bold=True, size=9.5, fill=HEAD)
-        put(ws, HR, c0 + 2, '実績\n下限〜上限' if HAT else '実績\n（記入）', bold=True, size=9 if HAT else 10, fill=KEYF)
-        put(ws, HR, c0 + 3, '見込み\n実績合わせ' if fit else '見込み\n（自動）', bold=True, size=9 if fit else 9.5, fill=ESTF)
+        if HAT:
+            for a in FL:
+                put(ws, HR, c0 + CA[a], f'外フランジ\n{a}' + ('（基準）' if a == r.get('A') else ''), bold=True, size=9,
+                    fill=MINF if a == r.get('A') else HEAD)
+        else:
+            put(ws, HR, c0 + 1, '計算の立上り\n下限〜上限', bold=True, size=9.5, fill=HEAD)
+        put(ws, HR, c0 + CE, f'実績（{r.get("A")}）\n下限〜上限' if HAT else '実績\n（記入）', bold=True, size=9 if HAT else 10, fill=KEYF)
+        put(ws, HR, c0 + CS, ('見込み\n実績合わせ' if fit else '見込み\n（自動）') if not HAT else f'見込み\n（{r.get("A")}）',
+            bold=True, size=9 if (fit or HAT) else 9.5, fill=ESTF)
     ws.row_dimensions[HR].height = 42
     d = dict(vals)
     for idx, (W, v) in enumerate(vals):
@@ -443,18 +493,25 @@ for gi, r in enumerate(rows, start=1):
             wc.number_format = '"★"0'
         lw = clows.get(str(W)) or r['hLow']
         if v is None:
-            put(ws, rr, c0 + 1, '×', size=10.5, color='999999', fill=CALCF)
+            put(ws, rr, c0 + CA0, '×', size=10.5, color='999999', fill=CALCF)
         elif v == 'なし':
-            put(ws, rr, c0 + 1, f"{lw}〜なし", size=10.5, color='0A7D0A', fill=CALCF)
+            put(ws, rr, c0 + CA0, f"{lw}〜なし", size=10.5, color='0A7D0A', fill=CALCF)
         else:
-            put(ws, rr, c0 + 1, (f"{v}だけ" if v == lw else f"{lw}〜{v}"), size=11, bold=dip or first,
+            put(ws, rr, c0 + CA0, (f"{v}だけ" if v == lw else f"{lw}〜{v}"), size=11 if not HAT else 10.5, bold=dip or first,
                 color='C62F2F' if dip else ('0A7D0A' if first else None), fill=MINF if first else CALCF)
-        ec = put(ws, rr, c0 + 2, ent_text(ents.get(str(W))), size=11.5 if not HAT else 10.5, bold=True, fill=KEYF if key else None)
+        for a in FL:                           # ハット：ほかの外フランジの長さ
+            if a is None or a == r.get('A'):
+                continue
+            d_ = byA.get(str(a)) or {}
+            hv, lv = (d_.get('hmax') or {}).get(str(W)), (d_.get('hmin') or {}).get(str(W))
+            put(ws, rr, c0 + CA[a], '×' if hv is None or lv is None else (f"{lv}〜なし" if hv == 'なし' else f"{hv}だけ" if hv == lv else f"{lv}〜{hv}"),
+                size=10.5, color='999999' if hv is None else None, fill=CALCF)
+        ec = put(ws, rr, c0 + CE, ent_text(ents.get(str(W))), size=11.5 if not HAT else 10.5, bold=True, fill=KEYF if key else None)
         if key:
             ec.border = KEYBOX
-        E = f'{get_column_letter(c0 + 2)}{rr}'
+        E = f'{get_column_letter(c0 + CE)}{rr}'
         el = lows.get(str(W)) or (fit or r)['hLow'] or r['hLow']
-        put(ws, rr, c0 + 3, f'=IF(ISNUMBER({Cl(6)}{R}),"{el}〜"&{Cl(6)}{R},{Cl(6)}{R})', size=11, color='C00000' if W in badW else 'B45F06', fill=BADF if W in badW else ESTF)
+        put(ws, rr, c0 + CS, f'=IF(ISNUMBER({Cl(6)}{R}),"{el}〜"&{Cl(6)}{R},{Cl(6)}{R})', size=11, color='C00000' if W in badW else 'B45F06', fill=BADF if W in badW else ESTF)
         # 見込みの計算
         isx = f'OR({E}="×",{E}="✕")'
         T_ = f'SUBSTITUTE(SUBSTITUTE({E},"~","〜"),"-","〜")'
@@ -488,17 +545,23 @@ for gi, r in enumerate(rows, start=1):
         ws.cell(R, dc + 5, f'=IF({isx},{r["hLow"]},NA())')
         ws.cell(R, dc + 10, f'=IF(ISNUMBER({Cl(6)}{R}),{Cl(6)}{R},NA())')
         ws.cell(R, dc + 11, h if (key and isinstance(h, (int, float))) else None)
+        for j, a in enumerate(x for x in FL if x is not None and x != r.get('A')):   # グラフ：ほかの外フランジ
+            d_ = byA.get(str(a)) or {}
+            hv, lv = (d_.get('hmax') or {}).get(str(W)), (d_.get('hmin') or {}).get(str(W))
+            ws.cell(R, dc + 60 + 2 * j, H_TOP if hv == 'なし' else hv)
+            ws.cell(R, dc + 61 + 2 * j, lv)
         if fit:
             ws.cell(R, dc + 12, H_TOP if fv == 'なし' else fv)
     last_row = HR + per
     for rr in range(HR + 1, last_row + 1):
         ws.row_dimensions[rr].height = 16
     # 実績の欄は、数字か × だけ（書き間違いを防ぐ。注意を出すだけで、止めはしない）
-    dv = DataValidation(type='custom', formula1=f'OR(ISNUMBER(C{HR + 1}),C{HR + 1}="×",C{HR + 1}="✕")',
+    EL = get_column_letter(1 + CE)
+    dv = DataValidation(type='custom', formula1=f'OR(ISNUMBER({EL}{HR + 1}),{EL}{HR + 1}="×",{EL}{HR + 1}="✕")',
                         allow_blank=True, showErrorMessage=False)
     ws.add_data_validation(dv)
-    for b in range(BLK):
-        L = get_column_letter(1 + b * (nb + 1) + 2)
+    for b in range(blk):
+        L = get_column_letter(1 + b * (nb + 1) + CE)
         dv.add(f'{L}{HR + 1}:{L}{last_row}')
     for j, name in enumerate(['底W', '計算の上限', '10mmごとの数字', '下がる所', '実績の上限', '実績で曲がらない',
                               '最小フランジ x', '最小フランジ y', '小さい x', '小さい y', '見込み', '★', '実績に合わせた計算', '計算の下限']):
@@ -521,7 +584,8 @@ for gi, r in enumerate(rows, start=1):
     ch.height = max(16.5, rows_h * 0.565)
     ch.width = 27
     XR = Reference(ws, min_col=dc, min_row=4, max_row=3 + n)
-    s1 = Series(Reference(ws, min_col=dc + 1, min_row=4, max_row=3 + n), XR, title='計算の上限（5mmごと）')
+    s1 = Series(Reference(ws, min_col=dc + 1, min_row=4, max_row=3 + n), XR,
+                title=f'外フランジ{r.get("A")}（基準） 上限' if HAT else '計算の上限（5mmごと）')
     s1.marker = Marker(symbol='circle', size=4)
     s1.marker.graphicalProperties = GraphicalProperties(solidFill='2A78D6')
     s1.marker.graphicalProperties.line.solidFill = '2A78D6'
@@ -566,6 +630,14 @@ for gi, r in enumerate(rows, start=1):
     s9.marker.graphicalProperties.line.width = 28575
     s9.graphicalProperties = line_props(None, none=True)
     ch.series.extend([s1, s2, s3, s9, s8, s4, s5, s6])
+    AC = ['2CA02C', '8C564B', '9467BD', 'D62728']
+    for j, a in enumerate(x for x in FL if x is not None and x != r.get('A')):
+        for k, (nm, dash) in enumerate(((f'外フランジ{a} 上限', None), (f'外フランジ{a} 下限', 'sysDot'))):
+            sx = Series(Reference(ws, min_col=dc + 60 + 2 * j + k, min_row=4, max_row=3 + n), XR, title=nm)
+            sx.marker = Marker(symbol='none')
+            sx.graphicalProperties = line_props(AC[j % len(AC)], 1.75 if k == 0 else 1.25, dash=dash)
+            sx.smooth = False
+            ch.series.append(sx)
     if HAT:
         s12 = Series(Reference(ws, min_col=dc + 13, min_row=4, max_row=3 + n), XR, title='計算の下限')
         s12.marker = Marker(symbol='none')
@@ -597,11 +669,11 @@ for gi, r in enumerate(rows, start=1):
     ch.legend.position = 't'
     ws.add_chart(ch, f'{get_column_letter(gcol)}3')
     for rr in range(3, HR):
-        ws.row_dimensions[rr].height = 22 if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else ((32 if mchg else 21) if rr == 7 else 18))
+        ws.row_dimensions[rr].height = (34 if HAT and rr == 3 else 22) if rr <= 5 else (32 if rr == 6 and (bads or (fit and fit.get('minLow'))) else ((32 if mchg or HAT else 21) if rr == 7 else 18))
     for rr in range(last_row + 1, last_row + 80):
         ws.row_dimensions[rr].height = 15
     fr = row_after(ws, 3, ch.height / 2.54 * 72) + 3     # グラフの下端から少しあける（行の高さの見積りが少し短く出るため）
-    fh = put_fig(ws, r.get('A') if HAT and r.get('wMin') else None, f'{get_column_letter(gcol + 2)}{fr}', 15)
+    fh = put_fig(ws, None, f'{get_column_letter(gcol + 2)}{fr}', 15)
     end_row = max(last_row, row_after(ws, fr, fh))
     a3(ws, f'A1:{get_column_letter(span)}{end_row}')
     ws.freeze_panes = ws.cell(HR + 1, 1)

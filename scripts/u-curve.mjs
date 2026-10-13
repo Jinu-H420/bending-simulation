@@ -145,6 +145,13 @@ export function curve(c, prm = P0, { withH1 = true, wTop = 400 } = {}) {
   return c.shape === 'HAT' ? { hLow, wMin, hmax, hmin, h1 } : { hLow, wMin, hmax, h1 };
 }
 
+// ハットの早見グラフに並べる外フランジの長さ（2026-10-13 ユーザー「外フランジも考慮したシートに」）。
+//   20・型の基準（ふつう 50）・100・150。20 が最小フランジより短い型は最小フランジから
+export function hatFlanges(c) {
+  const lo = Math.max(20, Math.ceil(c.minOut));
+  return [...new Set([lo, c.A, 100, 150])].filter((A) => A >= lo && A <= 150).sort((a, b) => a - b);
+}
+
 export function meta(c) {
   return {
     mat, t: c.t, V: c.V, sel: c.sel, base: c.base, machine: c.machine === 'hg2203' ? 'HG2203' : 'HD3504NT',

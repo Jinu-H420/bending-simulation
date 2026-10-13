@@ -71,6 +71,15 @@ for (const r of base) {
     if (mn) checks.unshift({ kind: 'min', W: mn.w, act: `${mn.h}×${mn.w}`, calc: null, fit: g.min ? '曲がる' : null, bad: !g.min });
     const minLow = mn && mn.h < c.minOut ? { h: mn.h, table: c.minOut } : null;
     row.fit = { ...best.prm, checks, minLow, ...cv };
+    // ハット：ほかの外フランジの長さの列も、同じ値（角度・境目）で出し直す
+    if (hat && r.flanges) {
+      row.fit.byA = {};
+      for (const A of r.flanges) {
+        if (A === c.A) continue;
+        const cA = curve({ ...c, A }, best.prm, { wTop: 300, withH1: false });
+        row.fit.byA[A] = { A, hLow: cA.hLow, wMin: cA.wMin, hmin: cA.hmin, hmax: cA.hmax };
+      }
+    }
     process.stderr.write(`t${r.t} V${r.V}: 角度 ${best.prm.ang}° 境目 ${best.prm.need} → ` +
       checks.map((k) => `${k.W}:${k.act}/${k.fit}${k.bad ? '✕' : ''}`).join(' ') + '\n');
   }

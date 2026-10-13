@@ -50,13 +50,14 @@ for ws in wb.worksheets[1:]:
     cols = [c for c in range(1, 30) if ws.cell(hr, c).value in ('底W', '上面W')]
     ents = {}
     for c0 in cols:
+        ce = next((c for c in range(c0 + 1, c0 + 12) if str(ws.cell(hr, c).value or '').startswith('実績')), c0 + 2)
         for r in range(hr + 1, hr + 200):
             W = ws.cell(r, c0).value
             if not isinstance(W, (int, float)):
                 if W is None and ws.cell(r + 1, c0).value is None:
                     break
                 continue
-            v = num(ws.cell(r, c0 + 2).value)
+            v = num(ws.cell(r, ce).value)
             if v is not None:
                 ents[str(int(W))] = v
     # いちばん小さい断面の実績（見出しの上の「いちばん小さい断面」の行。「立上り」「底W」の右の欄）

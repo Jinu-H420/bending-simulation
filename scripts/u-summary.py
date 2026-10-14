@@ -282,12 +282,13 @@ def table_hat():
 
 # ================================================================ 表まとめ（コの字）：型ごとのシートの表をそのまま並べる
 # 2026-10-14 ユーザー「まとめた表は分かりづらい・記入しづらい。元々のもの（型ごとのシートの表）をまとめて。A3で2枚になってもよい」
-#   A3縦2枚。1枚に8型（横4型×上下2段）。1型＝ 底W｜計算の立上り 下限〜上限｜実績（記入）｜見込み（自動）。底Wは10mmごと＋★＋いちばん狭い幅
+#   A3横4枚。1枚に4型（横に並べる）。1型＝ 底W｜計算の立上り 下限〜上限｜実績（記入）｜見込み（自動）。底Wは10mmごと＋★＋いちばん狭い幅
+#   2026-10-14 ユーザー「A3 で文字が小さい。4枚にして文字を大きく」→ 縦2枚（1枚8型）から横4枚（1枚4型）に
 #   書いた所は隠しシート「_map」に（型・幅・セル）を書いておき、u-chart-read.py がそれで読む
 CALCF = PatternFill('solid', fgColor='EEF3FA')
 ESTF = PatternFill('solid', fgColor='FCE9D9')
 WF = PatternFill('solid', fgColor='F4F1E8')
-BW4 = (6.5, 17, 9, 9)                          # 底W・計算・実績・見込み
+BW4 = (8.5, 22, 11.5, 11.5)                     # 底W・計算・実績・見込み（2026-10-14 文字を大きく 1.3倍）
 GAPW = 1.5
 
 
@@ -308,31 +309,31 @@ def table_block(ws, mp, r, keys, top, left, hc):
     cW, cC, cE, cS = left, left + 1, left + 2, left + 3
     ws.merge_cells(start_row=top, start_column=cW, end_row=top, end_column=cS)
     put(ws, top, cW, f"V{r['V']} t{r['t']}{'（小さいV）' if not r['base'] else ''}  {r['sel'].split(':')[1]}・{r['machine']}"
-        + ('  実績合わせ' if r.get('fit') else ''), bold=True, size=10.5, fill=HEAD)
+        + ('  実績合わせ' if r.get('fit') else ''), bold=True, size=13.5, fill=HEAD)
     h, w, g = smallest(r)
     # いちばん小さい断面：上の行に見出し、下の行に計算と記入欄（必ず書いてもらう）
     ws.merge_cells(start_row=top + 1, start_column=cW, end_row=top + 1, end_column=cC)
-    put(ws, top + 1, cW, '★必ず記入　いちばん小さい断面', bold=True, size=9, color='C00000', fill=KEYF)
-    put(ws, top + 1, cE, '立上り', bold=True, size=8.5, fill=KEYF)
-    put(ws, top + 1, cS, WN, bold=True, size=8.5, fill=KEYF)
+    put(ws, top + 1, cW, '★必ず記入　いちばん小さい断面', bold=True, size=11.5, color='C00000', fill=KEYF)
+    put(ws, top + 1, cE, '立上り', bold=True, size=11, fill=KEYF)
+    put(ws, top + 1, cS, WN, bold=True, size=11, fill=KEYF)
     ws.merge_cells(start_row=top + 2, start_column=cW, end_row=top + 2, end_column=cC)
-    mc = put(ws, top + 2, cW, '計算 ' + (f'{h}×{w}' + (f' ヤゲン{pname(g, r["V"])}' if g else '') if w else '×') + ' → 実績', size=8.5,
+    mc = put(ws, top + 2, cW, '計算 ' + (f'{h}×{w}' + (f' ヤゲン{pname(g, r["V"])}' if g else '') if w else '×') + ' → 実績', size=11,
              color='0B6E99' if g else '0A7D0A', fill=MINF)
     mc.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
     mn = r.get('minAct') or {}
     for cc, v, kind in ((cE, mn.get('h'), 'minh'), (cS, mn.get('w'), 'minw')):
-        e = put(ws, top + 2, cc, v, bold=True, size=11, fill=KEYF)
+        e = put(ws, top + 2, cc, v, bold=True, size=14.5, fill=KEYF)
         e.border = KEYBOX
         mp.append([r['t'], r['V'], None, ws.title, f'{get_column_letter(cc)}{top + 2}', kind])
-    ws.row_dimensions[top].height = 18
-    ws.row_dimensions[top + 1].height = 16
-    ws.row_dimensions[top + 2].height = 20
+    ws.row_dimensions[top].height = 23
+    ws.row_dimensions[top + 1].height = 21
+    ws.row_dimensions[top + 2].height = 26
     hr = top + 3
-    put(ws, hr, cW, WN, bold=True, size=9.5, fill=HEAD)
-    put(ws, hr, cC, '計算の立上り\n下限〜上限', bold=True, size=9, fill=HEAD)
-    put(ws, hr, cE, '実績\n（記入）', bold=True, size=9, fill=KEYF)
-    put(ws, hr, cS, '見込み\n（自動）', bold=True, size=9, fill=ESTF)
-    ws.row_dimensions[hr].height = 28
+    put(ws, hr, cW, WN, bold=True, size=12.5, fill=HEAD)
+    put(ws, hr, cC, '計算の立上り\n下限〜上限', bold=True, size=11.5, fill=HEAD)
+    put(ws, hr, cE, '実績\n（記入）', bold=True, size=11.5, fill=KEYF)
+    put(ws, hr, cS, '見込み\n（自動）', bold=True, size=11.5, fill=ESTF)
+    ws.row_dimensions[hr].height = 36
     Wl = block_rows(r, keys)
     ents = r.get('entries') or {}
     s0 = r.get('fit') or r
@@ -344,23 +345,23 @@ def table_block(ws, mp, r, keys, top, left, hc):
         key = W in keys
         lo, hi, gg = best(r, W)
         first = W == w
-        wc = put(ws, rr, cW, W, bold=True, size=10, fill=KEYF if key else (MINF if first else WF), color='C00000' if key else None)
+        wc = put(ws, rr, cW, W, bold=True, size=13, fill=KEYF if key else (MINF if first else WF), color='C00000' if key else None)
         if key:
             wc.number_format = '"★"0'
         v0 = s0['hmax'].get(str(W), (s0.get('h1') or {}).get(str(W)))   # 904061 の値（赤字を決める）
         dip = gg is None and isinstance(v0, (int, float)) and isinstance(prev_v, (int, float)) and v0 < prev_v and W % 10 == 0
         if hi is None:
-            put(ws, rr, cC, '×', size=9.5, color='999999', fill=CALCF)
+            put(ws, rr, cC, '×', size=12.5, color='999999', fill=CALCF)
         else:
             hv = 'なし' if hi == 'なし' else hi
             txt = (f"{hv}だけ" if hv == lo else f"{lo}〜{hv}") + (f" ヤゲン{pname(gg, r['V'])}" if gg else '')
-            cc_ = put(ws, rr, cC, txt, size=9.5 if not gg else 8.5, bold=bool(gg) or dip or first,
+            cc_ = put(ws, rr, cC, txt, size=12.5 if not gg else 11, bold=bool(gg) or dip or first,
                       color='0B6E99' if gg else ('C62F2F' if dip else ('0A7D0A' if first else None)),
                       fill=PatternFill('solid', fgColor='E3F1F8') if gg else (MINF if first else CALCF))
             cc_.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
         if W % 10 == 0 and isinstance(v0, (int, float)):
             prev_v = v0
-        e = put(ws, rr, cE, ent_text(ents.get(str(W))), bold=True, size=10.5, fill=KEYF if key else None)
+        e = put(ws, rr, cE, ent_text(ents.get(str(W))), bold=True, size=13.5, fill=KEYF if key else None)
         if key:
             e.border = KEYBOX
         mp.append([r['t'], r['V'], W, ws.title, f'{L(cE)}{rr}', 'w'])
@@ -387,8 +388,8 @@ def table_block(ws, mp, r, keys, top, left, hc):
         P, Q = C(4), C(6)
         ws.cell(R, hc + 8, (f'=IF(ISNUMBER({C(2)}),{C(2)},IF({isx},"×",IF(AND(ISNUMBER({C(1)}),ISNUMBER({P}),ISNUMBER({Q})),'
                             f'IF({Q}={P},{C(1)}+{C(5)},ROUND({C(1)}+{C(5)}+({C(7)}-{C(5)})*({C(0)}-{P})/({Q}-{P}),0)),"")))'))
-        put(ws, rr, cS, f'=IF(ISNUMBER({C(8)}),"{lo if lo is not None else h}〜"&{C(8)},{C(8)})', size=9.5, color='B45F06', fill=ESTF)
-        ws.row_dimensions[rr].height = 15
+        put(ws, rr, cS, f'=IF(ISNUMBER({C(8)}),"{lo if lo is not None else h}〜"&{C(8)},{C(8)})', size=12.5, color='B45F06', fill=ESTF)
+        ws.row_dimensions[rr].height = 20
     return hr + n_
 
 
@@ -396,7 +397,7 @@ def table_block(ws, mp, r, keys, top, left, hc):
 def table_u():
     wb = Workbook()
     mp = [['板厚', 'V', '幅', 'シート', 'セル', '種類']]
-    PER = 8
+    PER = 4
     pages = [list(range(i, min(i + PER, n))) for i in range(0, n, PER)]
     for pi, idxs in enumerate(pages, start=1):
         ws = wb.active if pi == 1 else wb.create_sheet()
@@ -411,9 +412,9 @@ def table_u():
                            '（曲がらなかったら ×）。いちばん小さい断面は必ず。★だけ書けば、間の行は「見込み」に入ります。書いたら保存して Claude に「計算し直して」。'
                            '青＝ヤゲン904061 では当たるが、ほかのヤゲンで曲がる（番号つき）。赤＝底Wを広げたのに下がる所。L835まで＝V8でヤゲン71606 は曲げ長さ835mm（金型1本分）まで。'
                            f'左右の立上りが違うときは低いほうで見る。計算は {TODAY} 時点。'))
-        c.font = Font(name=FONT, size=9.5)
+        c.font = Font(name=FONT, size=11)
         c.alignment = Alignment(wrap_text=True, vertical='top')
-        ws.row_dimensions[2].height = 40
+        ws.row_dimensions[2].height = 48
         for b in range(4):
             for k, wdt in enumerate(BW4):
                 ws.column_dimensions[get_column_letter(1 + b * (len(BW4) + 1) + k)].width = wdt
@@ -421,7 +422,7 @@ def table_u():
                 ws.column_dimensions[get_column_letter(1 + b * (len(BW4) + 1) + len(BW4))].width = GAPW
         top = 4
         end = top
-        for band in range(2):
+        for band in range(1):
             bidx = idxs[band * 4:(band + 1) * 4]
             if not bidx:
                 break
@@ -431,7 +432,7 @@ def table_u():
                 bottom = max(bottom, table_block(ws, mp, rows[j], KEYS[j], top, left, 100 + slot * 10 + band * 40))
             end = bottom
             top = bottom + 2
-        a3(ws, f'A1:{last}{end}', landscape=False)
+        a3(ws, f'A1:{last}{end}', landscape=True)
     hid = wb.create_sheet('_map')
     for row_ in mp:
         hid.append(row_)

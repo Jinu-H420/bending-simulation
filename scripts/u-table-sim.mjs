@@ -7,12 +7,18 @@
 //   実績 2200・900・500 t9「曲げた後に抜けられない」）。
 //
 //   型は u-graph-sim.mjs と同じ（鉄の各板厚の基準金型＋V8 t1.2・t1.6。縞は入れない）。計算の中身は u-curve.mjs。
-//   使い方: node scripts/u-table-sim.mjs > scripts/u-table.json   （約5分。早見グラフ・実績合わせの元になる）
+//   使い方: node scripts/u-table-sim.mjs > scripts/u-table.json   （全部の型。約15分。早見グラフ・実績合わせの元になる）
+//           node scripts/u-table-sim.mjs --add > 新.json            （足した型だけ計算して後ろに足す）
 //           python scripts/u-table-sheet.py scripts/u-table.json 出力.xlsx
+import { readFileSync } from 'node:fs';
 import { plan, dieCtx, curve, meta } from './u-curve.mjs';
 
-const out = [];
-for (const p of plan()) {
+// --add：scripts/u-table.json にない型だけ計算して後ろに足す（すでにある型の数字・実績合わせはそのまま）
+const add = process.argv.includes('--add');
+const have = add ? JSON.parse(readFileSync(new URL('./u-table.json', import.meta.url), 'utf8')) : [];
+const out = [...have];
+for (const p of plan(true)) {
+  if (have.some((r) => r.t === p.t && r.V === p.V && r.sel === p.sel)) continue;
   const c = dieCtx(p);
   if (!c) continue;
   const cv = curve(c);

@@ -41,8 +41,20 @@ def key_ws(vals, alt_ws=(), nW=None):
     return sorted(set(keys))
 
 
+def no_entry(r, hat):
+    """実績はまだ書かない型（2026-10-14 ユーザー「V100以降は実績はとりあえず入れないで行きます」。コの字だけ）"""
+    return not hat and r['V'] >= 100
+
+
+def tag_of(r):
+    """型の呼び方：基準金型／小さいV／大きいV（板厚の基準のVと比べて）"""
+    return r.get('tag') or ('基準金型' if r.get('base') else '小さいV')
+
+
 def keys_for(r, hat):
     """その型の★（書いた実績で行が増えても★は動かないよう、実績は入れずに決める）"""
+    if no_entry(r, hat):
+        return []
     lo, hi = graph_range(r)
     altN = r.get('altNarrow') or {}
     nW = min(map(int, altN)) if altN else None

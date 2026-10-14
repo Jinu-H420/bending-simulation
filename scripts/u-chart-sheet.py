@@ -32,9 +32,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 
+from u_keys import keys_for, no_entry, tag_of   # ★の決め方・型の呼び方（まとめと同じにするため共通）
+
 sim_path, out_path = sys.argv[1], sys.argv[2]
 rows = json.load(open(sim_path, encoding='utf-8'))
-rows.sort(key=lambda r: (r['t'], r['base']))
+rows.sort(key=lambda r: (r['t'], r['V']))
 FONT = 'Meiryo UI'
 TODAY = date.today().isoformat()
 HAT = rows[0].get('shape') == 'HAT'
@@ -266,7 +268,7 @@ ch.style = 2
 ch.width, ch.height = 40, 21
 for j, r in enumerate(rows):
     c = first_data_col + 1 + j
-    ov.cell(4, c, f"V{r['V']} t{r['t']}{'' if r['base'] else '（小さいV）'}{'（実績合わせ）' if r.get('fit') else ''}")
+    ov.cell(4, c, f"V{r['V']} t{r['t']}{'' if tag_of(r) == '基準金型' else '（' + tag_of(r) + '）'}{'（実績合わせ）' if r.get('fit') else ''}")
     for i, W in enumerate(Ws_all):
         v = (r['fit'] if r.get('fit') else r)['hmax'].get(str(W))
         ov.cell(5 + i, c, None if v is None else (H_TOP if v == 'なし' else v))
@@ -279,7 +281,9 @@ for j, r in enumerate(rows):
     ch.series.append(s)
 axes(ch, 0, W_TOP, 300)
 ch.legend.position = 'r'
-ov.add_chart(ch, 'A7')
+NL = -(-len(rows) // 8)                 # 型へ飛ぶリンクの行数（型が増えたら増える）
+CS = 5 + NL                             # グラフの始まりの行
+ov.add_chart(ch, f'A{CS}')
 # 型ごとのシートへ飛ぶ所（押すと、その型の「実績を入れる」表へ）
 ov.merge_cells(start_row=3, start_column=1, end_row=3, end_column=24)
 nv = ov.cell(3, 1, '実績を入れるときは、下の型を押してください（その型のシートの表へ飛びます。★の赤い枠に書きます）。各型のシートは Excel の下の見出しからも選べます。')
@@ -290,18 +294,19 @@ for j, r in enumerate(rows):
     rr, cc = 4 + j // 8, 1 + (j % 8) * 3
     ov.merge_cells(start_row=rr, start_column=cc, end_row=rr, end_column=cc + 2)
     sname = f"t{r['t']} V{r['V']}"
-    c = ov.cell(rr, cc, f"V{r['V']}  t{r['t']}{'（小さいV）' if not r['base'] else ''} の実績 →")
+    c = ov.cell(rr, cc, f"V{r['V']} t{r['t']}{'' if tag_of(r) == '基準金型' else ' ' + tag_of(r)} →")
     c.hyperlink = f"#'{sname}'!A{HR}"
     c.font = Font(name=FONT, size=11, bold=True, color='0563C1', underline='single')
     c.alignment = Alignment(horizontal='center', vertical='center')
     c.border = box
-for rr in range(3, 55):
+for rr in range(3, CS + 60):
     ov.row_dimensions[rr].height = 15
 ov.row_dimensions[3].height = 22
-ov.row_dimensions[4].height = 20
-ov.row_dimensions[5].height = 20   # 行の高さを決めておく（既定の高さは Excel の設定で変わり、グラフが印刷で切れる）
-fh = put_fig(ov, None, 'A53', 13)
-a3(ov, f'A1:X{row_after(ov, 53, fh) + 1}')
+for rr in range(4, 4 + NL):
+    ov.row_dimensions[rr].height = 20   # 行の高さを決めておく（既定の高さは Excel の設定で変わり、グラフが印刷で切れる）
+FR = row_after(ov, CS, ch.height / 2.54 * 72) + 3   # 行の高さの見積りが少し短く出るので、あけておく
+fh = put_fig(ov, None, f'A{FR}', 13)
+a3(ov, f'A1:X{row_after(ov, FR, fh) + 1}')
 
 # ---------------------------------------------------------------- 2枚目から：1型1枚（左に表、右にグラフ）
 # 2026-10-13 ユーザー：「右の表が一部見えない」「表を実績値で埋めたい（下の10行の欄は使えない）」→ 作り直し。
@@ -334,11 +339,10 @@ def ent_text(v):
     return v
 
 
-from u_keys import keys_for   # ★の決め方（まとめの実績記入と同じ★にするため共通）
 
 
 for gi, r in enumerate(rows, start=1):
-    tag = '基準金型' if r['base'] else '小さいV'
+    tag = tag_of(r)
     ws = wb.create_sheet(f"t{r['t']} V{r['V']}")
     fit = r.get('fit')
     # ハット：外フランジの長さごとの列（2026-10-13 ユーザー「外フランジも考慮したシートに」）。基準の長さ（r['A']）の列が ★・見込み の元
@@ -486,7 +490,8 @@ for gi, r in enumerate(rows, start=1):
                    f'"実績からの見込み{"（外フランジ " + str(r["A"]) + "）" if HAT else ""} {r["hLow"]} 〜 "&{EC}))'), bold=True, size=12, color='B45F06', align='left')
     ws.merge_cells(start_row=5, start_column=1, end_row=5, end_column=tcols)
     put(ws, 5, 1, (f"★ {len(keys)}か所：{WN} " + '・'.join(str(k) for k in keys) + '（＋7行目）') if keys else
-        ('この型は計算ではハットに曲がらない（外フランジ150まで試した）。曲がった実績があれば表に書いてください' if HAT else ''),
+        ('この型は計算ではハットに曲がらない（外フランジ150まで試した）。曲がった実績があれば表に書いてください' if HAT
+         else 'V100以上は、実績はまだ書かない（計算の値だけ）' if no_entry(r, HAT) else ''),
         bold=True, size=13, color='C00000', fill=KEYF, align='left')
     ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=tcols)
     bads = [k for k in fit['checks'] if k['bad']] if fit else []
@@ -515,13 +520,15 @@ for gi, r in enumerate(rows, start=1):
     if nW is not None:
         g_ = altN[str(nW)]
         mtxt = f"いちばん小さい断面 {g_['lo']}×{nW}（ヤゲン{pname(g_, r['V'])}）"
-    mtxt = '★必ず記入　' + mtxt                # いちばん小さい所は必ず書いてもらう（2026-10-14 ユーザー）
-    put(ws, 7, 1, mtxt, bold=True, size=10, color='C00000', fill=KEYF, align='left')
+    noent = no_entry(r, HAT)                   # V100以上（コの字）は実績はまだ書かない
+    mtxt = ('V100以上は実績はまだ書かない（計算の値だけ）　' if noent else '★必ず記入　') + mtxt   # いちばん小さい所は必ず書いてもらう（2026-10-14 ユーザー）
+    put(ws, 7, 1, mtxt, bold=True, size=10, color='666666' if noent else 'C00000', fill=HEAD if noent else KEYF, align='left')
     put(ws, 7, m0, '立上り', bold=True, size=10, fill=HEAD)
     put(ws, 7, m0 + 2, WN, bold=True, size=10, fill=HEAD)
     for cc, v in ((m0 + 1, mn.get('h')), (m0 + 3, mn.get('w'))):
-        e7 = put(ws, 7, cc, v, bold=True, size=12, fill=KEYF)
-        e7.border = KEYBOX
+        e7 = put(ws, 7, cc, v, bold=True, size=12, fill=None if noent else KEYF)
+        if not noent:
+            e7.border = KEYBOX
     MH, MW = f'{get_column_letter(m0 + 1)}7', f'{get_column_letter(m0 + 3)}7'
 
     # ---- 左の表

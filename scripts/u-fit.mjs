@@ -14,7 +14,7 @@ const TOL = 3;                 // これより外れた★は「合わない」
 const [basePath, entPath] = process.argv.slice(2);
 const base = JSON.parse(readFileSync(basePath, 'utf8'));
 const ents = JSON.parse(readFileSync(entPath, 'utf8'));
-const plans = plan();
+const plans = plan(true);
 const num = (v) => (v === 'なし' ? 300 : v);
 const outerOf = (c, h, W) => (c.shape === 'HAT' ? [c.A, h, W, h, c.A] : [h, W, h]);
 

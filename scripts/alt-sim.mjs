@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { plan, dieCtx, lowest, lower, upper, E, PUNCH } from './u-curve.mjs';
 
 const JOBS = 12;
-const P = plan();
+const P = plan(process.argv[2] === 'U');
 const SHAPE = process.argv[2] === 'U' ? 'U' : 'HAT';
 const path = fileURLToPath(new URL(SHAPE === 'U' ? './u-table.json' : './hat-table.json', import.meta.url));
 const base = JSON.parse(readFileSync(path, 'utf8'));

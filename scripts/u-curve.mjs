@@ -24,13 +24,27 @@ const machineOf = (sel) => (/^ins:/.test(sel) ? 'hg2203' : 'hd3504nt');
 const DIRS = { U: [1, 1], HAT: [1, -1, -1, 1] };
 
 // 早見表の型（鉄の各板厚の基準金型＋V8 t1.2・t1.6。縞は入れない）
-export function plan() {
+// withExtra＝コの字の早見表に足した型（2026-10-14 ユーザー「V16の2.3・3.2、V20の4.5、V25の3.2、V32の3.2・4.5・6、V40の4.5・9、
+//   V50の6、V80の12 がないので追加」）。表（u-table.json）の並びを崩さないよう、いつも後ろに付ける。ハットには付けない
+const EXTRA_SEL = { 16: 'ins:977061:stack', 20: 'ins:979061:stack', 25: 'ins:982061:stack', 32: 'lib:03500:0', 40: 'lib:03600:0', 50: 'lib:03700:0', 80: 'lib:01360:0' };
+const EXTRA = [[16, 2.3], [16, 3.2], [20, 4.5], [25, 3.2], [32, 3.2], [32, 4.5], [32, 6], [40, 4.5], [40, 9], [50, 6], [80, 12]];
+export function plan(withExtra = false) {
   const ts = [...new Set(Object.values(E.MINOUT_TABLE[mat]).flatMap((o) => Object.keys(o).map(Number)))].sort((a, b) => a - b);
   const out = [];
+  const baseV = {};
   for (const t of ts) {
-    if (t <= 1.6) out.push({ t, sel: 'ins:971561:stack', V: 8, base: false });
+    if (t <= 1.6) out.push({ t, sel: 'ins:971561:stack', V: 8, base: false, tag: '小さいV' });
     const b = E.pickDie(mat, t);
-    if (b && b.sel) out.push({ t, sel: b.sel, V: Number(String(b.v).replace('V', '')), base: true });
+    if (b && b.sel) {
+      baseV[t] = Number(String(b.v).replace('V', ''));
+      out.push({ t, sel: b.sel, V: baseV[t], base: true, tag: '基準金型' });
+    }
+  }
+  if (withExtra) {
+    for (const [V, t] of EXTRA) {
+      if (out.some((p) => p.t === t && p.V === V)) continue;
+      out.push({ t, sel: EXTRA_SEL[V], V, base: false, tag: V < baseV[t] ? '小さいV' : '大きいV' });
+    }
   }
   return out;
 }
@@ -155,7 +169,7 @@ export function hatFlanges(c) {
 
 export function meta(c) {
   return {
-    mat, t: c.t, V: c.V, sel: c.sel, base: c.base, machine: c.machine === 'hg2203' ? 'HG2203' : 'HD3504NT',
+    mat, t: c.t, V: c.V, sel: c.sel, base: c.base, tag: c.tag, machine: c.machine === 'hg2203' ? 'HG2203' : 'HD3504NT',
     minOut: c.minOut, nobi: c.nobi, ...(c.shape === 'HAT' ? { shape: 'HAT', A: c.A } : {}),
   };
 }

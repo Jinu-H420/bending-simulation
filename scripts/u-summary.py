@@ -23,11 +23,11 @@ from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.datavalidation import DataValidation
 
-from u_keys import keys_for
+from u_keys import keys_for, no_entry, tag_of
 
 src, out_table, out_chart = sys.argv[1], sys.argv[2], sys.argv[3]
 rows = json.load(open(src, encoding='utf-8'))
-rows.sort(key=lambda r: (r['t'], r['base']))
+rows.sort(key=lambda r: (r['t'], r['V']))
 HAT = rows[0].get('shape') == 'HAT'
 NAME = 'ハット曲げ' if HAT else 'コの字曲げ'
 WN = '上面W' if HAT else '底W'
@@ -93,7 +93,7 @@ def a3(ws, area, landscape):
 
 
 def label(r):
-    return f"V{r['V']}\nt{r['t']}" + ('' if r['base'] else '\n小さいV')
+    return f"V{r['V']}\nt{r['t']}" + ('' if tag_of(r) == '基準金型' else '\n' + tag_of(r))
 
 
 # ================================================================ 実績の記入（表まとめ・グラフまとめの両方に付ける）
@@ -308,12 +308,14 @@ def table_block(ws, mp, r, keys, top, left, hc):
     """1型ぶんの表。top＝型名の行、left＝底Wの列、hc＝見込みの計算に使う隠れ列の始まり。返り値＝使った最後の行"""
     cW, cC, cE, cS = left, left + 1, left + 2, left + 3
     ws.merge_cells(start_row=top, start_column=cW, end_row=top, end_column=cS)
-    put(ws, top, cW, f"V{r['V']} t{r['t']}{'（小さいV）' if not r['base'] else ''}  {r['sel'].split(':')[1]}・{r['machine']}"
+    put(ws, top, cW, f"V{r['V']} t{r['t']}{'' if tag_of(r) == '基準金型' else '（' + tag_of(r) + '）'}  {r['sel'].split(':')[1]}・{r['machine']}"
         + ('  実績合わせ' if r.get('fit') else ''), bold=True, size=13.5, fill=HEAD)
     h, w, g = smallest(r)
     # いちばん小さい断面：上の行に見出し、下の行に計算と記入欄（必ず書いてもらう）
     ws.merge_cells(start_row=top + 1, start_column=cW, end_row=top + 1, end_column=cC)
-    put(ws, top + 1, cW, '★必ず記入　いちばん小さい断面', bold=True, size=11.5, color='C00000', fill=KEYF)
+    noent = no_entry(r, HAT)                   # V100以上は実績はまだ書かない（計算の値だけ）
+    put(ws, top + 1, cW, '実績はまだ書かない' if noent else '★必ず記入　いちばん小さい断面', bold=True, size=11.5,
+        color='666666' if noent else 'C00000', fill=HEAD if noent else KEYF)
     put(ws, top + 1, cE, '立上り', bold=True, size=11, fill=KEYF)
     put(ws, top + 1, cS, WN, bold=True, size=11, fill=KEYF)
     ws.merge_cells(start_row=top + 2, start_column=cW, end_row=top + 2, end_column=cC)
@@ -322,8 +324,9 @@ def table_block(ws, mp, r, keys, top, left, hc):
     mc.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
     mn = r.get('minAct') or {}
     for cc, v, kind in ((cE, mn.get('h'), 'minh'), (cS, mn.get('w'), 'minw')):
-        e = put(ws, top + 2, cc, v, bold=True, size=14.5, fill=KEYF)
-        e.border = KEYBOX
+        e = put(ws, top + 2, cc, v, bold=True, size=14.5, fill=None if noent else KEYF)
+        if not noent:
+            e.border = KEYBOX
         mp.append([r['t'], r['V'], None, ws.title, f'{get_column_letter(cc)}{top + 2}', kind])
     ws.row_dimensions[top].height = 23
     ws.row_dimensions[top + 1].height = 21
@@ -498,7 +501,7 @@ for pi, page in enumerate(pages, start=1):
         ch = ScatterChart()
         ch.style = 2
         ch.width, ch.height = 12.0, 12.6
-        ch.title = (f"V{r['V']} t{r['t']}{'（小さいV）' if not r['base'] else ''}{'・実績合わせ' if r.get('fit') else ''}"
+        ch.title = (f"V{r['V']} t{r['t']}{'' if tag_of(r) == '基準金型' else '（' + tag_of(r) + '）'}{'・実績合わせ' if r.get('fit') else ''}"
                     + (f"　いちばん小さい {h}×{w}" if w else '　曲がらない'))
         X = Reference(ws, min_col=base, min_row=4, max_row=3 + m)
         s1 = Series(Reference(ws, min_col=base + 1, min_row=4, max_row=3 + m), X, title='上限')

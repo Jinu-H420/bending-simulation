@@ -101,6 +101,8 @@ KEYF = PatternFill('solid', fgColor='FFD24D')
 RED = Side(style='thick', color='C00000')
 KEYBOX = Border(left=RED, right=RED, top=RED, bottom=RED)
 KEYS = [keys_for(r, HAT) for r in rows]
+n = len(rows)
+Ws = list(range(STEP, H_TOP + 1, STEP))
 NK = max([len(k) for k in KEYS] + [1])
 NF = 3                                   # ほかの幅の欄の数
 EC0 = 4                                  # ★の最初の列
@@ -208,71 +210,240 @@ def entry_sheet(wb):
 
 ENTRYF = PatternFill('solid', fgColor='FFF2B3')
 
-# ================================================================ 表まとめ（A3縦1枚）
-wb = Workbook()
-ws = wb.active
-ws.title = '表まとめ'
-n = len(rows)
-ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n + 1)
-c = ws.cell(1, 1, f'{NAME} 早見表（全部の型）　立上りの{"範囲（下限〜上限）" if HAT else "上限"}　株式会社高橋鉄骨')
-c.font = Font(name=FONT, size=15, bold=True)
-ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n + 1)
-note = ws.cell(2, 1, (f'数字＝その{WN}で曲げられる立上り（外寸mm）。' +
-                      ('外フランジは型ごとの基準の長さ（見出しの下）。' if HAT else '左右の立上りが違うときは低いほうで見る。下限は見出しの「いちばん低い立上り」。') +
-                      '×＝曲がらない。青＝ヤゲン904061 では当たるが、ほかのヤゲンで曲がる（番号は右に小さく）。'
-                      'L835まで＝V8でヤゲン71606 は曲げ長さ835mm（金型1本分）まで、それより長いものは要確認。'
-                      f'実績合わせ＝★の実績に合わせて計算し直した型。型ごとの詳しい数字・実績の記入は「{NAME}_早見グラフ_A3.xlsx」。計算は {TODAY} 時点。'))
-note.font = Font(name=FONT, size=9)
-note.alignment = Alignment(wrap_text=True, vertical='top')
-ws.row_dimensions[2].height = 42
-HR = 3
-put(ws, HR, 1, '型', bold=True, fill=HEAD)
-put(ws, HR + 1, 1, '金型・機械', bold=True, size=8, fill=HEAD)
-put(ws, HR + 2, 1, '外フランジ' if HAT else 'いちばん低い\n立上り', bold=True, size=8, fill=HEAD)
-put(ws, HR + 3, 1, 'いちばん小さい\n断面', bold=True, size=8, fill=MINF)
-for j, r in enumerate(rows):
-    cc = 2 + j
-    put(ws, HR, cc, label(r) + ('\n実績合わせ' if r.get('fit') else ''), bold=True, size=9, fill=HEAD)
-    put(ws, HR + 1, cc, f"{r['sel'].split(':')[1]}\n{r['machine']}", size=7.5, fill=HEAD)
-    put(ws, HR + 2, cc, r.get('A') if HAT else ((r.get('fit') or r).get('hLow') or '×'), size=9, fill=HEAD)
-    h, w, g = smallest(r)
-    put(ws, HR + 3, cc, (f"{h}×{w}" + (f"\n{pname(g, r['V'])}" if g else '')) if w else '×', bold=True, size=8,
-        color='0B6E99' if g else '0A7D0A', fill=MINF)
-ws.row_dimensions[HR].height = 40
-ws.row_dimensions[HR + 1].height = 26
-ws.row_dimensions[HR + 2].height = 22
-ws.row_dimensions[HR + 3].height = 40
-put(ws, HR + 4, 1, WN, bold=True, fill=HEAD)
-for j in range(n):
-    put(ws, HR + 4, 2 + j, '下限〜上限' if HAT else '上限', bold=True, size=8, fill=HEAD)
-Ws = list(range(STEP, H_TOP + 1, STEP))
-for i, W in enumerate(Ws):
-    rr = HR + 5 + i
-    put(ws, rr, 1, W, bold=True, size=9.5, fill=PatternFill('solid', fgColor='F4F1E8'))
-    prev = {}
+def table_hat():
+    # 表まとめ（ハット：全型を1枚の表＋実績の記入シート）
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '表まとめ'
+    n = len(rows)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n + 1)
+    c = ws.cell(1, 1, f'{NAME} 早見表（全部の型）　立上りの{"範囲（下限〜上限）" if HAT else "上限"}　株式会社高橋鉄骨')
+    c.font = Font(name=FONT, size=15, bold=True)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n + 1)
+    note = ws.cell(2, 1, (f'数字＝その{WN}で曲げられる立上り（外寸mm）。' +
+                          ('外フランジは型ごとの基準の長さ（見出しの下）。' if HAT else '左右の立上りが違うときは低いほうで見る。下限は見出しの「いちばん低い立上り」。') +
+                          '×＝曲がらない。青＝ヤゲン904061 では当たるが、ほかのヤゲンで曲がる（番号は右に小さく）。'
+                          'L835まで＝V8でヤゲン71606 は曲げ長さ835mm（金型1本分）まで、それより長いものは要確認。'
+                          f'実績合わせ＝★の実績に合わせて計算し直した型。型ごとの詳しい数字・実績の記入は「{NAME}_早見グラフ_A3.xlsx」。計算は {TODAY} 時点。'))
+    note.font = Font(name=FONT, size=9)
+    note.alignment = Alignment(wrap_text=True, vertical='top')
+    ws.row_dimensions[2].height = 42
+    HR = 3
+    put(ws, HR, 1, '型', bold=True, fill=HEAD)
+    put(ws, HR + 1, 1, '金型・機械', bold=True, size=8, fill=HEAD)
+    put(ws, HR + 2, 1, '外フランジ' if HAT else 'いちばん低い\n立上り', bold=True, size=8, fill=HEAD)
+    put(ws, HR + 3, 1, 'いちばん小さい\n断面', bold=True, size=8, fill=MINF)
     for j, r in enumerate(rows):
-        lo, hi, g = best(r, W)
+        cc = 2 + j
+        put(ws, HR, cc, label(r) + ('\n実績合わせ' if r.get('fit') else ''), bold=True, size=9, fill=HEAD)
+        put(ws, HR + 1, cc, f"{r['sel'].split(':')[1]}\n{r['machine']}", size=7.5, fill=HEAD)
+        put(ws, HR + 2, cc, r.get('A') if HAT else ((r.get('fit') or r).get('hLow') or '×'), size=9, fill=HEAD)
+        h, w, g = smallest(r)
+        put(ws, HR + 3, cc, (f"{h}×{w}" + (f"\n{pname(g, r['V'])}" if g else '')) if w else '×', bold=True, size=8,
+            color='0B6E99' if g else '0A7D0A', fill=MINF)
+    ws.row_dimensions[HR].height = 40
+    ws.row_dimensions[HR + 1].height = 26
+    ws.row_dimensions[HR + 2].height = 22
+    ws.row_dimensions[HR + 3].height = 40
+    put(ws, HR + 4, 1, WN, bold=True, fill=HEAD)
+    for j in range(n):
+        put(ws, HR + 4, 2 + j, '下限〜上限' if HAT else '上限', bold=True, size=8, fill=HEAD)
+    Ws = list(range(STEP, H_TOP + 1, STEP))
+    for i, W in enumerate(Ws):
+        rr = HR + 5 + i
+        put(ws, rr, 1, W, bold=True, size=9.5, fill=PatternFill('solid', fgColor='F4F1E8'))
+        prev = {}
+        for j, r in enumerate(rows):
+            lo, hi, g = best(r, W)
+            if hi is None:
+                put(ws, rr, 2 + j, '×', size=8.5, color='AAAAAA')
+                continue
+            hv = 'なし' if hi == 'なし' else hi
+            pv = best(r, W - STEP)[1] if W > STEP else None
+            dip = g is None and isinstance(hi, (int, float)) and isinstance(pv, (int, float)) and hi < pv
+            txt = (f"{lo}〜{hv}" if HAT else f"{hv}") + (f" {pname(g, r['V'])}" if g else '')
+            cell = put(ws, rr, 2 + j, txt, size=9 if not g else 7.5, bold=dip or bool(g),
+                       color='0B6E99' if g else ('C62F2F' if dip else None), fill=ALTF if g else None)
+            cell.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
+        ws.row_dimensions[rr].height = 15 if not HAT else 21
+    ws.column_dimensions['A'].width = 7
+    for j, r in enumerate(rows):
+        # V8 で71606（L835まで）が出る列は広く
+        wide = r['V'] == 8 and any(g['punch'] == '71606' for g in list((r.get('alt') or {}).values()) + list((r.get('altNarrow') or {}).values()))
+        ws.column_dimensions[get_column_letter(2 + j)].width = (17 if wide else 11.5) if HAT else (14 if wide else 8.5)
+    ws.freeze_panes = ws.cell(HR + 5, 2)
+    a3(ws, f'A1:{get_column_letter(n + 1)}{HR + 4 + len(Ws)}', landscape=HAT)   # ハットは行が少ないので横で大きく
+    entry_sheet(wb)
+    wb.save(out_table)
+    print('saved', out_table)
+
+
+
+
+# ================================================================ 表まとめ（コの字）：型ごとのシートの表をそのまま並べる
+# 2026-10-14 ユーザー「まとめた表は分かりづらい・記入しづらい。元々のもの（型ごとのシートの表）をまとめて。A3で2枚になってもよい」
+#   A3縦2枚。1枚に8型（横4型×上下2段）。1型＝ 底W｜計算の立上り 下限〜上限｜実績（記入）｜見込み（自動）。底Wは10mmごと＋★＋いちばん狭い幅
+#   書いた所は隠しシート「_map」に（型・幅・セル）を書いておき、u-chart-read.py がそれで読む
+CALCF = PatternFill('solid', fgColor='EEF3FA')
+ESTF = PatternFill('solid', fgColor='FCE9D9')
+WF = PatternFill('solid', fgColor='F4F1E8')
+BW4 = (6.5, 17, 9, 9)                          # 底W・計算・実績・見込み
+GAPW = 1.5
+
+
+def block_rows(r, keys):
+    """その型の表の行（幅の並び）：いちばん狭い幅から300まで10mmごと＋★＋いちばん狭い幅"""
+    h, w, g = smallest(r)
+    lo = w if w else (r.get('wMin') or 300)
+    Ws = {W for W in range(10, H_TOP + 1, 10) if W >= lo} | set(keys)
+    if w:
+        Ws.add(w)
+    if r.get('wMin'):
+        Ws.add(r['wMin'])
+    return sorted(W for W in Ws if W <= max(H_TOP, max(keys or [0])))
+
+
+def table_block(ws, mp, r, keys, top, left, hc):
+    """1型ぶんの表。top＝型名の行、left＝底Wの列、hc＝見込みの計算に使う隠れ列の始まり。返り値＝使った最後の行"""
+    cW, cC, cE, cS = left, left + 1, left + 2, left + 3
+    ws.merge_cells(start_row=top, start_column=cW, end_row=top, end_column=cS)
+    put(ws, top, cW, f"V{r['V']} t{r['t']}{'（小さいV）' if not r['base'] else ''}  {r['sel'].split(':')[1]}・{r['machine']}"
+        + ('  実績合わせ' if r.get('fit') else ''), bold=True, size=10.5, fill=HEAD)
+    h, w, g = smallest(r)
+    # いちばん小さい断面：上の行に見出し、下の行に計算と記入欄（必ず書いてもらう）
+    ws.merge_cells(start_row=top + 1, start_column=cW, end_row=top + 1, end_column=cC)
+    put(ws, top + 1, cW, '★必ず記入　いちばん小さい断面', bold=True, size=9, color='C00000', fill=KEYF)
+    put(ws, top + 1, cE, '立上り', bold=True, size=8.5, fill=KEYF)
+    put(ws, top + 1, cS, WN, bold=True, size=8.5, fill=KEYF)
+    ws.merge_cells(start_row=top + 2, start_column=cW, end_row=top + 2, end_column=cC)
+    mc = put(ws, top + 2, cW, '計算 ' + (f'{h}×{w}' + (f' ヤゲン{pname(g, r["V"])}' if g else '') if w else '×') + ' → 実績', size=8.5,
+             color='0B6E99' if g else '0A7D0A', fill=MINF)
+    mc.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
+    mn = r.get('minAct') or {}
+    for cc, v, kind in ((cE, mn.get('h'), 'minh'), (cS, mn.get('w'), 'minw')):
+        e = put(ws, top + 2, cc, v, bold=True, size=11, fill=KEYF)
+        e.border = KEYBOX
+        mp.append([r['t'], r['V'], None, ws.title, f'{get_column_letter(cc)}{top + 2}', kind])
+    ws.row_dimensions[top].height = 18
+    ws.row_dimensions[top + 1].height = 16
+    ws.row_dimensions[top + 2].height = 20
+    hr = top + 3
+    put(ws, hr, cW, WN, bold=True, size=9.5, fill=HEAD)
+    put(ws, hr, cC, '計算の立上り\n下限〜上限', bold=True, size=9, fill=HEAD)
+    put(ws, hr, cE, '実績\n（記入）', bold=True, size=9, fill=KEYF)
+    put(ws, hr, cS, '見込み\n（自動）', bold=True, size=9, fill=ESTF)
+    ws.row_dimensions[hr].height = 28
+    Wl = block_rows(r, keys)
+    ents = r.get('entries') or {}
+    s0 = r.get('fit') or r
+    n_ = len(Wl)
+    L = get_column_letter
+    prev_v = None
+    for i, W in enumerate(Wl):
+        rr = hr + 1 + i
+        key = W in keys
+        lo, hi, gg = best(r, W)
+        first = W == w
+        wc = put(ws, rr, cW, W, bold=True, size=10, fill=KEYF if key else (MINF if first else WF), color='C00000' if key else None)
+        if key:
+            wc.number_format = '"★"0'
+        v0 = s0['hmax'].get(str(W), (s0.get('h1') or {}).get(str(W)))   # 904061 の値（赤字を決める）
+        dip = gg is None and isinstance(v0, (int, float)) and isinstance(prev_v, (int, float)) and v0 < prev_v and W % 10 == 0
         if hi is None:
-            put(ws, rr, 2 + j, '×', size=8.5, color='AAAAAA')
-            continue
-        hv = 'なし' if hi == 'なし' else hi
-        pv = best(r, W - STEP)[1] if W > STEP else None
-        dip = g is None and isinstance(hi, (int, float)) and isinstance(pv, (int, float)) and hi < pv
-        txt = (f"{lo}〜{hv}" if HAT else f"{hv}") + (f" {pname(g, r['V'])}" if g else '')
-        cell = put(ws, rr, 2 + j, txt, size=9 if not g else 7.5, bold=dip or bool(g),
-                   color='0B6E99' if g else ('C62F2F' if dip else None), fill=ALTF if g else None)
-        cell.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
-    ws.row_dimensions[rr].height = 15 if not HAT else 21
-ws.column_dimensions['A'].width = 7
-for j, r in enumerate(rows):
-    # V8 で71606（L835まで）が出る列は広く
-    wide = r['V'] == 8 and any(g['punch'] == '71606' for g in list((r.get('alt') or {}).values()) + list((r.get('altNarrow') or {}).values()))
-    ws.column_dimensions[get_column_letter(2 + j)].width = (17 if wide else 11.5) if HAT else (14 if wide else 8.5)
-ws.freeze_panes = ws.cell(HR + 5, 2)
-a3(ws, f'A1:{get_column_letter(n + 1)}{HR + 4 + len(Ws)}', landscape=HAT)   # ハットは行が少ないので横で大きく
-entry_sheet(wb)
-wb.save(out_table)
-print('saved', out_table)
+            put(ws, rr, cC, '×', size=9.5, color='999999', fill=CALCF)
+        else:
+            hv = 'なし' if hi == 'なし' else hi
+            txt = (f"{hv}だけ" if hv == lo else f"{lo}〜{hv}") + (f" ヤゲン{pname(gg, r['V'])}" if gg else '')
+            cc_ = put(ws, rr, cC, txt, size=9.5 if not gg else 8.5, bold=bool(gg) or dip or first,
+                      color='0B6E99' if gg else ('C62F2F' if dip else ('0A7D0A' if first else None)),
+                      fill=PatternFill('solid', fgColor='E3F1F8') if gg else (MINF if first else CALCF))
+            cc_.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
+        if W % 10 == 0 and isinstance(v0, (int, float)):
+            prev_v = v0
+        e = put(ws, rr, cE, ent_text(ents.get(str(W))), bold=True, size=10.5, fill=KEYF if key else None)
+        if key:
+            e.border = KEYBOX
+        mp.append([r['t'], r['V'], W, ws.title, f'{L(cE)}{rr}', 'w'])
+        # 見込み（型ごとのシートと同じ考え方：書いた行どうしの差を、計算の形に合わせて間に割り振る）
+        E = f'{L(cE)}{rr}'
+        R = rr
+        C = lambda j: f'{L(hc + j)}{R}'
+        hiN = num(hi) if isinstance(num(hi), (int, float)) else None
+        ws.cell(R, hc, W)
+        ws.cell(R, hc + 1, hiN)
+        T_ = f'SUBSTITUTE(SUBSTITUTE({E},"~","〜"),"-","〜")'
+        ws.cell(R, hc + 2, f'=IF(ISNUMBER({E}),{E},IFERROR(VALUE(MID({T_},FIND("〜",{T_})+1,9)),""))')
+        isx = f'OR({E}="×",{E}="✕")'
+        ws.cell(R, hc + 3, f'=IF(ISNUMBER({C(2)}),IF(ISNUMBER({C(1)}),{C(2)}-{C(1)},""),IF({isx},"x",""))')
+        D_ = C(3)
+        pw = f'{L(hc + 4)}{R - 1}' if i else '""'
+        pd = f'{L(hc + 5)}{R - 1}' if i else '""'
+        nw = f'{L(hc + 6)}{R + 1}' if i < n_ - 1 else '""'
+        nd = f'{L(hc + 7)}{R + 1}' if i < n_ - 1 else '""'
+        ws.cell(R, hc + 4, f'=IF({D_}="x","",IF(ISNUMBER({D_}),{C(0)},{pw}))')
+        ws.cell(R, hc + 5, f'=IF({D_}="x","",IF(ISNUMBER({D_}),{D_},{pd}))')
+        ws.cell(R, hc + 6, f'=IF({D_}="x","",IF(ISNUMBER({D_}),{C(0)},{nw}))')
+        ws.cell(R, hc + 7, f'=IF({D_}="x","",IF(ISNUMBER({D_}),{D_},{nd}))')
+        P, Q = C(4), C(6)
+        ws.cell(R, hc + 8, (f'=IF(ISNUMBER({C(2)}),{C(2)},IF({isx},"×",IF(AND(ISNUMBER({C(1)}),ISNUMBER({P}),ISNUMBER({Q})),'
+                            f'IF({Q}={P},{C(1)}+{C(5)},ROUND({C(1)}+{C(5)}+({C(7)}-{C(5)})*({C(0)}-{P})/({Q}-{P}),0)),"")))'))
+        put(ws, rr, cS, f'=IF(ISNUMBER({C(8)}),"{lo if lo is not None else h}〜"&{C(8)},{C(8)})', size=9.5, color='B45F06', fill=ESTF)
+        ws.row_dimensions[rr].height = 15
+    return hr + n_
+
+
+
+def table_u():
+    wb = Workbook()
+    mp = [['板厚', 'V', '幅', 'シート', 'セル', '種類']]
+    PER = 8
+    pages = [list(range(i, min(i + PER, n))) for i in range(0, n, PER)]
+    for pi, idxs in enumerate(pages, start=1):
+        ws = wb.active if pi == 1 else wb.create_sheet()
+        ws.title = f'表まとめ{pi}'
+        ncols = 4 * (len(BW4) + 1) - 1
+        last = get_column_letter(ncols)
+        ws.merge_cells(f'A1:{last}1')
+        c = ws.cell(1, 1, f'{NAME} 早見表（まとめ {pi}／{len(pages)}）　立上り（外寸mm）　株式会社高橋鉄骨')
+        c.font = Font(name=FONT, size=15, bold=True)
+        ws.merge_cells(f'A2:{last}2')
+        c = ws.cell(2, 1, ('型ごとのシート（' + NAME + '_早見グラフ_A3.xlsx）の表を並べたもの。★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください'
+                           '（曲がらなかったら ×）。いちばん小さい断面は必ず。★だけ書けば、間の行は「見込み」に入ります。書いたら保存して Claude に「計算し直して」。'
+                           '青＝ヤゲン904061 では当たるが、ほかのヤゲンで曲がる（番号つき）。赤＝底Wを広げたのに下がる所。L835まで＝V8でヤゲン71606 は曲げ長さ835mm（金型1本分）まで。'
+                           f'左右の立上りが違うときは低いほうで見る。計算は {TODAY} 時点。'))
+        c.font = Font(name=FONT, size=9.5)
+        c.alignment = Alignment(wrap_text=True, vertical='top')
+        ws.row_dimensions[2].height = 40
+        for b in range(4):
+            for k, wdt in enumerate(BW4):
+                ws.column_dimensions[get_column_letter(1 + b * (len(BW4) + 1) + k)].width = wdt
+            if b < 3:
+                ws.column_dimensions[get_column_letter(1 + b * (len(BW4) + 1) + len(BW4))].width = GAPW
+        top = 4
+        end = top
+        for band in range(2):
+            bidx = idxs[band * 4:(band + 1) * 4]
+            if not bidx:
+                break
+            bottom = top
+            for slot, j in enumerate(bidx):
+                left = 1 + slot * (len(BW4) + 1)
+                bottom = max(bottom, table_block(ws, mp, rows[j], KEYS[j], top, left, 100 + slot * 10 + band * 40))
+            end = bottom
+            top = bottom + 2
+        a3(ws, f'A1:{last}{end}', landscape=False)
+    hid = wb.create_sheet('_map')
+    for row_ in mp:
+        hid.append(row_)
+    hid.sheet_state = 'hidden'
+    wb.save(out_table)
+    print('saved', out_table)
+
+
+if HAT:
+    table_hat()
+else:
+    table_u()
 
 
 # ================================================================ グラフまとめ（A3横・1枚に8型）

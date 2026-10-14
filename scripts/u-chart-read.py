@@ -1,6 +1,7 @@
 # コの字曲げ 早見グラフ（u-chart-sheet.py で作った xlsx）から、各型の表に書いてある実績を読む。
 #   出力: [{ t, V, entries: { 底W: 立上り | '×' | {lo, hi} }, min?: { h, w } }]（u-fit.mjs に渡す。min＝いちばん小さい断面の実績、
 #          {lo, hi}＝ハットで「25〜75」のように範囲で書いたもの）。コの字・ハットどちらの早見グラフも読める
+#   表まとめ（隠しシート _map あり）・グラフまとめ（「実績の記入」シート）も読める
 #   使い方: python scripts/u-chart-read.py 早見グラフ.xlsx > 実績.json
 import json
 import re
@@ -39,6 +40,23 @@ def num(v):
 
 wb = load_workbook(sys.argv[1])
 out = []
+if '_map' in wb.sheetnames:
+    # 表まとめ（u-summary.py。型ごとの表を並べたもの）：隠しシート _map に（板厚・V・幅・シート・セル・種類）
+    by = {}
+    for t, V, W, sh, cell, kind in list(wb['_map'].iter_rows(min_row=2, values_only=True)):
+        d = by.setdefault((t, V), {'t': t, 'V': int(V), 'entries': {}})
+        v = num(wb[sh][cell].value)
+        if v is None:
+            continue
+        if kind == 'w':
+            d['entries'][str(int(W))] = v
+        elif isinstance(v, (int, float)):
+            d.setdefault('min', {})['h' if kind == 'minh' else 'w'] = v
+    for d in by.values():
+        if d.get('min') and not ('h' in d['min'] and 'w' in d['min']):
+            del d['min']
+    json.dump(list(by.values()), sys.stdout, ensure_ascii=False)
+    sys.exit(0)
 if '実績の記入' in wb.sheetnames:
     # まとめ（u-summary.py）の記入シート：1型2行。下の行の印刷範囲の外（60・61列）に板厚・V、上の行の 62列〜 に★の幅
     ws = wb['実績の記入']

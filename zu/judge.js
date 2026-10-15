@@ -550,6 +550,12 @@ function withSmallV(res, L, recs) {
   if (!sv0) return res;
   const sv = sv0;
   const note = `板厚 t${res.row.t} の基準は V${sv.baseV}。小さい V${res.row.V} は長いものが曲げられない`;
+  // ⓪ 耐圧で曲がらなかった L（SMALLV_NGL）以上は ✕
+  if (sv.ngL != null && L >= sv.ngL) {
+    const why = `${note}（L ${sv.ngL}mm で耐圧が足りず曲がらなかった・実績）`;
+    return { ...res, smallV: sv, grade: 'ng', why: res.grade === 'ng' ? `${res.why}。さらに${why}` : why,
+      fix: [res.fix, `L を ${sv.ngL}mm より短くするか、V${sv.baseV} で曲げる`].filter(Boolean).join('、または') };
+  }
   // ① 確かめた最長L（SMALLV_MAXL）があれば、それで ○／✕
   if (sv.maxL != null) {
     if (!(L > sv.maxL)) return { ...res, smallV: sv };

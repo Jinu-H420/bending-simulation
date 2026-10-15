@@ -1141,13 +1141,17 @@ const PL22_MAX_LEN = 1500;
 const SMALLV_MAXL = {
   // 例：'鉄|6|20': 1000,
 };
+// 小さいVで、金型の耐圧が足りず曲がらなかった L（実績）。この L 以上は ✕（それより短いのは確認中のまま）
+const SMALLV_NGL = {
+  '鉄|9|40': 700,   // 2026-10-15 ユーザー：PL9 コの字 V40 L700 は耐圧で NG
+};
 // その板厚の基準のVと、小さいVのときの最長L（実績。無ければ null）。基準以上のVなら null を返す
 function smallVCheck(mat, t, V) {
   const b = pickDie(mat === '縞' ? '縞' : '鉄', t);
   const baseV = b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null;
   if (!baseV || !(V < baseV)) return null;
   const k = `${mat === '縞' ? '縞' : '鉄'}|${t}|${V}`;
-  return { baseV, maxL: SMALLV_MAXL[k] != null ? SMALLV_MAXL[k] : null, key: k };
+  return { baseV, maxL: SMALLV_MAXL[k] != null ? SMALLV_MAXL[k] : null, ngL: SMALLV_NGL[k] != null ? SMALLV_NGL[k] : null, key: k };
 }
 const DIE_STOCK = { 8: 5, 12: 5, 16: 5, 20: 5, 25: 5, 32: 2, 40: 5, 50: 5, 63: 1, 80: 5, 100: 5, 125: 5, 160: 5 };
 // シミュレーターの幾何だけで、その段差をどこまで小さくできるかを探す。
@@ -1720,7 +1724,8 @@ const BendingSimulator = () => {
     const ls = zuRecs.filter((r) => r.ok && r.mat === (matType === '縞' ? '縞' : '鉄') && r.t === t && r.V === nobiV && r.L > 0).map((r) => r.L);
     return { ...sv, recL: ls.length ? Math.max(...ls) : null };
   }, [matType, t, nobiV, zuRecs]);
-  const smallVNG = smallV && smallV.maxL != null && bendLen > smallV.maxL;
+  const smallVPress = !!(smallV && smallV.ngL != null && bendLen >= smallV.ngL);   // 耐圧で曲がらなかった L 以上
+  const smallVNG = smallV && ((smallV.maxL != null && bendLen > smallV.maxL) || smallVPress);
 
   // 台の実測が使えていない金型のときだけ、下逃げの表で当たりを見る
   const downWarn = useMemo(() => {
@@ -2624,7 +2629,8 @@ const BendingSimulator = () => {
             : !noHit ? '干渉あり — この段取りでは曲がりません'
             : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
             : lenNG ? `曲げ長さ ${bendLen}mm が上限 ${lenNG.v}mm を超えています — ${lenNG.why}`
-            : smallVNG ? `曲げ長さ ${bendLen}mm が長すぎます — 基準より小さいV${nobiV}は L ${smallV.maxL}mm まで（実績）`
+            : smallVNG ? (smallVPress ? `曲げ長さ ${bendLen}mm が長すぎます — 基準より小さいV${nobiV}は L ${smallV.ngL}mm で耐圧が足りません（実績）`
+              : `曲げ長さ ${bendLen}mm が長すぎます — 基準より小さいV${nobiV}は L ${smallV.maxL}mm まで（実績）`)
             : downWarn ? `下がりがダイ・台に当たります — 曲げ線から ${downWarn.w.toFixed(0)}mm で ${downWarn.depth.toFixed(0)}mm 下がっています`
             : minOutWarn.length ? `最小フランジ ${minFlange.tbl}mm（折り曲げ表）を下回る辺があります`
             : 'Z段差が小さすぎます — 2曲げ目で抜けません'}
@@ -2654,6 +2660,7 @@ const BendingSimulator = () => {
             {smallV.maxL != null ? ` この組み合わせは L ${smallV.maxL}mm まで（実績）。`
               : smallV.recL != null ? ` 登録した実績では L ${smallV.recL}mm まで曲がっています（いま L ${bendLen}mm${bendLen <= smallV.recL ? '・○' : '・その先は確認中'}）。`
               : ` 曲げられる最長の L は確認中です（いま L ${bendLen}mm）。`}
+            {smallV.ngL != null && ` L ${smallV.ngL}mm は耐圧で曲がりませんでした（実績）。`}
           </div>
         )}
         {autoMsg && (

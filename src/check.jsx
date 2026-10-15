@@ -123,7 +123,9 @@ function withLength(r, { L, t, mat }) {
   if (!(L > 0) || r.skip) return r;
   const lim = lenLimit(r.V, t, r.machine, r.sel);
   const sv = smallVCheck(mat, t, r.V);
-  const out = { ...r, lenLim: lim, smallV: sv || null };
+  // 小さいVの最長L（実績）が機械・ダイの長さより短ければ、表示する上限もそれにする
+  const svLim = sv && sv.maxL != null && sv.maxL < lim.v ? { v: sv.maxL, why: `t${t}・小さいV${r.V}の実績` } : null;
+  const out = { ...r, lenLim: svLim || lim, smallV: sv || null };
   if (L > lim.v) {
     return { ...out, ok: false, why: `${r.ok ? '' : `${r.why}。さらに`}曲げ長さ L ${L}mm が長すぎます（${lim.why}で ${lim.v}mm まで）` };
   }

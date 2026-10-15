@@ -1,0 +1,18 @@
+/* 小さいVの最長L（耐圧）の登録欄。かんたん判定・Z・コの字判定で共用 */
+.lenreg { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line, #ccc); }
+.lenreg-h { font-weight: 700; }
+.lenreg-hint { margin-top: 4px; font-size: 13px; color: var(--sub, #666); }
+.lenreg-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-top: 8px; }
+.lenreg-row label { display: flex; flex-direction: column; font-size: 12.5px; color: var(--sub, #666); width: 130px; }
+.lenreg-row label.wide { width: 220px; }
+.lenreg-row input, .lenreg-row select { font: inherit; font-size: 15px; padding: 7px 8px; border-radius: 8px;
+  border: 1px solid var(--line, #ccc); background: var(--page, #fff); color: var(--ink, inherit); margin-top: 3px; }
+.lenreg-row button { font: inherit; font-weight: 700; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--accent, #2a6fd6); background: var(--accent, #2a6fd6); color: #fff; }
+.lenreg-row button:disabled { opacity: .45; cursor: default; }
+table.lenreg-list { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+table.lenreg-list th, table.lenreg-list td { border-bottom: 1px solid var(--line, #ddd); padding: 5px 6px; text-align: left; }
+table.lenreg-list th { color: var(--sub, #666); font-weight: 600; }
+table.lenreg-list td.sub { color: var(--sub, #666); font-size: 12.5px; }
+table.lenreg-list button.del { font: inherit; font-size: 12.5px; padding: 3px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line, #ccc); background: transparent; color: inherit; }

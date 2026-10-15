@@ -6,7 +6,8 @@ import ReactDOM from 'react-dom/client';
 import DATA from './data/zu-data.json';
 import { LimitChart, LimitDetail, QuickTable } from './limits.jsx';
 import { METHOD_JA, CAUSE_JA, outNgMatch, recMatch, recText, judgeAll, zLimitA, uLimitH, uKunoH, uNakaH, seqText, RANK, exactLimit, actLimit, nakaOshi, nakaPose, PUNCH, Z_ACT_ON } from './judge.js';
-import { SUTE_MIN_INNER } from '../bending-simulator.jsx';
+import { SUTE_MIN_INNER, setSmallVRecs } from '../bending-simulator.jsx';
+import { LenLimitPanel } from '../src/lenlimit-panel.jsx';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from '../src/cloud.js';
 import { deviceId, sameKey, byNewest } from '../src/records.js';
 import { RecEditForm } from '../src/RecEdit.jsx';
@@ -243,7 +244,7 @@ function NakaFigure({ t, W, H1, H2, naka }) {
 
 // ③の下：早見表。横の寸法ごとの上限を並べる。いまの寸法の列に色を付ける
 // 実績の登録。曲がると分かっているものはボタン1つで登録できる（型・曲げ方は判定の答えから入れる）。
-function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg }) {
+function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg, children }) {
   const [open, setOpen] = useState(false);           // 型や曲げ方を自分で選びたいとき
   const [V, setV] = useState(best ? best.row.id : list[0].row.id);
   const [method, setMethod] = useState('normal');
@@ -363,6 +364,7 @@ function RecordPanel({ shape, mat, t, dims, L, list, best, recs, dir, pendingDir
               </tbody>
             </table>
           )}
+          {children}
         </>
       )}
     </div>
@@ -406,9 +408,14 @@ function App() {
   const [pendingDir, setPendingDir] = useState(null);
   const [recs, setRecs] = useState([]);
   const [recMsg, setRecMsg] = useState('');
+  // 小さいVの最長L（bendsim.json の lenLimits）。判定はこれを smallVCheck で使う
+  const [lenLims, setLenLims] = useState([]);
+  const [lenMsg, setLenMsg] = useState('');
+  const applyLens = (list) => { setSmallVRecs(list); setLenLims(list); };
   const openDir = async (d) => {
     try {
       const { data } = await folderPull(d);
+      applyLens(data.lenLimits || []);
       setRecs(data.zuRecords || []); setDir(d); setPendingDir(null);
       setRecMsg(`共有フォルダの実績 ${(data.zuRecords || []).length} 件を読みました`);
     } catch (e) { setRecMsg(`共有フォルダを読めませんでした：${e.message}`); }
@@ -441,6 +448,19 @@ function App() {
     if (!dir) return;
     try { const d = await folderPush(dir, { removeZu: [id] }); setRecs(d.zuRecords || []); } catch (e) { setRecMsg(`消せませんでした：${e.message}`); }
   };
+  const saveLen = async (x) => {
+    if (!dir) return;
+    try {
+      const d = await folderPush(dir, { lenLimits: [x] }, x.who);
+      applyLens(d.lenLimits || []);
+      setLenMsg(`登録しました：${x.mat} t${x.t} V${x.V} は L ${x.maxL}mm まで。判定に当てはめ直しました`);
+    } catch (e) { setLenMsg(`登録できませんでした：${e.message}`); }
+  };
+  const dropLen = async (key) => {
+    if (!dir) return;
+    try { const d = await folderPush(dir, { removeLen: [key] }); applyLens(d.lenLimits || []); setLenMsg('消しました'); }
+    catch (e) { setLenMsg(`消せませんでした：${e.message}`); }
+  };
 
   // 入力が止まってから判定（干渉判定は少し重い）
   const [res, setRes] = useState(null);
@@ -448,7 +468,7 @@ function App() {
     if (!valid) { setRes(null); return; }
     const id = setTimeout(() => setRes(judgeAll(ROWS, shape, mat, t, dims, Lnum, recs)), 200);
     return () => clearTimeout(id);
-  }, [shape, mat, t, dimsTxt.join('|'), Ltxt, recs]);
+  }, [shape, mat, t, dimsTxt.join('|'), Ltxt, recs, lenLims]);
   useEffect(() => setPickV(null), [shape, mat, t]);
 
   const best = res && res.best;
@@ -601,7 +621,9 @@ function App() {
           )}
           {res && res.list.length > 0 && (
             <RecordPanel shape={shape} mat={mat} t={t} dims={dims} L={Lnum} list={res.list} best={best}
-              recs={recs} dir={dir} pendingDir={pendingDir} connect={connect} saveRec={saveRec} dropRec={dropRec} msg={recMsg} />
+              recs={recs} dir={dir} pendingDir={pendingDir} connect={connect} saveRec={saveRec} dropRec={dropRec} msg={recMsg}>
+              <LenLimitPanel mat={mat} t={t} pickV={shown && shown.row.V} list={lenLims} dir={dir} save={saveLen} drop={dropLen} msg={lenMsg} />
+            </RecordPanel>
           )}
         </section>
       </div>

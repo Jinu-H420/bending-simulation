@@ -6,13 +6,14 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, setSmallVRecs, matDies,
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON, outNgMatch, CAUSE_JA } from '../zu/judge.js';
 import { learned, gapLimit, deviceId, sameKey, byNewest } from './records.js';
 import { LimitChart, LimitDetail, QuickTable } from '../zu/limits.jsx';
 import { RecEditForm } from './RecEdit.jsx';
 import { PunchIcon } from './punch-icon.jsx';
+import { LenLimitPanel } from './lenlimit-panel.jsx';
 import ZU_DATA from '../zu/data/zu-data.json';
 import { folderSupported, loadFolder, pickFolder, permission, pull as folderPull, push as folderPush } from './cloud.js';
 import './check.css';
@@ -393,7 +394,7 @@ function Result({ r, big, now }) {
 }
 
 // 実績の登録。曲がると分かっているものはボタン1つで登録できる（型・曲げ方は判定の答えから入れる）。
-function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg }) {
+function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir, connect, saveRec, dropRec, msg, children }) {
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(best ? best.sel : dies[0] && dies[0].sel);
   const [method, setMethod] = useState('normal');
@@ -519,6 +520,7 @@ function RecordPanel({ shape, mat, t, dims, L, dies, best, recs, dir, pendingDir
             </table>
           )}
           <div className="hint"><a href="./records.html" target="_blank" rel="noreferrer">▶ 登録した実績をぜんぶ見る（ひとこと・確かめた人・伝票番号・登録PC）</a></div>
+          {children}
         </>
       )}
     </section>
@@ -547,9 +549,14 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
   const [pendingDir, setPendingDir] = useState(null);
   const [recs, setRecs] = useState([]);
   const [recMsg, setRecMsg] = useState('');
+  // 小さいVの最長L（bendsim.json の lenLimits）。判定はこれを smallVCheck で使う
+  const [lenLims, setLenLims] = useState([]);
+  const [lenMsg, setLenMsg] = useState('');
+  const applyLens = (list) => { setSmallVRecs(list); setLenLims(list); };
   const openDir = async (d) => {
     try {
       const { data } = await folderPull(d);
+      applyLens(data.lenLimits || []);
       setRecs(data.zuRecords || []); setDir(d); setPendingDir(null);
       setRecMsg(`共有フォルダの実績 ${(data.zuRecords || []).length} 件を読みました`);
     } catch (e) { setRecMsg(`共有フォルダを読めませんでした：${e.message}`); }
@@ -581,6 +588,19 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
   const dropRec = async (id) => {
     if (!dir) return;
     try { const d = await folderPush(dir, { removeZu: [id] }); setRecs(d.zuRecords || []); } catch (e) { setRecMsg(`消せませんでした：${e.message}`); }
+  };
+  const saveLen = async (x) => {
+    if (!dir) return;
+    try {
+      const d = await folderPush(dir, { lenLimits: [x] }, x.who);
+      applyLens(d.lenLimits || []);
+      setLenMsg(`登録しました：${x.mat} t${x.t} V${x.V} は L ${x.maxL}mm まで。いまの答えにも当てはめ直しました`);
+    } catch (e) { setLenMsg(`登録できませんでした：${e.message}`); }
+  };
+  const dropLen = async (key) => {
+    if (!dir) return;
+    try { const d = await folderPush(dir, { removeLen: [key] }); applyLens(d.lenLimits || []); setLenMsg('消しました'); }
+    catch (e) { setLenMsg(`消せませんでした：${e.message}`); }
   };
 
   const S = SHAPES[shape];
@@ -657,6 +677,12 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
   useEffect(() => {
     if (recs.length && result && result.key === inKey && !result.note) run();
   }, [recs]);
+  // 小さいVの最長Lを読んだ・登録した・消したときも当てはめ直す（開いた直後の空の1回は飛ばす）
+  const lenSeen = useRef(false);
+  useEffect(() => {
+    if (!lenSeen.current) { lenSeen.current = true; return; }
+    if (result && result.key === inKey && !result.note) run();
+  }, [lenLims]);
   // 入力が判定した時から変わったか
   const stale = !!(result && result.key && result.key !== inKey);
 
@@ -855,7 +881,9 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
           dies={[result, ...(others || [])].filter((r) => r && r.sel && !r.skip)
             .filter((r, i, a) => a.findIndex((x) => x.sel === r.sel) === i)
             .map((r) => ({ sel: r.sel, V: r.V, machine: r.machine, label: `${r.label}（${MACHINE_LIB[r.machine] ? MACHINE_LIB[r.machine].name.replace('AMADA ', '') : r.machine}）` }))}
-          recs={recs} dir={dir} pendingDir={pendingDir} connect={connect} saveRec={saveRec} dropRec={dropRec} msg={recMsg} />
+          recs={recs} dir={dir} pendingDir={pendingDir} connect={connect} saveRec={saveRec} dropRec={dropRec} msg={recMsg}>
+          <LenLimitPanel mat={snap.mat} t={snap.t} pickV={(rescue || result).V} list={lenLims} dir={dir} save={saveLen} drop={dropLen} msg={lenMsg} />
+        </RecordPanel>
       )}
 
       </div>

@@ -1142,7 +1142,15 @@ const SMALLV_MAXL = {
   // 例：'鉄|6|20': 1000,
   '鉄|9|40': 500,    // 2026-10-16 ユーザー：PL9 V40 は L500 まで（L700 は耐圧で NG）
   '鉄|9|50': 2505,   // 2026-10-16 ユーザー：PL9 V50 は 835×3＝L2505 まで
+  '鉄|9|63': 835,    // 2026-10-16 ユーザー：V63 はダイが1本しかないので L835 が最大
 };
+// 画面から登録した最長L（共有フォルダ bendsim.json の lenLimits）。上の SMALLV_MAXL より優先する。
+// かんたん判定・Z・コの字判定・シミュレーターが共有フォルダを読んだときに setSmallVRecs で入れる
+let SMALLV_REC = {};
+function setSmallVRecs(list) {
+  SMALLV_REC = {};
+  for (const x of list || []) if (x && x.key && x.maxL > 0) SMALLV_REC[x.key] = x;
+}
 // 小さいVで、金型の耐圧が足りず曲がらなかった L（実績）。この L 以上は ✕（それより短いのは確認中のまま）
 const SMALLV_NGL = {
   // 例：'鉄|9|40': 700,
@@ -1153,7 +1161,9 @@ function smallVCheck(mat, t, V) {
   const baseV = b && b.v ? Number(String(b.v).replace(/\D/g, '')) : null;
   if (!baseV || !(V < baseV)) return null;
   const k = `${mat === '縞' ? '縞' : '鉄'}|${t}|${V}`;
-  return { baseV, maxL: SMALLV_MAXL[k] != null ? SMALLV_MAXL[k] : null, ngL: SMALLV_NGL[k] != null ? SMALLV_NGL[k] : null, key: k };
+  const reg = SMALLV_REC[k];
+  return { baseV, maxL: reg ? reg.maxL : SMALLV_MAXL[k] != null ? SMALLV_MAXL[k] : null, reg: reg || null,
+    ngL: SMALLV_NGL[k] != null ? SMALLV_NGL[k] : null, key: k };
 }
 const DIE_STOCK = { 8: 5, 12: 5, 16: 5, 20: 5, 25: 5, 32: 2, 40: 5, 50: 5, 63: 1, 80: 5, 100: 5, 125: 5, 160: 5 };
 // シミュレーターの幾何だけで、その段差をどこまで小さくできるかを探す。
@@ -1434,6 +1444,8 @@ const BendingSimulator = () => {
   // 曲げた／曲げられなかった実績。置き場所は共有フォルダの zuRecords 1か所だけ（つないでいない間はこのPCに控え）
   const [records, setRecords] = useState(() => loadRecords());
   const zuRecs = records;
+  // 画面から登録した小さいVの最長L（共有フォルダ bendsim.json の lenLimits）
+  const [lenLims, setLenLims] = useState([]);
   const [recNote, setRecNote] = useState('');
   const [recSlip, setRecSlip] = useState('');   // 伝票番号（任意）
   const [autoMsg, setAutoMsg] = useState('');   // 自動で段取りを決めたときの説明
@@ -1725,7 +1737,7 @@ const BendingSimulator = () => {
     // Z・コの字判定で登録した「曲がった」実績の、いちばん長い L
     const ls = zuRecs.filter((r) => r.ok && r.mat === (matType === '縞' ? '縞' : '鉄') && r.t === t && r.V === nobiV && r.L > 0).map((r) => r.L);
     return { ...sv, recL: ls.length ? Math.max(...ls) : null };
-  }, [matType, t, nobiV, zuRecs]);
+  }, [matType, t, nobiV, zuRecs, lenLims]);
   const smallVPress = !!(smallV && smallV.ngL != null && bendLen >= smallV.ngL);   // 耐圧で曲がらなかった L 以上
   const smallVNG = smallV && ((smallV.maxL != null && bendLen > smallV.maxL) || smallVPress);
 
@@ -1851,6 +1863,7 @@ const BendingSimulator = () => {
     setCloudBusy(true);
     try {
       const { data } = await cloudPull(dir);
+      setSmallVRecs(data.lenLimits || []); setLenLims(data.lenLimits || []);
       setRecords((cur) => importJSON(cur, JSON.stringify(data.records || [])));
       // 共有フォルダの実績と、このPCの控えを混ぜて1つにする
       const merged = mergeRecords(data.zuRecords || [], records);
@@ -3396,5 +3409,5 @@ function PunchThumb({ id, flip }) {
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, punchLenCheck, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, punchLenCheck, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, setSmallVRecs, SMALLV_MAXL, matDies,
 };

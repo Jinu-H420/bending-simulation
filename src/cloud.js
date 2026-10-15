@@ -52,7 +52,8 @@ export const forgetFolder = () => keepFolder(null);
 const fail = (msg) => Object.assign(new Error(msg), { friendly: true });
 
 // zuRecords＝Z・コの字判定で登録した実績（品物ごと。曲げ屋さんに聞いて確かなものだけ）
-const empty = () => ({ version: 1, current: null, saves: [], records: [], zuRecords: [] });
+// lenLimits＝小さいVで曲げられる最長L（耐圧）。鍵 '材質|板厚|V' で1件。かんたん判定・Z・コの字判定から登録
+const empty = () => ({ version: 1, current: null, saves: [], records: [], zuRecords: [], lenLimits: [] });
 
 export async function pull(dir) {
   let fh;
@@ -97,7 +98,7 @@ async function writeText(dir, name, text) {
 }
 
 // 書く。直前に読み直して、ほかのPCの記録と名前付き保存を混ぜてから上書きする。
-// change: { current?, saveAs?: 名前, removeSave?: 名前, records?, removeKeys?: 消した実績の鍵, zuRecords?, removeZu? }
+// change: { current?, saveAs?: 名前, removeSave?: 名前, records?, removeKeys?: 消した実績の鍵, zuRecords?, removeZu?, lenLimits?, removeLen?: 鍵 }
 export async function push(dir, change, who) {
   try {
     const { data } = await pull(dir);
@@ -125,6 +126,10 @@ export async function push(dir, change, who) {
     // 並びは登録した新しい順。消すときは removeZu に id
     const gone = new Set(change.removeZu || []);
     next.zuRecords = upsertRecords((data.zuRecords || []).filter((z) => !gone.has(z.id)), change.zuRecords || []);
+    // 小さいVの最長L：同じ鍵（材質|板厚|V）は新しいほうで上書き
+    const add = change.lenLimits || [];
+    const drop = new Set([...(change.removeLen || []), ...add.map((x) => x.key)]);
+    next.lenLimits = [...add, ...(data.lenLimits || []).filter((x) => !drop.has(x.key))];
     await writeText(dir, FILE, JSON.stringify(next, null, 1));
     return next;
   } catch (e) {

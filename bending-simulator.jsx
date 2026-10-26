@@ -2490,6 +2490,12 @@ const BendingSimulator = () => {
     setStep(0); setProg(1); setPlaying(false);
     setAutoMsg(`${why} — ${next.map((x) => `曲げ${x.bend + 1}${x.mirror ? '（突き当て反転）' : ''}${x.valley ? '（裏返し）' : ''}`).join(' → ')}`);
   };
+  // ほかのヤゲンに替えて、曲げ順・突き当てごと当てはめる（金型はそのまま）
+  const applyPunchSeq = (pid, flip, next, why) => {
+    setNakaOn(false);
+    setPunchType(pid); setPunchFlip(flip);
+    applySeq(next, why);
+  };
   // 曲げ順も突き当ても、通る組合せを自分で探して当てはめる。
   // 現場の手を変えずに済む順に試す：いまの順のまま → 逆順 → 順番も総当り。
   const autoSetup = () => {
@@ -2501,7 +2507,25 @@ const BendingSimulator = () => {
     if (rev) { applySeq(rev, '曲げ順を逆にすると通りました'); return; }
     const r = searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, 1, openGap);
     if (r.sols.length) { applySeq(r.sols[0], '曲げ順を変えると通りました'); return; }
-    setAutoMsg(`この金型では、順番も突き当ても全部試して通りませんでした（${r.tried}通り検査）。金型を変えるか、寸法を見直してください。`);
+    // いまのヤゲンで通らなければ、金型はそのままで、ほかのヤゲンを順に試す（2026-10-27 ユーザー：71606 なら曲がるのに自動で出てこない）。
+    // 順番は 普通のヤゲン → 特殊 くの字（曲げ長さが窓に入るときだけ）。長さの決まりで要確認のヤゲンは、ほかに無いときだけ使う
+    const ids = Object.keys(PUNCH_LIB);
+    const cands = [...ids.filter((k) => !PUNCH_LIB[k].special), ...ids.filter((k) => PUNCH_LIB[k].special)]
+      .flatMap((k) => [[k, false], [k, true]]).filter(([k, f]) => !(k === punchType && f === punchFlip));
+    let chk = null;
+    for (const [pid, flip] of cands) {
+      const sp = PUNCH_LIB[pid].special;
+      if (sp && bendLen > sp.win) continue;
+      const rr = searchSequences(part, vHalf, diePolys, pid, flip, chukanSel, 1, openGap);
+      if (!rr.sols.length) continue;
+      const lc = !sp && punchLenCheck(pid, nobiV, bendLen);
+      if (lc) { if (!chk) chk = { pid, flip, seq: rr.sols[0], lc }; continue; }
+      applyPunchSeq(pid, flip, rr.sols[0], `ヤゲン ${pid}${flip ? '（反転）' : ''} にすると通りました（金型はそのまま）`
+        + (sp ? `。くの字の窓に入るので、曲げ長さ ${sp.win}mm まで` : ''));
+      return;
+    }
+    if (chk) { applyPunchSeq(chk.pid, chk.flip, chk.seq, `ヤゲン ${chk.pid}${chk.flip ? '（反転）' : ''} にすると通りました（要確認：${chk.lc.why}）`); return; }
+    setAutoMsg(`この金型では、どのヤゲン・順番・突き当てを試しても通りませんでした（いまのヤゲンで ${r.tried}通り検査）。金型を変えるか、寸法を見直してください。`);
   };
   // 突き当てを左右逆にする＝板を反対側から入れる。全工程まとめて切り替える。
   const flipAllStops = () => {

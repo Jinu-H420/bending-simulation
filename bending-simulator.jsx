@@ -2525,6 +2525,13 @@ const BendingSimulator = () => {
       return;
     }
     if (chk) { applyPunchSeq(chk.pid, chk.flip, chk.seq, `ヤゲン ${chk.pid}${chk.flip ? '（反転）' : ''} にすると通りました（要確認：${chk.lc.why}）`); return; }
+    // フランジが短くてV肩に届かないときは、ヤゲン・順番を替えても直らないので、そう伝える
+    if (minOutWarn.length || verdicts.some((v) => v.reachNG)) {
+      const needO = Math.max(minFlange.tbl || 0, minFlange.geoOuter);
+      setAutoMsg(`端の辺が短く、V肩に届きません（最小フランジ 外寸 ${needO.toFixed(1)}mm：表 ${minFlange.tbl ?? '—'}mm・計算 ${minFlange.geoOuter.toFixed(1)}mm の厳しいほう）。`
+        + `ヤゲン・順番・突き当てを替えても直らないので、辺を ${needO.toFixed(1)}mm 以上にするか、金型（V）を小さくしてください。`);
+      return;
+    }
     setAutoMsg(`この金型では、どのヤゲン・順番・突き当てを試しても通りませんでした（いまのヤゲンで ${r.tried}通り検査）。金型を変えるか、寸法を見直してください。`);
   };
   // 突き当てを左右逆にする＝板を反対側から入れる。全工程まとめて切り替える。

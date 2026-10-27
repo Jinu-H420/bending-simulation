@@ -2964,9 +2964,11 @@ const BendingSimulator = () => {
                   {i < bends.length && (
                     <div className="flex items-center gap-2 pl-6 border-l-2 border-slate-700 ml-3">
                       <span className="text-xs font-mono text-amber-500 w-12">曲げ{i + 1}</span>
-                      <NumField value={bends[i].angle} min={10} max={90}
-                        onChange={(v) => setBend(i, { angle: v })} className={inp} />
-                      <span className={lbl}>°</span>
+                      {/* 入力は内角（曲げたあとの板と板のあいだの角度）。中の計算は曲げ角（180−内角）のまま。
+                          2026-10-27 ユーザー：内角 172.1° を入れたいのに 7.9 と入れる必要があった */}
+                      <NumField value={+(180 - bends[i].angle).toFixed(2)} min={90} max={179.9}
+                        onChange={(v) => { if (v >= 90 && v < 180) setBend(i, { angle: +(180 - v).toFixed(4) }); }} className={inp} />
+                      <span className={lbl}>°（内角）</span>
                       <select value={bends[i].dir}
                         onChange={(e) => setBend(i, { dir: Number(e.target.value) })} className={sel}>
                         <option value={1}>山（上曲げ）</option>

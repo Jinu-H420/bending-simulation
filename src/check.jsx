@@ -6,7 +6,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, setSmallVRecs, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, setSmallVRecs, setReachRecs, matDies,
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON, outNgMatch, CAUSE_JA } from '../zu/judge.js';
 import { learned, gapLimit, deviceId, sameKey, byNewest } from './records.js';
@@ -548,6 +548,8 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
   const [dir, setDir] = useState(null);
   const [pendingDir, setPendingDir] = useState(null);
   const [recs, setRecs] = useState([]);
+  // 実績を入れるときは、V肩に届くかの判定（曲がった実績で緩める）にも渡す
+  const putRecs = (l) => { setReachRecs(l); setRecs(l); };
   const [recMsg, setRecMsg] = useState('');
   // 小さいVの最長L（bendsim.json の lenLimits）。判定はこれを smallVCheck で使う
   const [lenLims, setLenLims] = useState([]);
@@ -557,7 +559,7 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
     try {
       const { data } = await folderPull(d);
       applyLens(data.lenLimits || []);
-      setRecs(data.zuRecords || []); setDir(d); setPendingDir(null);
+      putRecs(data.zuRecords || []); setDir(d); setPendingDir(null);
       setRecMsg(`共有フォルダの実績 ${(data.zuRecords || []).length} 件を読みました`);
     } catch (e) { setRecMsg(`共有フォルダを読めませんでした：${e.message}`); }
   };
@@ -581,13 +583,13 @@ function CheckApp({ shapes = CHECK_SHAPES, title = '曲がるか かんたん判
       // 同じ内容の実績がもうあれば、足さずに上書きする（何回押しても1件のまま）
       const dup = recs.some((r) => sameKey(r) === sameKey(rec));
       const d = await folderPush(dir, { zuRecords: [rec] }, rec.who);
-      setRecs(d.zuRecords || []);
+      putRecs(d.zuRecords || []);
       setRecMsg(doneMsg || (dup ? '同じ内容の実績があったので、上書きしました（1件のままです）' : '実績を登録しました。次の判定から使います'));
     } catch (e) { setRecMsg(`登録できませんでした：${e.message}`); }
   };
   const dropRec = async (id) => {
     if (!dir) return;
-    try { const d = await folderPush(dir, { removeZu: [id] }); setRecs(d.zuRecords || []); } catch (e) { setRecMsg(`消せませんでした：${e.message}`); }
+    try { const d = await folderPush(dir, { removeZu: [id] }); putRecs(d.zuRecords || []); } catch (e) { setRecMsg(`消せませんでした：${e.message}`); }
   };
   const saveLen = async (x) => {
     if (!dir) return;

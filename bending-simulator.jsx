@@ -819,6 +819,27 @@ function shoulderReach(vHalf, t, angleDeg) {
 // フランジとして効くので、曲げ済みの境界まで足し込んだ長さで判定する。
 // computeChain は届く／届かないに関わらず肩支点で回転させてしまうため、
 // この判定はそれとは別立てで行う必要がある。
+// 実績で曲がった、いちばん短い端のフランジ（展開の長さ）。鍵 '板厚|V'。
+// 2026-10-27 ユーザー：縞 t2.3 V25 の外寸 18.5 は曲がる（計算の V肩に届く長さ 19.3 より短い）。絵では曲がるのに判定が ✕ になる。
+// 登録した「曲がった」実績（共有フォルダ bendsim.json の zuRecords）から作り、V肩に届くかの判定をそこまで緩める。
+let REACH_ACT = {};
+function setReachRecs(recs) {
+  const m = {};
+  for (const r of recs || []) {
+    if (!r || !r.ok || !(r.t > 0) || !(r.V > 0)) continue;
+    let ends = null;
+    if (r.case && Array.isArray(r.case.segs) && r.case.segs.length > 1) ends = [r.case.segs[0], r.case.segs[r.case.segs.length - 1]];
+    else if (Array.isArray(r.dims) && r.dims.length > 1) {
+      const nb = lookupTable(NOBI_TABLE, r.mat === '縞' ? '縞' : '鉄', r.V, r.t);
+      if (nb) ends = [r.dims[0] - nb.val, r.dims[r.dims.length - 1] - nb.val];
+    }
+    if (!ends) continue;
+    const k = `${r.t}|${r.V}`, v = Math.min(...ends);
+    if (v > 0 && !(m[k] <= v)) m[k] = v;
+  }
+  REACH_ACT = m;
+}
+const reachAct = (t, vHalf) => REACH_ACT[`${t}|${Math.round(vHalf * 2)}`];
 function reachCheck(part, seq, stepIdx, vHalf) {
   const { t, segs, bends } = part;
   const gArr = part.grow || [];
@@ -832,7 +853,8 @@ function reachCheck(part, seq, stepIdx, vHalf) {
   const wOf = (i) => (done.has(srcOf(i)) ? 1 : 0); // この工程の開始時点＝進捗0%
   const ms = msegs.map((L, k) =>
     L + (k > 0 ? growOf(k - 1) * wOf(k - 1) : 0) + (k < B ? growOf(k) * wOf(k) : 0));
-  const need = shoulderReach(vHalf, t, bends[srcOf(j)].angle);
+  const act = reachAct(t, vHalf);
+  const need = Math.min(shoulderReach(vHalf, t, bends[srcOf(j)].angle), act != null ? act - 0.01 : Infinity);
   let Lf = 0;
   for (let i = j; i >= 0; i--) { Lf += ms[i]; if (i > 0 && done.has(srcOf(i - 1))) break; }
   let Rf = 0;
@@ -1637,8 +1659,13 @@ const BendingSimulator = () => {
   // 最小フランジ（外寸）。折り曲げ表の値は実績なので、V肩に届くかの幾何より厳しいことが多い。
   // 短いほうは表・長いほうは段差ごとの上限（記入シートのI列）で挟まれる、というのが実際の姿。
   // 幾何のほうは reachCheck が工程ごとに見ているので、ここでは表の値を判定に加える。
+  // 登録した「曲がった」実績で、V肩に届くかの判定を緩める（同じ板厚・V）。判定の memo はこの値で作り直す
+  const reachVer = useMemo(() => { setReachRecs(records); return records.length + ':' + JSON.stringify(REACH_ACT); }, [records]);
   const minFlange = useMemo(() => {
-    const geoOuter = shoulderReach(vHalf, t, 90) + 0.5 + (nobiPerBend[0] || 0); // 外寸に直した幾何
+    const act = reachAct(t, vHalf);
+    const geo0 = shoulderReach(vHalf, t, 90) + 0.5 + (nobiPerBend[0] || 0); // 外寸に直した幾何
+    const actOuter = act != null ? act + (nobiPerBend[0] || 0) : null;     // 実績で曲がった端のフランジ（外寸）
+    const geoOuter = actOuter != null ? Math.min(geo0, actOuter) : geo0;
     const tbl = minOutLookup ? minOutLookup.val : null;
     const outerOf = (k) =>
       inputMode === 'outer' ? outerSegs[k]
@@ -1652,8 +1679,8 @@ const BendingSimulator = () => {
         if (o < tbl) bad.push({ seg: k + 1, outer: o });
       }
     }
-    return { tbl, geoOuter, bad };
-  }, [minOutLookup, inputMode, outerSegs, innerSegs, effSegs, nobiPerBend, bends.length, vHalf, t]);
+    return { tbl, geoOuter, geo0, actOuter, bad };
+  }, [minOutLookup, inputMode, outerSegs, innerSegs, effSegs, nobiPerBend, bends.length, vHalf, t, reachVer]);
   const minOutWarn = minFlange.bad;
   const openGap = Math.max(0, OPEN_GAP_MM - t); // 刃先がV金型上面の170mm上になる開き量
 
@@ -1697,7 +1724,7 @@ const BendingSimulator = () => {
       }
       return { orientationNG, firstHit, reachNG, worst, kind: simSeq[si].kind || null };
     });
-  }, [simPart, simSeq, vHalf, pressHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends, hitAt]);
+  }, [simPart, simSeq, vHalf, pressHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap, bends, hitAt, reachVer]);
   const worstGap = useMemo(() => Math.min(...verdicts.map((v) => v.worst)), [verdicts]);
 
   // シミュレーションの幾何だけで見た最小段差。実績と見比べるために出す。
@@ -2005,7 +2032,7 @@ const BendingSimulator = () => {
     };
     const id = setTimeout(next, 500);
     return () => { cancel = true; clearTimeout(id); };
-  }, [altWorth, part, vHalf, diePolys, chukanSel, openGap, bendLen, punchType, punchFlip, winNG, nobiV]);
+  }, [altWorth, part, vHalf, diePolys, chukanSel, openGap, bendLen, punchType, punchFlip, winNG, nobiV, reachVer]);
   const applyAltPunch = () => {
     const a = altPunch && altPunch.ok;
     if (!a) return;
@@ -2934,7 +2961,8 @@ const BendingSimulator = () => {
                 {minFlange.tbl != null && (
                   <div className={minOutWarn.length ? 'text-rose-400' : 'text-slate-400'}>
                     {minOutWarn.length ? '⚠' : '◇'} 最小フランジ（外寸）— 表 <b className="text-slate-200">{minFlange.tbl}mm</b>
-                    　／　幾何 <b className="text-slate-200">{minFlange.geoOuter.toFixed(1)}mm</b>
+                    　／　幾何 <b className="text-slate-200">{minFlange.geo0.toFixed(1)}mm</b>
+                    {minFlange.actOuter != null && minFlange.actOuter < minFlange.geo0 && <>（実績で <b className="text-emerald-300">{minFlange.actOuter.toFixed(1)}mm</b> が曲がった）</>}
                     　→ 厳しいほう <b className="text-slate-200">
                       {Math.max(minFlange.tbl, minFlange.geoOuter).toFixed(1)}mm</b> で見ています
                     {minOutWarn.length > 0 &&
@@ -3442,5 +3470,5 @@ function PunchThumb({ id, flip }) {
 export {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, punchLenCheck, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, setSmallVRecs, SMALLV_MAXL, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, punchLenCheck, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, setSmallVRecs, SMALLV_MAXL, setReachRecs, matDies,
 };

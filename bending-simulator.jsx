@@ -1467,28 +1467,52 @@ function FinishedPreview({ segs, bends, order = [], onPick }) {
   const pts = finishedOutline(segs, bends);
   const xs = pts.map((p) => p[0]);
   const ys = pts.map((p) => p[1]);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const span = Math.max(x1 - x0, y1 - y0) || 1;
-  const m = span * 0.16;   // 丸が端で欠けないよう余白を広めに取る
-  const vb = `${x0 - m} ${y0 - m} ${x1 - x0 + 2 * m} ${y1 - y0 + 2 * m}`;
-  const sw = span / 55;
-  const r = sw * 3.4;
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) || 1;
+  const sw = span / 70;
+  // 番号の丸は曲げ位置から外側（角の外）へずらして置き、細い線で曲げ位置とつなぐ（板にかぶらないように）。
+  // まっすぐに近い曲げは板に直角の向き。先に置いた丸と重なるときは反対側・さらに外へ
+  const unit = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
+  const layout = (r) => {
+    const tags = [];
+    bends.forEach((_, i) => {
+      const p = pts[i + 1] || [0, 0], a = pts[i] || p, b = pts[i + 2] || p;
+      const u1 = unit(a[0] - p[0], a[1] - p[1]), u2 = unit(b[0] - p[0], b[1] - p[1]);
+      const bx = u1[0] + u2[0], by = u1[1] + u2[1];
+      let d = Math.hypot(bx, by) < 0.35 ? [-u2[1], u2[0]] : unit(-bx, -by);
+      const hits = (q) => tags.some((t) => Math.hypot(t.x - q[0], t.y - q[1]) < r * 2.2);
+      let dist = r * 2.2, q = [p[0] + d[0] * dist, p[1] + d[1] * dist];
+      if (hits(q)) { const q2 = [p[0] - d[0] * dist, p[1] - d[1] * dist]; if (!hits(q2)) { d = [-d[0], -d[1]]; q = q2; } }
+      while (hits(q) && dist < r * 12) { dist += r * 1.2; q = [p[0] + d[0] * dist, p[1] + d[1] * dist]; }
+      tags.push({ x: q[0], y: q[1], px: p[0], py: p[1] });
+    });
+    const ax = [...xs, ...tags.map((t) => t.x - r), ...tags.map((t) => t.x + r)];
+    const ay = [...ys, ...tags.map((t) => t.y - r), ...tags.map((t) => t.y + r)];
+    const x0 = Math.min(...ax), x1 = Math.max(...ax), y0 = Math.min(...ay), y1 = Math.max(...ay);
+    const m = Math.max(x1 - x0, y1 - y0) * 0.04 + sw * 2;
+    return { tags, x: x0 - m, y: y0 - m, w: x1 - x0 + 2 * m, h: y1 - y0 + 2 * m };
+  };
+  // 丸の大きさは画面で半径 約10px（枠 幅360×高さ140 として）。形が横長でも小さくなりすぎないように2回合わせる
+  let r = sw * 2.6, L = layout(r);
+  for (let k = 0; k < 2; k++) { r = 10 / Math.min(360 / L.w, 140 / L.h); L = layout(r); }
+  const tags = L.tags;
+  const vb = `${L.x} ${L.y} ${L.w} ${L.h}`;
   return (
     <svg viewBox={vb} style={{ width: '100%', height: 140 }} preserveAspectRatio="xMidYMid meet">
       <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke="#38bdf8"
         strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={pts[0][0]} cy={pts[0][1]} r={sw * 1.7} fill="#f59e0b" />
+      <circle cx={pts[0][0]} cy={pts[0][1]} r={sw * 1.4} fill="#f59e0b" />
       {bends.map((_, i) => {
-        const [cx, cy] = pts[i + 1] || [0, 0];
+        const t = tags[i];
         const n = order[i];
         return (
           <g key={i} onClick={onPick ? () => onPick(i) : undefined}
             style={{ cursor: onPick ? 'pointer' : 'default' }}>
-            <circle cx={cx} cy={cy} r={r * 1.6} fill="transparent" />
-            <circle cx={cx} cy={cy} r={r} fill={n ? '#0284c7' : '#1e293b'}
-              stroke={n ? '#7dd3fc' : '#64748b'} strokeWidth={sw * 0.6} />
-            <text x={cx} y={cy} fill={n ? '#ffffff' : '#94a3b8'} fontSize={r * 1.45}
+            <line x1={t.px} y1={t.py} x2={t.x} y2={t.y} stroke={n ? '#7dd3fc' : '#64748b'} strokeWidth={sw * 0.35} />
+            <circle cx={t.px} cy={t.py} r={sw * 0.8} fill={n ? '#7dd3fc' : '#64748b'} />
+            <circle cx={t.x} cy={t.y} r={r * 1.5} fill="transparent" />
+            <circle cx={t.x} cy={t.y} r={r} fill={n ? '#0284c7' : '#1e293b'}
+              stroke={n ? '#7dd3fc' : '#64748b'} strokeWidth={sw * 0.45} />
+            <text x={t.x} y={t.y} fill={n ? '#ffffff' : '#94a3b8'} fontSize={r * 1.4}
               textAnchor="middle" dominantBaseline="central" fontWeight="bold"
               style={{ pointerEvents: 'none', userSelect: 'none' }}>{n || '?'}</text>
           </g>
@@ -2250,7 +2274,7 @@ const BendingSimulator = () => {
     if (!ctx) return;
     const W = canvas.width, H = canvas.height;
     // view が万一 NaN/Infinity でも描画で落ちないよう安全化
-    const scale = Number.isFinite(view.scale) ? Math.min(12, Math.max(0.4, view.scale)) : 4.2;
+    const scale = Number.isFinite(view.scale) ? Math.min(12, Math.max(0.1, view.scale)) : 4.2;
     const cx = Number.isFinite(view.cx) ? view.cx : 0;
     const cy = Number.isFinite(view.cy) ? view.cy : 0;
     const tx = (x) => W / 2 + (x - cx) * scale;
@@ -2462,7 +2486,7 @@ const BendingSimulator = () => {
 
   // --- ビュー操作（1本指＝パン、2本指ピンチ＝ズーム、ホイール＝ズーム）---
   // touch-action:none で iPhone のページスクロール／ピンチ／引っ張り更新に奪われないようにする
-  const clampScale = (s) => Math.min(12, Math.max(0.4, s));
+  const clampScale = (s) => Math.min(12, Math.max(0.1, s)); // 0.1：長さ2〜3mの板も全体が入る
   const ptsRef = useRef(new Map());   // 現在触れている指
   const pinchRef = useRef(null);      // ピンチ開始時の距離・倍率
   const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -2524,7 +2548,15 @@ const BendingSimulator = () => {
   const viewPreset = (name) => {
     if (name === 'tip') setView({ scale: 5.5, cx: 0, cy: -25 });
     else if (name === 'open') setView({ scale: 0.8, cx: 0, cy: -40 }); // 開き170を含む全景
-    else if (name === 'all') setView({ scale: 1.7, cx: 0, cy: 60 });
+    else if (name === 'all') {
+      // 金型まわり（前の「全体」の範囲）と、いまの板の全部が入るように合わせる（長い板でも端まで見える）
+      let x0 = -259, x1 = 259, y0 = -105, y1 = 225;
+      for (const [x, y] of (frame && frame.ch && frame.ch.pts) || []) {
+        x0 = Math.min(x0, x - t); x1 = Math.max(x1, x + t); y0 = Math.min(y0, y - t); y1 = Math.max(y1, y + t);
+      }
+      const sc = clampScale(Math.min(880 * 0.94 / (x1 - x0), 560 * 0.94 / (y1 - y0)));
+      setView({ scale: sc, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 });
+    }
     // ダイから上型ホルダ・柱までを一度に映す。上に何があるか（無いか）を見るための位置。
     // 刃先から上へ 270mm あたりまでがホルダなので、ダイ上面の下 100mm ほどと一緒に入れる。
     else if (name === 'holder') setView({ scale: 1.25, cx: 0, cy: -110 });

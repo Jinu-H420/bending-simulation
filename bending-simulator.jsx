@@ -612,7 +612,7 @@ function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
     const ram = ramAt(tipY - (punchTopOf(sp.base) + HOLDER_TOP), punchFlip);
     return { punchPolys: [tool], holder: null, ram,
              polys: [...diePolys, tool, ram],
-             names: [...Array(diePolys.length).fill('ダイ・台'), 'ヤゲン（中低）', 'ラム（機械上部）'] };
+             names: [...diePolys.map((p) => (p.isFloor ? '床' : 'ダイ・台')), 'ヤゲン（中低）', 'ラム（機械上部）'] };
   }
   // ヤゲンの上に付くのは中間板だけ（V.dxf の上型で確認：幅78.3・高さ122.7 の1部品）。
   // 以前はホルダ.dxf のホルダも重ねて描いていたが、中間板と同じ場所の二重描きだったので外した。
@@ -622,7 +622,7 @@ function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
     punchPolys, holder: null, ram,
     polys: [...diePolys, ...punchPolys, ram],
     names: [
-      ...Array(diePolys.length).fill('ダイ・台'),
+      ...diePolys.map((p) => (p.isFloor ? '床' : 'ダイ・台')),
       ...(punchPolys.length > 1 ? ['ヤゲン', '中間板'] : ['ヤゲン']),
       '柱（機械上部）',
     ],
@@ -1796,7 +1796,19 @@ const BendingSimulator = () => {
     const sorted = [...gm].sort((a, b) => a.x - b.x);
     return { left: `V${sorted[0].v}`, right: `V${sorted[1].v}` };
   }, [dieInfo]);
-  const diePolys = dieInfo.polys;
+  // 床：台（ベッド）の図面は床まで描いてあるので、その一番下を床とみなし、板の端が床に当たるかも見る。
+  // 長い辺を下向きに垂らして曲げると、端が床に着いて曲げられないことがある（2026-11-05 ユーザー指摘）。
+  // 台を描かない（台OFF・台の図面が無い）ときは床の深さが分からないので見ない。
+  const floorY = useMemo(() => {
+    const m = Math.max(...dieInfo.polys.flatMap((poly) => poly.map((q) => q[1])));
+    return m > 500 ? m : null;
+  }, [dieInfo]);
+  const diePolys = useMemo(() => {
+    if (floorY == null) return dieInfo.polys;
+    const fl = [[-8000, floorY], [8000, floorY], [8000, floorY + 40], [-8000, floorY + 40]];
+    fl.isFloor = true;
+    return [...dieInfo.polys, fl];
+  }, [dieInfo, floorY]);
   const vHalf = dieInfo.vHalf;
   // 最小フランジ（外寸）。折り曲げ表の値は実績なので、V肩に届くかの幾何より厳しいことが多い。
   // 短いほうは表・長いほうは段差ごとの上限（記入シートのI列）で挟まれる、というのが実際の姿。
@@ -2222,7 +2234,7 @@ const BendingSimulator = () => {
   const machineCheck = useMemo(() => {
     const m = MACHINE_LIB[machineSel];
     const OH = m.oh + ohAdj;
-    const dieH = Math.max(...diePolys.flatMap((poly) => poly.map((p) => p[1])));
+    const dieH = Math.max(...dieInfo.polys.flatMap((poly) => poly.map((p) => p[1])));
     const punchPolys0 = buildPunch(punchType, punchFlip, 0, chukanSel);
     const punchH = -Math.min(...punchPolys0.flatMap((poly) => poly.map((p) => p[1])));
     // 各工程で板が金型上面より上に張り出す最大高さ（開始時・完了時の姿勢から）
@@ -2315,7 +2327,19 @@ const BendingSimulator = () => {
       ctx.stroke();
     };
 
-    diePolys.forEach((poly) => drawPoly(poly, '#161a10', '#d4a017'));
+    diePolys.forEach((poly) => { if (!poly.isFloor) drawPoly(poly, '#161a10', '#d4a017'); });
+    if (floorY != null) {   // 床（斜線）
+      ctx.strokeStyle = 'rgba(148,163,184,0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, ty(floorY)); ctx.lineTo(W, ty(floorY)); ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = (ty(floorY) % 14) - 14; x < W; x += 14) { ctx.moveTo(x, ty(floorY)); ctx.lineTo(x - 10, ty(floorY) + 10); }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(148,163,184,0.8)';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(`床（ダイ上面から ${Math.round(floorY)}mm）`, 8, ty(floorY) - 6);
+    }
     // ホルダと柱。当たっている相手が見えないと理由が分からないので必ず描く
     if (frame.ram) drawPoly(frame.ram, '#12151b', '#5b6472');
     if (frame.holder) drawPoly(frame.holder, '#181c24', '#7c8797');
@@ -2424,7 +2448,7 @@ const BendingSimulator = () => {
       if (depth) drawDimLine([-vHalf, 0], [-vHalf, depth], -18, 0, dim, `${depth.toFixed(1)}`);
       // 右半分：垂直フェースのx（=中心からの半幅）と、外形が広がる高さレベル
       const faceSet = new Set(), levels = new Map();
-      for (const poly of diePolys) for (const [x, y] of poly) {
+      for (const poly of diePolys) if (!poly.isFloor) for (const [x, y] of poly) {
         const ax = Math.abs(x);
         if (ax > vHalf + 0.1) faceSet.add(Math.round(ax * 10) / 10);
         if (ax >= vHalf - 0.01) { const k = Math.round(y * 10) / 10, c = levels.get(k); if (c == null || ax > c) levels.set(k, ax); }
@@ -2551,9 +2575,11 @@ const BendingSimulator = () => {
     else if (name === 'all') {
       // 金型まわり（前の「全体」の範囲）と、いまの板の全部が入るように合わせる（長い板でも端まで見える）
       let x0 = -259, x1 = 259, y0 = -105, y1 = 225;
-      for (const [x, y] of (frame && frame.ch && frame.ch.pts) || []) {
+      // 曲げ始め（点線）の姿勢も入れる。板の端が床に近ければ床も入れる
+      for (const [x, y] of [...((frame && frame.ch && frame.ch.pts) || []), ...((frame && frame.guide && frame.guide.pts) || [])]) {
         x0 = Math.min(x0, x - t); x1 = Math.max(x1, x + t); y0 = Math.min(y0, y - t); y1 = Math.max(y1, y + t);
       }
+      if (floorY != null && y1 > floorY - 300) y1 = Math.max(y1, floorY + 30);
       const sc = clampScale(Math.min(880 * 0.94 / (x1 - x0), 560 * 0.94 / (y1 - y0)));
       setView({ scale: sc, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 });
     }

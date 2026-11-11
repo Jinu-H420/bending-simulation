@@ -6,7 +6,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   pickDie, resolveDie, lookupTable, NOBI_TABLE, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
-  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, setSmallVRecs, setReachRecs, matDies,
+  DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, smallVCheck, smallVNgWhy, setSmallVRecs, setReachRecs, matDies,
 } from '../bending-simulator.jsx';
 import { rescuePunch, nakaPlan, recMatch, recText, METHOD_JA, actA, Z_ACT_ON, outNgMatch, CAUSE_JA } from '../zu/judge.js';
 import { learned, gapLimit, deviceId, sameKey, byNewest } from './records.js';
@@ -131,7 +131,7 @@ function withLength(r, { L, t, mat }) {
     return { ...out, ok: false, why: `${r.ok ? '' : `${r.why}。さらに`}曲げ長さ L ${L}mm が長すぎます（${lim.why}で ${lim.v}mm まで）` };
   }
   if (sv && sv.ngL != null && L >= sv.ngL) {
-    return { ...out, ok: false, why: `${r.ok ? '' : `${r.why}。さらに`}板厚 t${t} の基準は V${sv.baseV}。小さい V${r.V} は L ${sv.ngL}mm で耐圧が足りず曲がりません（実績）` };
+    return { ...out, ok: false, why: `${r.ok ? '' : `${r.why}。さらに`}板厚 t${t} の基準は V${sv.baseV}。${smallVNgWhy(sv, r.V)}` };
   }
   if (sv && sv.maxL != null && L > sv.maxL) {
     return { ...out, ok: false, why: `${r.ok ? '' : `${r.why}。さらに`}板厚 t${t} の基準は V${sv.baseV}。小さい V${r.V} は L ${sv.maxL}mm までです（実績）` };
@@ -370,7 +370,7 @@ function Result({ r, big, now }) {
           </span>
         )}
         {r.ok && r.smallV && r.smallV.maxL == null && (
-          <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（最長Lは確認中{r.smallV.ngL != null ? `。L ${r.smallV.ngL}mm は耐圧で ✕` : ''}）</span>
+          <span className="caution">⚠ 板厚 t{r.t || ''} の基準は V{r.smallV.baseV}。小さい V{r.V} は長いものが曲げられません（{r.smallV.ngL != null ? smallVNgWhy(r.smallV, r.V) : r.smallV.maxL != null ? `L ${r.smallV.maxL}mm まで（実績）` : '最長Lは確認中'}）</span>
         )}
         {r.actNote && <span className="caution">⚠ {r.actNote}</span>}
         {r.ok && r.lenChk && <span className="caution">⚠ 要確認：{r.lenChk.why}</span>}

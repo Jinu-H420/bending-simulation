@@ -1166,6 +1166,7 @@ const SMALLV_MAXL = {
   '鉄|9|50': 2505,   // 2026-10-16 ユーザー：PL9 V50 は 835×3＝L2505 まで
   '鉄|9|63': 835,    // 2026-10-16 ユーザー：V63 はダイが1本しかないので L835 が最大
   '鉄|4.5|20': 1670, // 2026-10-29 ユーザー：PL4.5 を V20 で曲げるときは、V型2本分の L1670 が最大
+  '鉄|6|25': 300,    // 2026-11-11 ユーザー：PL6 を V25 で曲げるのは L300 までの短いものだけ
 };
 // 画面から登録した最長L（共有フォルダ bendsim.json の lenLimits）。上の SMALLV_MAXL より優先する。
 // かんたん判定・Z・コの字判定・シミュレーターが共有フォルダを読んだときに setSmallVRecs で入れる
@@ -1175,9 +1176,15 @@ function setSmallVRecs(list) {
   for (const x of list || []) if (x && x.key && x.maxL > 0) SMALLV_REC[x.key] = x;
 }
 // 小さいVで、金型の耐圧が足りず曲がらなかった L（実績）。この L 以上は ✕（それより短いのは確認中のまま）
+// 0 は「長さによらず曲げられない」
 const SMALLV_NGL = {
   // 例：'鉄|9|40': 700,
+  '鉄|6|20': 0,      // 2026-11-11 ユーザー：PL6 は V20 では NG
 };
+// 耐圧で ✕ になる理由の言葉（ngL が 0 なら長さによらず）
+const smallVNgWhy = (sv, V) => (sv.ngL
+  ? `小さい V${V} は L ${sv.ngL}mm で耐圧が足りず曲がりません（実績）`
+  : `小さい V${V} では曲げられません（長さによらず・実績）`);
 // その板厚の基準のVと、小さいVのときの最長L（実績。無ければ null）。基準以上のVなら null を返す
 function smallVCheck(mat, t, V) {
   const b = pickDie(mat === '縞' ? '縞' : '鉄', t);
@@ -2878,7 +2885,7 @@ const BendingSimulator = () => {
             : !noHit ? '干渉あり — この段取りでは曲がりません'
             : winNG ? `曲げ長さ ${bendLen}mm が窓 ${winNG.win}mm を超えています — 両端の全高部に当たります`
             : lenNG ? `曲げ長さ ${bendLen}mm が上限 ${lenNG.v}mm を超えています — ${lenNG.why}`
-            : smallVNG ? (smallVPress ? `曲げ長さ ${bendLen}mm が長すぎます — 基準より小さいV${nobiV}は L ${smallV.ngL}mm で耐圧が足りません（実績）`
+            : smallVNG ? (smallVPress ? (smallV.ngL ? `曲げ長さ ${bendLen}mm が長すぎます — 基準より小さいV${nobiV}は L ${smallV.ngL}mm で耐圧が足りません（実績）` : `板厚 t${t} は${smallVNgWhy(smallV, nobiV)}`)
               : `曲げ長さ ${bendLen}mm が長すぎます — 基準より小さいV${nobiV}は L ${smallV.maxL}mm まで（実績）`)
             : downWarn ? `下がりがダイ・台に当たります — 曲げ線から ${downWarn.w.toFixed(0)}mm で ${downWarn.depth.toFixed(0)}mm 下がっています`
             : minOutWarn.length ? `最小フランジ ${minFlange.tbl}mm（折り曲げ表）を下回る辺があります`
@@ -2909,7 +2916,7 @@ const BendingSimulator = () => {
             {smallV.maxL != null ? ` この組み合わせは L ${smallV.maxL}mm まで（実績）。`
               : smallV.recL != null ? ` 登録した実績では L ${smallV.recL}mm まで曲がっています（いま L ${bendLen}mm${bendLen <= smallV.recL ? '・○' : '・その先は確認中'}）。`
               : ` 曲げられる最長の L は確認中です（いま L ${bendLen}mm）。`}
-            {smallV.ngL != null && ` L ${smallV.ngL}mm は耐圧で曲がりませんでした（実績）。`}
+            {smallV.ngL != null && ` ${smallVNgWhy(smallV, nobiV)}。`}
           </div>
         )}
         {autoMsg && (
@@ -3647,7 +3654,7 @@ function PunchThumb({ id, flip }) {
 }
 
 export {
-  pickDie, resolveDie, lookupTable, NOBI_TABLE, NOBI_ANGLE, nobiAtAngle, MINOUT_TABLE, searchSequences, reachCheck,
+  pickDie, resolveDie, lookupTable, smallVNgWhy, NOBI_TABLE, NOBI_ANGLE, nobiAtAngle, MINOUT_TABLE, searchSequences, reachCheck,
   computeChain, toolsFor, minGap, shoulderReach, strokeState, MACHINE_DIES, MACHINE_LIB, dieLabel,
   DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN, punchLenCheck, SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, SUTE_WIDE_MAX_H, suteMaxH, nakaOshi, PUNCH_LIB, Z_ACT_ON, smallVCheck, setSmallVRecs, SMALLV_MAXL, setReachRecs, matDies,
 };

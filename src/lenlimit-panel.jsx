@@ -30,7 +30,8 @@ export function LenLimitPanel({ mat, t, pickV, list, dir, save, drop, msg }) {
   const rows = Vs.map((v) => {
     const k = `${m}|${tt}|${v}`;
     const reg = (list || []).find((x) => x.key === k);
-    return { V: v, k, reg, code: SMALLV_MAXL[k] };
+    const ng = smallVCheck(m, tt, v);
+    return { V: v, k, reg, code: SMALLV_MAXL[k], ng0: !!ng && ng.ngL === 0 };
   });
   const ok = Number(L) > 0;
   const add = () => {
@@ -70,8 +71,8 @@ export function LenLimitPanel({ mat, t, pickV, list, dir, save, drop, msg }) {
           {rows.map((r) => (
             <tr key={r.k}>
               <td>V{r.V}</td>
-              <td><b>{r.reg ? `${r.reg.maxL}mm` : r.code != null ? `${r.code}mm` : '確認中'}</b></td>
-              <td className="sub">{r.reg ? `登録 ${new Date(r.reg.at).toLocaleDateString('ja-JP')}` : r.code != null ? 'プログラム' : '—'}</td>
+              <td><b>{r.reg ? `${r.reg.maxL}mm` : r.ng0 ? '✕ 曲げられない' : r.code != null ? `${r.code}mm` : '確認中'}</b></td>
+              <td className="sub">{r.reg ? `登録 ${new Date(r.reg.at).toLocaleDateString('ja-JP')}` : r.code != null || r.ng0 ? 'プログラム' : '—'}</td>
               <td className="sub">{r.reg ? [r.reg.who, r.reg.note].filter(Boolean).join('・') : ''}</td>
               <td>{r.reg && <button className="del" onClick={() => { if (confirm(`V${r.V} の登録を消しますか？`)) drop(r.k); }}>消す</button>}</td>
             </tr>

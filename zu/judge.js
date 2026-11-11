@@ -12,7 +12,7 @@
 //   ng      ✕ 曲がらない
 import {
   resolveDie, searchSequences, pickDie, MACHINE_LIB, DIE_STOCK, DIE_UNIT_LEN, PL22_MAX_LEN,
-  SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, suteMaxH, punchLenCheck, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck,
+  SUTE_MIN_INNER, SUTE_MAX_H, SUTE_WIDE_INNER, suteMaxH, punchLenCheck, nakaOshi, computeChain, toolsFor, minGap, shoulderReach, strokeState, reachCheck, PUNCH_LIB, Z_ACT_ON, smallVCheck, smallVNgWhy,
 } from '../bending-simulator.jsx';
 import { learned, gapLimit } from '../src/records.js';
 export { Z_ACT_ON };
@@ -552,9 +552,9 @@ function withSmallV(res, L, recs) {
   const note = `板厚 t${res.row.t} の基準は V${sv.baseV}。小さい V${res.row.V} は長いものが曲げられない`;
   // ⓪ 耐圧で曲がらなかった L（SMALLV_NGL）以上は ✕
   if (sv.ngL != null && L >= sv.ngL) {
-    const why = `${note}（L ${sv.ngL}mm で耐圧が足りず曲がらなかった・実績）`;
+    const why = `${note}（${smallVNgWhy(sv, res.row.V)}）`;
     return { ...res, smallV: sv, grade: 'ng', why: res.grade === 'ng' ? `${res.why}。さらに${why}` : why,
-      fix: [res.fix, `L を ${sv.ngL}mm より短くするか、V${sv.baseV} で曲げる`].filter(Boolean).join('、または') };
+      fix: [res.fix, sv.ngL ? `L を ${sv.ngL}mm より短くするか、V${sv.baseV} で曲げる` : `V${sv.baseV} で曲げる`].filter(Boolean).join('、または') };
   }
   // ① 確かめた最長L（SMALLV_MAXL）があれば、それで ○／✕
   if (sv.maxL != null) {

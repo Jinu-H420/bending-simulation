@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "answers": "node scripts/answers.mjs",
+    "prebuild": "node scripts/answers.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "build:single": "vite build --base=./ --outDir dist-single && node scripts/build-single.mjs",

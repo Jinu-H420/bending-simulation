@@ -2,6 +2,9 @@
 # グラフをまとめたものを追加で」）。型ごとのシート（u-chart-sheet.py）と同じ数字を、少ない枚数で印刷できるようにする。
 #   表まとめ  ：A3縦1枚。縦＝底W（コの字 5mm・ハット 10mm）、横＝16型。数字＝立上りの上限（ハットは下限〜上限）
 #   グラフまとめ：A3横2枚。1枚に8型（4×2）の小さいグラフ（Excel のグラフ）
+#   ハットの表まとめ（2026-11-16 ユーザー「現場に渡す表をわかりやすく」）：コの字と同じく型ごとの表を並べる（A3横4枚・1枚4型）。
+#     最初に「書き方」1枚（寸法の絵・書く順番・例・どの型が何枚目か）。実績は 低いほう・高いほう の2つの欄（_map の種類 lo・hi）。
+#     前の全型1枚の表は最後のシート「早見表（見るだけ）」に残す。
 #   どちらも、計算し直してあれば実績合わせの値、ヤゲン904061 で当たってもほかのヤゲンで曲がれば青（番号はセルの右に小さく）。
 #   どちらにも「実績の記入」シート（A3横1枚・1型2行）を付ける（2026-10-14 ユーザー「まとめたものにも実績を入力する欄が必要」）。
 #     ★の幅（u_keys.py＝型ごとのシートと同じ）・いちばん小さい断面（必ず記入）・ほかの幅3つ。グラフまとめはそのシートの値をグラフに点で出す。
@@ -210,11 +213,9 @@ def entry_sheet(wb):
 
 ENTRYF = PatternFill('solid', fgColor='FFF2B3')
 
-def table_hat():
-    # 表まとめ（ハット：全型を1枚の表＋実績の記入シート）
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '表まとめ'
+def table_hat(wb):
+    # 早見表（ハット：全型を1枚の表。見るだけ。記入は前のシート）
+    ws = wb.create_sheet('早見表（見るだけ）')
     n = len(rows)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n + 1)
     c = ws.cell(1, 1, f'{NAME} 早見表（全部の型）　立上りの{"範囲（下限〜上限）" if HAT else "上限"}　株式会社高橋鉄骨')
@@ -224,7 +225,7 @@ def table_hat():
                           ('外フランジは型ごとの基準の長さ（見出しの下）。' if HAT else '左右の立上りが違うときは低いほうで見る。下限は見出しの「いちばん低い立上り」。') +
                           '×＝曲がらない。青＝ヤゲン904061 では当たるが、ほかのヤゲンで曲がる（番号は右に小さく）。'
                           'L835まで＝V8でヤゲン71606 は曲げ長さ835mm（金型1本分）まで、それより長いものは要確認。'
-                          f'実績合わせ＝★の実績に合わせて計算し直した型。型ごとの詳しい数字・実績の記入は「{NAME}_早見グラフ_A3.xlsx」。計算は {TODAY} 時点。'))
+                          f'実績合わせ＝★の実績に合わせて計算し直した型。実績の記入は前のシート（記入1〜）。計算は {TODAY} 時点。'))
     note.font = Font(name=FONT, size=9)
     note.alignment = Alignment(wrap_text=True, vertical='top')
     ws.row_dimensions[2].height = 42
@@ -273,9 +274,6 @@ def table_hat():
         ws.column_dimensions[get_column_letter(2 + j)].width = (17 if wide else 11.5) if HAT else (14 if wide else 8.5)
     ws.freeze_panes = ws.cell(HR + 5, 2)
     a3(ws, f'A1:{get_column_letter(n + 1)}{HR + 4 + len(Ws)}', landscape=HAT)   # ハットは行が少ないので横で大きく
-    entry_sheet(wb)
-    wb.save(out_table)
-    print('saved', out_table)
 
 
 
@@ -288,7 +286,7 @@ def table_hat():
 CALCF = PatternFill('solid', fgColor='EEF3FA')
 ESTF = PatternFill('solid', fgColor='FCE9D9')
 WF = PatternFill('solid', fgColor='F4F1E8')
-BW4 = (8.5, 22, 11.5, 11.5)                     # 底W・計算・実績・見込み（2026-10-14 文字を大きく 1.3倍）
+BW4 = (8.5, 23, 11, 11) if HAT else (8.5, 22, 11.5, 11.5)   # 底W・計算・実績・見込み（2026-10-14 文字を大きく 1.3倍）。ハットは 上面W・計算・実績 低い・実績 高い
 GAPW = 1.5
 
 
@@ -301,6 +299,8 @@ def block_rows(r, keys):
         Ws.add(w)
     if r.get('wMin'):
         Ws.add(r['wMin'])
+    if not w and not r.get('wMin'):            # 計算ではどの幅も曲がらない型：曲がったら書けるよう 50mm ごとの行を出す
+        Ws = set(range(50, H_TOP + 1, 50))
     return sorted(W for W in Ws if W <= max(H_TOP, max(keys or [0])))
 
 
@@ -308,8 +308,10 @@ def table_block(ws, mp, r, keys, top, left, hc):
     """1型ぶんの表。top＝型名の行、left＝底Wの列、hc＝見込みの計算に使う隠れ列の始まり。返り値＝使った最後の行"""
     cW, cC, cE, cS = left, left + 1, left + 2, left + 3
     ws.merge_cells(start_row=top, start_column=cW, end_row=top, end_column=cS)
-    put(ws, top, cW, f"V{r['V']} t{r['t']}{'' if tag_of(r) == '基準金型' else '（' + tag_of(r) + '）'}  {r['sel'].split(':')[1]}・{r['machine']}"
-        + ('  実績合わせ' if r.get('fit') else ''), bold=True, size=13.5, fill=HEAD)
+    tc = put(ws, top, cW, f"V{r['V']} t{r['t']}{'' if tag_of(r) == '基準金型' else '（' + tag_of(r) + '）'}"
+             + (f"　外フランジ {r['A']}mm" if HAT else f"  {r['sel'].split(':')[1]}・{r['machine']}")
+             + ('  実績合わせ' if r.get('fit') else ''), bold=True, size=13.5, fill=HEAD)
+    tc.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
     h, w, g = smallest(r)
     # いちばん小さい断面：上の行に見出し、下の行に計算と記入欄（必ず書いてもらう）
     ws.merge_cells(start_row=top + 1, start_column=cW, end_row=top + 1, end_column=cC)
@@ -319,7 +321,7 @@ def table_block(ws, mp, r, keys, top, left, hc):
     put(ws, top + 1, cE, '立上り', bold=True, size=11, fill=KEYF)
     put(ws, top + 1, cS, WN, bold=True, size=11, fill=KEYF)
     ws.merge_cells(start_row=top + 2, start_column=cW, end_row=top + 2, end_column=cC)
-    mc = put(ws, top + 2, cW, '計算 ' + (f'{h}×{w}' + (f' ヤゲン{pname(g, r["V"])}' if g else '') if w else '×') + ' → 実績', size=11,
+    mc = put(ws, top + 2, cW, '計算 ' + (f'{h}×{w}' + (f' {"" if HAT else "ヤゲン"}{pname(g, r["V"])}' if g else '') if w else '×') + (' →' if HAT else ' → 実績'), size=11,
              color='0B6E99' if g else '0A7D0A', fill=MINF)
     mc.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
     mn = r.get('minAct') or {}
@@ -334,8 +336,8 @@ def table_block(ws, mp, r, keys, top, left, hc):
     hr = top + 3
     put(ws, hr, cW, WN, bold=True, size=12.5, fill=HEAD)
     put(ws, hr, cC, '計算の立上り\n下限〜上限', bold=True, size=11.5, fill=HEAD)
-    put(ws, hr, cE, '実績\n（記入）', bold=True, size=11.5, fill=KEYF)
-    put(ws, hr, cS, '見込み\n（自動）', bold=True, size=11.5, fill=ESTF)
+    put(ws, hr, cE, '実績\n低いほう' if HAT else '実績\n（記入）', bold=True, size=11.5, fill=KEYF)
+    put(ws, hr, cS, '実績\n高いほう' if HAT else '見込み\n（自動）', bold=True, size=11.5, fill=KEYF if HAT else ESTF)
     ws.row_dimensions[hr].height = 36
     Wl = block_rows(r, keys)
     ents = r.get('entries') or {}
@@ -357,13 +359,24 @@ def table_block(ws, mp, r, keys, top, left, hc):
             put(ws, rr, cC, '×', size=12.5, color='999999', fill=CALCF)
         else:
             hv = 'なし' if hi == 'なし' else hi
-            txt = (f"{hv}だけ" if hv == lo else f"{lo}〜{hv}") + (f" ヤゲン{pname(gg, r['V'])}" if gg else '')
+            txt = (f"{hv}だけ" if hv == lo else f"{lo}〜{hv}") + (f" {'' if HAT else 'ヤゲン'}{pname(gg, r['V'])}" if gg else '')
             cc_ = put(ws, rr, cC, txt, size=12.5 if not gg else 11, bold=bool(gg) or dip or first,
                       color='0B6E99' if gg else ('C62F2F' if dip else ('0A7D0A' if first else None)),
                       fill=PatternFill('solid', fgColor='E3F1F8') if gg else (MINF if first else CALCF))
             cc_.alignment = Alignment(horizontal='center', vertical='center', shrink_to_fit=True)
         if W % 10 == 0 and isinstance(v0, (int, float)):
             prev_v = v0
+        if HAT:
+            # ハット：低いほう・高いほうを別々の欄に書く（2026-11-16 現場に渡す表。「24〜75」と1つの欄に書くより書きやすい）
+            v = ents.get(str(W))
+            vlo, vhi = (v.get('lo'), v.get('hi')) if isinstance(v, dict) else (None, v)
+            for cc, vv, kind in ((cE, vlo, 'lo'), (cS, vhi, 'hi')):
+                e = put(ws, rr, cc, vv, bold=True, size=13.5, fill=KEYF if key else None)
+                if key:
+                    e.border = KEYBOX
+                mp.append([r['t'], r['V'], W, ws.title, f'{L(cc)}{rr}', kind])
+            ws.row_dimensions[rr].height = 24          # 手で書くので行を高く（A3横の高さいっぱいまで使う）
+            continue
         e = put(ws, rr, cE, ent_text(ents.get(str(W))), bold=True, size=13.5, fill=KEYF if key else None)
         if key:
             e.border = KEYBOX
@@ -397,21 +410,139 @@ def table_block(ws, mp, r, keys, top, left, hc):
 
 
 
+# ================================================================ ハット：書き方の1枚（2026-11-16 ユーザー「現場に渡す表をわかりやすく」）
+HAT_NOTE = ('★（黄色・赤い枠）の上面Wで、実際に曲げられた立上り（外寸）の いちばん低い寸法（低いほう）と いちばん高い寸法（高いほう）を書いてください。曲がらなかったら ×。'
+            '外フランジは各表の上に書いてある長さ。いちばん小さい断面は必ず。白い欄は分かるところだけでよい。'
+            '青＝ヤゲン904061 では当たるが、ほかのヤゲンで曲がる（番号つき）。赤＝上面Wを広げたのに下がる所。'
+            f'書き方は最初のシート。計算は {TODAY} 時点。')
+
+
+def hat_fig():
+    """ハットの断面と寸法の取り方の絵（png のパス）"""
+    import os
+    import tempfile
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib import rcParams
+    rcParams['font.family'] = ['Yu Gothic', 'Meiryo', 'MS Gothic']
+
+    def arrow(ax, x1, y1, x2, y2, txt, tx, ty, color='#222'):
+        ax.annotate('', xy=(x1, y1), xytext=(x2, y2), arrowprops=dict(arrowstyle='<->', color='#555', lw=1.6))
+        ax.text(tx, ty, txt, ha='center', va='center', fontsize=17, fontweight='bold', color=color)
+    fig, ax = plt.subplots(figsize=(6.4, 3.4))
+    ax.plot([0, 45, 45, 125, 125, 170], [0, 0, 60, 60, 0, 0], color='#111', lw=7, solid_joinstyle='miter')
+    arrow(ax, 0, -14, 45, -14, '外フランジ', 22, -29)
+    arrow(ax, 125, -14, 170, -14, '外フランジ', 148, -29)
+    arrow(ax, 31, 0, 31, 60, '立上り', 6, 32, color='#C00000')
+    arrow(ax, 139, 0, 139, 60, '立上り', 164, 32, color='#C00000')
+    arrow(ax, 45, 74, 125, 74, '上面W', 85, 89, color='#C00000')
+    ax.text(85, -52, 'すべて外寸・左右同じ寸法', fontsize=14, color='#333', ha='center')
+    ax.set_xlim(-24, 194); ax.set_ylim(-62, 100)
+    ax.set_aspect('equal'); ax.axis('off')
+    fig.tight_layout(pad=0.1)
+    path = os.path.join(tempfile.mkdtemp(prefix='usum-fig-'), 'hat.png')
+    fig.savefig(path, dpi=150, facecolor='white')
+    plt.close(fig)
+    return path
+
+
+def guide_sheet(ws, pages):
+    """書き方（A3横1枚）：寸法の絵・書く順番・書き方の例・どの型が何枚目か"""
+    from openpyxl.drawing.image import Image as XLImage
+    ws.title = '書き方'
+    NC = 12
+    for c_ in range(1, NC + 1):
+        ws.column_dimensions[get_column_letter(c_)].width = 15
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NC)
+    c = ws.cell(1, 1, 'ハット曲げ　実績の書き方　株式会社高橋鉄骨')
+    c.font = Font(name=FONT, size=22, bold=True)
+    ws.row_dimensions[1].height = 40
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=NC)
+    c = ws.cell(2, 1, '計算（シミュレーション）で出した「曲げられる立上り」が、実際と合っているかを確かめる表です。書いてもらった寸法に計算を合わせます。')
+    c.font = Font(name=FONT, size=13)
+    ws.row_dimensions[2].height = 26
+    for r_ in range(3, 30):
+        ws.row_dimensions[r_].height = 30
+    # 左：寸法の絵
+    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=5)
+    put(ws, 3, 1, '寸法の取り方', bold=True, size=15, fill=HEAD)
+    img = XLImage(hat_fig())
+    w = 15.5 / 2.54 * 96
+    img.height = img.height * w / img.width
+    img.width = w
+    ws.add_image(img, 'A4')
+    # 右：書く順番
+    ws.merge_cells(start_row=3, start_column=7, end_row=3, end_column=NC)
+    put(ws, 3, 7, '書く順番', bold=True, size=15, fill=HEAD)
+    steps = ['① 曲げた板厚と V（金型）の表を探す（下の一覧）',
+             '② 外フランジは、表の上に書いてある長さ（50mm など）',
+             '③ ★の上面W で、曲げられた立上りの「いちばん低い」と「いちばん高い」を書く',
+             '④ 曲がらなかったら ×',
+             '⑤「いちばん小さい断面」（立上り と 上面W）は必ず書く',
+             '⑥ ★でない白い欄は、分かるところだけでよい',
+             '⑦ 904061 以外のヤゲンで曲げたら、数字の横にヤゲンの番号を書く']
+    for i, t_ in enumerate(steps):
+        ws.merge_cells(start_row=4 + i, start_column=7, end_row=4 + i, end_column=NC)
+        cc = ws.cell(4 + i, 7, t_)
+        cc.font = Font(name=FONT, size=15, bold=i in (2, 4))
+        cc.alignment = Alignment(vertical='center')
+    # 書き方の例
+    er = 13
+    ws.merge_cells(start_row=er, start_column=1, end_row=er, end_column=5)
+    put(ws, er, 1, '書き方の例（V25 t4.5　外フランジ 50mm）', bold=True, size=15, fill=HEAD)
+    heads = [('上面W', HEAD), ('計算の立上り\n下限〜上限', HEAD), ('実績\n低いほう', KEYF), ('実績\n高いほう', KEYF)]
+    for k, (t_, f_) in enumerate(heads):
+        put(ws, er + 1, 1 + k, t_, bold=True, size=13, fill=f_)
+    ws.row_dimensions[er + 1].height = 40
+    ex = [('★100', '24〜75', 26, 72, '← 26 から 72 まで曲げられた'), ('★200', '24〜120', '', 115, '← 高いほうだけ確かめた'),
+          ('★22', '24〜25', '×', '×', '← 曲がらなかった')]
+    for i, (a, b, lo_, hi_, memo) in enumerate(ex):
+        rr = er + 2 + i
+        put(ws, rr, 1, a, bold=True, size=15, fill=KEYF, color='C00000')
+        put(ws, rr, 2, b, size=14, fill=CALCF)
+        for cc, v in ((3, lo_), (4, hi_)):
+            e = put(ws, rr, cc, v, bold=True, size=17, fill=KEYF, color='1F3FBF')
+            e.border = KEYBOX
+        ws.merge_cells(start_row=rr, start_column=5, end_row=rr, end_column=6)
+        m = ws.cell(rr, 5, memo)
+        m.font = Font(name=FONT, size=13, color='1F3FBF')
+        m.alignment = Alignment(vertical='center')
+    # どの型が何枚目か
+    lr = 13
+    ws.merge_cells(start_row=lr, start_column=8, end_row=lr, end_column=NC)
+    put(ws, lr, 8, 'どの型が何枚目か', bold=True, size=15, fill=HEAD)
+    for pi, idxs in enumerate(pages, start=1):
+        put(ws, lr + pi, 8, f'{pi}枚目', bold=True, size=14, fill=WF)
+        ws.merge_cells(start_row=lr + pi, start_column=9, end_row=lr + pi, end_column=NC)
+        put(ws, lr + pi, 9, '　／　'.join(f"V{rows[j]['V']} t{rows[j]['t']}" for j in idxs), size=14, align='left', wrap=False)
+        for c_ in range(10, NC + 1):
+            ws.cell(lr + pi, c_).border = box
+    fr = lr + len(pages) + 2
+    ws.merge_cells(start_row=fr, start_column=1, end_row=fr, end_column=NC)
+    c = ws.cell(fr, 1, '書いたら事務所（地主）へ戻してください。Excel に入れて計算を合わせ直します。　記入した人：＿＿＿＿＿＿＿　日付：＿＿＿＿＿＿')
+    c.font = Font(name=FONT, size=14, bold=True)
+    c.alignment = Alignment(vertical='center')
+    a3(ws, f'A1:{get_column_letter(NC)}{fr}', landscape=True)
+
+
 def table_u():
     wb = Workbook()
     mp = [['板厚', 'V', '幅', 'シート', 'セル', '種類']]
     PER = 4
     pages = [list(range(i, min(i + PER, n))) for i in range(0, n, PER)]
+    if HAT:
+        guide_sheet(wb.active, pages)
     for pi, idxs in enumerate(pages, start=1):
-        ws = wb.active if pi == 1 else wb.create_sheet()
-        ws.title = f'表まとめ{pi}'
+        ws = wb.create_sheet() if (HAT or pi > 1) else wb.active
+        ws.title = f'記入{pi}' if HAT else f'表まとめ{pi}'
         ncols = 4 * (len(BW4) + 1) - 1
         last = get_column_letter(ncols)
         ws.merge_cells(f'A1:{last}1')
-        c = ws.cell(1, 1, f'{NAME} 早見表（まとめ {pi}／{len(pages)}）　立上り（外寸mm）　株式会社高橋鉄骨')
+        c = ws.cell(1, 1, f'{NAME} ' + (f'実績の記入（{pi}／{len(pages)}）' if HAT else f'早見表（まとめ {pi}／{len(pages)}）') + '　立上り（外寸mm）　株式会社高橋鉄骨')
         c.font = Font(name=FONT, size=15, bold=True)
         ws.merge_cells(f'A2:{last}2')
-        c = ws.cell(2, 1, ('型ごとのシート（' + NAME + '_早見グラフ_A3.xlsx）の表を並べたもの。★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください'
+        c = ws.cell(2, 1, HAT_NOTE if HAT else ('型ごとのシート（' + NAME + '_早見グラフ_A3.xlsx）の表を並べたもの。★の赤い枠に、実際に曲げられた一番高い立上り（外寸）を書いてください'
                            '（曲がらなかったら ×）。いちばん小さい断面は必ず。★だけ書けば、間の行は「見込み」に入ります。書いたら保存して Claude に「計算し直して」。'
                            '青＝ヤゲン904061 では当たるが、ほかのヤゲンで曲がる（番号つき）。赤＝底Wを広げたのに下がる所。L835まで＝V8でヤゲン71606 は曲げ長さ835mm（金型1本分）まで。'
                            f'左右の立上りが違うときは低いほうで見る。計算は {TODAY} 時点。'))
@@ -440,14 +571,13 @@ def table_u():
     for row_ in mp:
         hid.append(row_)
     hid.sheet_state = 'hidden'
+    if HAT:
+        table_hat(wb)
     wb.save(out_table)
     print('saved', out_table)
 
 
-if HAT:
-    table_hat()
-else:
-    table_u()
+table_u()
 
 
 # ================================================================ グラフまとめ（A3横・1枚に8型）

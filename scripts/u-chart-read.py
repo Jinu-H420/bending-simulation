@@ -50,9 +50,22 @@ if '_map' in wb.sheetnames:
             continue
         if kind == 'w':
             d['entries'][str(int(W))] = v
+        elif kind in ('lo', 'hi'):
+            # ハットの表まとめ：低いほう・高いほうを別々の欄に書く（どちらかが × なら ×。「24〜75」と1つの欄に書いても読む）
+            k = str(int(W))
+            cur = d['entries'].get(k)
+            if v == '×' or cur == '×':
+                d['entries'][k] = '×'
+            elif isinstance(v, dict):
+                d['entries'][k] = v
+            else:
+                d['entries'][k] = {**(cur if isinstance(cur, dict) else {}), kind: v}
         elif isinstance(v, (int, float)):
             d.setdefault('min', {})['h' if kind == 'minh' else 'w'] = v
     for d in by.values():
+        for k, v in list(d['entries'].items()):          # 高いほうだけ書いてあれば数字1つに（型ごとのシートの「75」と同じ）
+            if isinstance(v, dict) and 'lo' not in v:
+                d['entries'][k] = v['hi']
         if d.get('min') and not ('h' in d['min'] and 'w' in d['min']):
             del d['min']
     json.dump(list(by.values()), sys.stdout, ensure_ascii=False)

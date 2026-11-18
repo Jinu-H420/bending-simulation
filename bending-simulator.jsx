@@ -906,28 +906,48 @@ function searchStops(part, seq, vHalf, diePolys, punchType, punchFlip, chukanSel
 }
 
 // need＝「これ以上の余裕がないと当たり」とみなす境目。実績から学んだ値を外から渡せる（既定 -0.05mm）
-function searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, limit = 6, openGap = 0, need = -0.05) {
+// 2026-11-18 ユーザー「6か所曲げを入力していくと重くなって入力できない」→ 探索を軽くした。
+//   ・ある工程が通るかは「もう曲げた所の組」と その工程の入れ方だけで決まる（前の工程の順番・入れ方によらない）ので、
+//     同じ組・同じ入れ方は1回だけ計算する。そこから先がどうやっても通らない組も覚えて、二度と入らない
+//   ・searchSequencesIter は1つ試すたびに止まれる形（画面は少しずつ進めて、入力を止めない）。searchSequences は一気に回す
+function* searchSequencesIter(part, vHalf, diePolys, punchType, punchFlip, chukanSel, limit = 6, openGap = 0, need = -0.05) {
   const B = part.bends.length;
   const sols = [];
   let tried = 0;
-  const dfs = (prefix, remaining) => {
-    if (sols.length >= limit) return;
-    if (remaining.length === 0) { sols.push(prefix.slice()); return; }
+  const memo = new Map();     // もう曲げた所の組｜曲げ｜入れ方 → 通るか
+  const dead = new Set();     // そこから先がどうやっても通らない組
+  function* dfs(prefix, remaining, mask) {
+    if (remaining.length === 0) { sols.push(prefix.slice()); return true; }
+    if (dead.has(mask)) return false;
+    let any = false;
     for (const b of remaining) {
       for (const valley of [false, true]) {
         for (const mirror of [false, true]) {
-          if (sols.length >= limit) return;
-          tried++;
+          if (sols.length >= limit) return true;
+          const key = mask * 64 * 4 + b * 4 + (valley ? 2 : 0) + (mirror ? 1 : 0);
+          let ok = memo.get(key);
           const st = { bend: b, mirror, valley };
-          if (stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap, need)) {
-            dfs([...prefix, st], remaining.filter((x) => x !== b));
+          if (ok === undefined) {
+            tried++;
+            ok = stepFeasible(part, prefix, st, vHalf, diePolys, punchType, punchFlip, chukanSel, openGap, need);
+            memo.set(key, ok);
+            yield;
           }
+          if (ok && (yield* dfs([...prefix, st], remaining.filter((x) => x !== b), mask | (1 << b)))) any = true;
         }
       }
     }
-  };
-  dfs([], [...Array(B).keys()]);
+    if (!any) dead.add(mask);
+    return any;
+  }
+  yield* dfs([], [...Array(B).keys()], 0);
   return { sols, tried };
+}
+function searchSequences(...args) {
+  const it = searchSequencesIter(...args);
+  let r = it.next();
+  while (!r.done) r = it.next();
+  return r.value;
 }
 
 // 金型候補（Vダイ経験則：4t ≦ V幅 ≦ 20t、V半幅+1 < 最短フランジ）
@@ -2163,35 +2183,57 @@ const BendingSimulator = () => {
     const ids = Object.keys(PUNCH_LIB);
     const order = [...ids.filter((k) => !PUNCH_LIB[k].special), ...ids.filter((k) => PUNCH_LIB[k].special)];
     const cands = order.flatMap((k) => [[k, false], [k, true]]).filter(([k, f]) => !(k === punchType && f === punchFlip));
-    let i = -1, win = null, kuno = [], chk = null;   // chk＝曲がるが長さの決まりで要確認のヤゲン（ほかに無ければそれを出す）
-    const next = () => {
-      if (cancel) return;
+    // 1つの探索を、画面を止めずに少しずつ進める（12ms 回したら一度手を離す。入力が入ればそこでやめる）
+    const search = (pid, flip) => new Promise((res) => {
+      const it = searchSequencesIter(part, vHalf, diePolys, pid, flip, chukanSel, 1, openGap);
+      const pump = () => {
+        if (cancel) return;
+        const t0 = performance.now();
+        let r = it.next();
+        while (!r.done && performance.now() - t0 < 12) r = it.next();
+        if (r.done) res(r.value); else setTimeout(pump, 0);
+      };
+      pump();
+    });
+    const next = async () => {
+      let win = null, chk = null;   // chk＝曲がるが長さの決まりで要確認のヤゲン（ほかに無ければそれを出す）
       // まず、いまのヤゲンのまま曲げ順・突き当てを変えれば通るか。通るなら替える必要は無い
-      if (i === -1) {
-        i = 0;
-        const r0 = searchSequences(part, vHalf, diePolys, punchType, punchFlip, chukanSel, 1, openGap);
-        if (r0.sols.length && !winNG) { setAltPunch(null); return; }
-        // 特殊 くの字ごとに、形として通るか（曲げ長さは別）。通るなら「L 窓mm 以内なら曲がる」と出す
-        kuno = ids.filter((k) => PUNCH_LIB[k].special).map((pid) => ({
-          punch: pid, win: PUNCH_LIB[pid].special.win,
-          ok: [false, true].some((f) => searchSequences(part, vHalf, diePolys, pid, f, chukanSel, 1, openGap).sols.length > 0),
-        })).filter((k) => k.ok).sort((a, b) => b.win - a.win);
-        setTimeout(next, 0);
-        return;
+      const r0 = await search(punchType, punchFlip);
+      if (cancel) return;
+      if (r0.sols.length && !winNG) { setAltPunch(null); return; }
+      // 特殊 くの字ごとに、形として通るか（曲げ長さは別）。通るなら「L 窓mm 以内なら曲がる」と出す
+      const found = {};
+      const tryP = async (pid, flip) => {
+        const key = pid + '|' + flip;
+        if (!found[key]) found[key] = await search(pid, flip);
+        return found[key];
+      };
+      let kuno = [];
+      for (const pid of ids.filter((k) => PUNCH_LIB[k].special)) {
+        let ok = false;
+        for (const f of [false, true]) {
+          if (ok) break;
+          ok = (await tryP(pid, f)).sols.length > 0;
+          if (cancel) return;
+        }
+        if (ok) kuno.push({ punch: pid, win: PUNCH_LIB[pid].special.win, ok });
       }
-      if (i >= cands.length) { setAltPunch(chk ? { ok: chk, win, kuno } : { win, kuno }); return; }
-      const [pid, flip] = cands[i++];
-      const sp = PUNCH_LIB[pid].special;
-      const r = searchSequences(part, vHalf, diePolys, pid, flip, chukanSel, 1, openGap);
-      if (r.sols.length) {
-        const lc = !sp && punchLenCheck(pid, nobiV, bendLen);
-        if (sp && bendLen > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; }
-        else if (lc) { if (!chk) chk = { punch: pid, flip, seq: r.sols[0], special: null, lenChk: lc }; }
-        else { setAltPunch({ ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win, kuno }); return; }
+      kuno.sort((x, y) => y.win - x.win);
+      for (const [pid, flip] of cands) {
+        const sp = PUNCH_LIB[pid].special;
+        const r = await tryP(pid, flip);
+        if (cancel) return;
+        if (r.sols.length) {
+          const lc = !sp && punchLenCheck(pid, nobiV, bendLen);
+          if (sp && bendLen > sp.win) { if (!win || sp.win > win.win) win = { punch: pid, win: sp.win }; }
+          else if (lc) { if (!chk) chk = { punch: pid, flip, seq: r.sols[0], special: null, lenChk: lc }; }
+          else { setAltPunch({ ok: { punch: pid, flip, seq: r.sols[0], special: sp || null }, win, kuno }); return; }
+        }
       }
-      setTimeout(next, 0);
+      setAltPunch(chk ? { ok: chk, win, kuno } : { win, kuno });
     };
-    const id = setTimeout(next, 500);
+    // 入力が止まってから 1.2秒 待って始める（打っている途中で始めない）
+    const id = setTimeout(next, 1200);
     return () => { cancel = true; clearTimeout(id); };
   }, [altWorth, part, vHalf, diePolys, chukanSel, openGap, bendLen, punchType, punchFlip, winNG, nobiV, reachVer]);
   const applyAltPunch = () => {

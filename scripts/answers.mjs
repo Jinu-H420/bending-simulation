@@ -8,7 +8,7 @@ const lines = readFileSync(new URL('../bending-simulator.jsx', import.meta.url),
 const end = lines.findIndex((l) => l.startsWith('function FinishedPreview'));
 const E = new Function(
   lines.slice(0, end).filter((l) => !l.startsWith('import ')).join('\n') +
-  '\nreturn { smallVCheck, nobiAtAngle, lookupNobi, resolveDie };',
+  '\nreturn { smallVCheck, nobiAtAngle, lookupNobi, resolveDie, searchSequences };',
 )();
 
 const sv = (t, V) => E.smallVCheck('鉄', t, V) || {};
@@ -18,6 +18,15 @@ const nobi = (mat, V, t, inner) => {
 };
 const floorOf = (sel, machine) =>
   Math.round(Math.max(...E.resolveDie(sel, 20, 30, true, machine).polys.flatMap((p) => p.map((q) => q[1]))));
+
+// 6か所曲げ（初期のハットに ＋末尾 を2回）で、曲がる段取りを探すときに試す回数。
+// 同じ「曲げた所の組・入れ方」は1回だけ計算するので、多くても 組64 × 曲げ6 × 入れ方4 = 1536 回（前は 1つのヤゲンで 約6500回・全部で48秒）
+const tried6 = () => {
+  const info = E.resolveDie('lib:30540:1', 20, 30, true, 'hd3504nt', false);
+  const dirs = [1, -1, -1, 1, 1, 1];
+  const part = { t: 6, segs: [46, 26, 100, 26, 46, 30, 30], bends: dirs.map((dir) => ({ angle: 90, dir })), grow: dirs.map(() => 0) };
+  return E.searchSequences(part, info.vHalf, info.polys, '904061', false, 'std', 1, 164).tried <= 1536;
+};
 
 // [言われた日・言われたこと, 実際の値, 正しい値]
 const ANSWERS = [
@@ -31,6 +40,7 @@ const ANSWERS = [
   ['2026-10-30 伸び一覧表：縞 t2.3 V25 内角172.1° は片伸び 0', () => nobi('縞', 25, 2.3, 172.1), 0],
   ['2026-11-05 床も当たり判定に入れる（HD3504NT 03500 の床 1048）', () => floorOf('lib:03500:0', 'hd3504nt'), 1048],
   ['2026-11-05 床も当たり判定に入れる（HG2203 の床 1062）', () => floorOf('ins:974061:stack', 'hg2203'), 1062],
+  ['2026-11-18 6か所曲げの入力で重くならない（段取りを探す回数 1536 回まで）', tried6, true],
 ];
 
 let bad = 0;

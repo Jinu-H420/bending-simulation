@@ -585,9 +585,9 @@ function punchTopOf(punchType) {
   return -Math.min(...pts.map((p) => p[1]));
 }
 // タング下端をヤゲンのタングに合わせて位置決めする
-function placeHolder(punchType, punchFlip, tipY) {
+function placeHolder(punchType, punchFlip, tipY, pts = HOLDER_PTS) {
   const H = punchTopOf(punchType);
-  return HOLDER_PTS.map(([x, h]) => [punchFlip ? -x : x, tipY - (H + h)]);
+  return pts.map(([x, h]) => [punchFlip ? -x : x, tipY - (H + h)]);
 }
 // 柱はホルダ断面の中心に合わせて左右対称に置く
 // ホルダ天端の高さ（タング下端から上へ）。ラムはこれより上にある。
@@ -611,14 +611,23 @@ function placeRam(punchType, punchFlip, tipY) {
 //   載せていたため。ヤゲンの上は ホルダ.dxf の実測の形（幅95.2。締め金つき）をそのまま出し、柱はその肩（差し込みの根元）から上、
 //   ホルダの中心に合わせて置く。差し込みは柱の中に入る。
 // ここに無い機械（HD3504NT など）は今までどおり、ヤゲンの頭の 2mm 上から幅115mm の柱。
-const UPPER_RAM = { hg2203: { w: 60, est: true } };
+//   2026-11-19「まだ違う」→ 写真を測り直した。ヤゲンの幅（約27mm）と刃先〜ホルダの下（120mm）で縮尺を合わせると、
+//   写真のホルダは 幅 約92×高さ 約150（＝ホルダ.dxf の 95.2×150.7）、柱の下は刃先から 約238（＝肩 240）、柱の幅は 約65mm。
+//   柱はホルダの左の端から 約9mm 内側〜右の締め金の内側（ホルダ.dxf の x −43〜22）。差し込みは柱に隠れる（画面でも柱を上に描く）
+//   2026-11-19 ユーザー「グレー（柱）は青（ホルダ）に挟まれてる形になってるけど、作ってもらってるものは挟まれていない」→
+//   HG2203 のホルダは、柱の左右に壁を立てた形にする（HOLDER_HG_PTS。壁の天面は差し込みと同じ高さ 120.7）。
+//   左の壁 約8mm（写真 約9）・右の壁 約22mm（写真 約18）。ホルダの外形はホルダ.dxf より大きい側（当たりは厳しめ）
+const UPPER_RAM = { hg2203: { x0: -43, x1: 22, est: true } };
+const HOLDER_HG_PTS = [
+  [-51.016, 120.7], [-51.016, 56.236],
+  ...HOLDER_PTS.slice(6, 26),          // 左の肩から、下の咥える所を回って、右の締め金の下まで（ホルダ.dxf のまま）
+  [44.2, 58.5], [44.2, 120.7], [22, 120.7], [22, 89.8], [-43, 89.8], [-43, 120.7],
+];
 const HOLDER_SHOULDER = 89.8;   // ホルダの肩（ヤゲンの頭から上へ。ホルダ.dxf の天面の平らな所）
-function ramOnHolder(punchType, punchFlip, tipY, w) {
-  const xs = HOLDER_PTS.map(([x]) => x);
-  let cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-  if (punchFlip) cx = -cx;
+function ramOnHolder(punchType, punchFlip, tipY, up) {
+  const a = punchFlip ? -up.x1 : up.x0, b = punchFlip ? -up.x0 : up.x1;
   const top = tipY - (punchTopOf(punchType) + HOLDER_SHOULDER);
-  return [[cx - w / 2, top], [cx + w / 2, top], [cx + w / 2, top - RAM_UP], [cx - w / 2, top - RAM_UP]];
+  return [[a, top], [b, top], [b, top - RAM_UP], [a, top - RAM_UP]];
 }
 
 // 干渉判定に渡す工具ひとそろい。ヤゲンだけ見ていると、背の高い形状で
@@ -642,9 +651,9 @@ function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
   if (up) {
     // ヤゲン＋ホルダ（ホルダ.dxf の実測の形）＋細い柱
     const tool = PUNCH_LIB[punchType].pts.map(([x, y]) => [punchFlip ? -x : x, y + tipY]);
-    const punchPolys = [tool, placeHolder(punchType, punchFlip, tipY)];
-    const ram = ramOnHolder(punchType, punchFlip, tipY, up.w);
-    return { punchPolys, holder: null, ram, polys: [...diePolys, ...punchPolys, ram],
+    const punchPolys = [tool, placeHolder(punchType, punchFlip, tipY, HOLDER_HG_PTS)];
+    const ram = ramOnHolder(punchType, punchFlip, tipY, up);
+    return { punchPolys, holder: null, ram, ramOver: true, polys: [...diePolys, ...punchPolys, ram],
              names: [...diePolys.map((p) => (p.isFloor ? '床' : 'ダイ・台')), 'ヤゲン', 'ホルダ', '柱（機械上部）'] };
   }
   const punchPolys = buildPunch(punchType, punchFlip, tipY, chukanSel);
@@ -2308,7 +2317,7 @@ const BendingSimulator = () => {
     const exArc = exArcAt(si);
     const g = minGap(ch, tools.polys, t, vHalf, exArc);
     const guide = chainAt(si, 0); // 曲げ開始前（ストローク0%）
-    return { ch, punchPolys: tools.punchPolys, holder: tools.holder, ram: tools.ram,
+    return { ch, punchPolys: tools.punchPolys, holder: tools.holder, ram: tools.ram, ramOver: tools.ramOver,
              hits: g.hits, gap: g.gap, where: tools.names[g.atIdx] || null, guide };
   }, [simPart, simSeq, pressHalf, step, prog, vHalf, diePolys, punchType, punchFlip, chukanSel, t, openGap]);
 
@@ -2423,10 +2432,11 @@ const BendingSimulator = () => {
       ctx.fillText(`床（ダイ上面から ${Math.round(floorY)}mm）`, 8, ty(floorY) - 6);
     }
     // ホルダと柱。当たっている相手が見えないと理由が分からないので必ず描く
-    if (frame.ram) drawPoly(frame.ram, '#12151b', '#5b6472');
+    if (frame.ram && !frame.ramOver) drawPoly(frame.ram, '#12151b', '#5b6472');
     if (frame.holder) drawPoly(frame.holder, '#181c24', '#7c8797');
     frame.punchPolys.forEach((poly, i) =>
       drawPoly(poly, i === 0 ? '#10201c' : '#141821', i === 0 ? '#4ade80' : '#8a93a8'));
+    if (frame.ram && frame.ramOver) drawPoly(frame.ram, '#12151b', '#5b6472');   // 柱がホルダにはまっている（差し込みは柱に隠れる）
 
     // ガイド線：曲げ開始前（ストローク0%）の板位置。AMNC画面との目視比較用
     if (showGuide && prog > 0.005) {

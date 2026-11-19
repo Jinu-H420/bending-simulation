@@ -607,12 +607,17 @@ function placeRam(punchType, punchFlip, tipY) {
 // 機械ごとの上型の柱（2026-11-19 ユーザー「ヤゲンを取り付けるホルダーのところが、シミュレーションと違い過ぎる」＋機械の画面の写真）。
 // HG2203 の画面では、ヤゲンの上にホルダー（中間板）があり、その上は中間板より細い。幅115mmの柱がヤゲンの頭から続く形ではない。
 //   w＝柱の幅。写真の比率（柱 60px ÷ ホルダー 85px × 中間板 78.3mm ≒ 55mm）に余裕を見て 60mm。**概算**（実測したらここを直す）
-//   柱は中間板の天面から上、中間板の中心に合わせて置く。中間板より下は中間板とヤゲンだけ
+//   2026-11-19 ユーザー「ホルダがありえない形になってる」→ 中間板（std）だけを出し、その差し込み（上に細く出た所）の先に柱を
+//   載せていたため。ヤゲンの上は ホルダ.dxf の実測の形（幅95.2。締め金つき）をそのまま出し、柱はその肩（差し込みの根元）から上、
+//   ホルダの中心に合わせて置く。差し込みは柱の中に入る。
 // ここに無い機械（HD3504NT など）は今までどおり、ヤゲンの頭の 2mm 上から幅115mm の柱。
 const UPPER_RAM = { hg2203: { w: 60, est: true } };
-function ramOnChukan(chukanPoly, w) {
-  const xs = chukanPoly.map((q) => q[0]), top = Math.min(...chukanPoly.map((q) => q[1]));
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+const HOLDER_SHOULDER = 89.8;   // ホルダの肩（ヤゲンの頭から上へ。ホルダ.dxf の天面の平らな所）
+function ramOnHolder(punchType, punchFlip, tipY, w) {
+  const xs = HOLDER_PTS.map(([x]) => x);
+  let cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  if (punchFlip) cx = -cx;
+  const top = tipY - (punchTopOf(punchType) + HOLDER_SHOULDER);
   return [[cx - w / 2, top], [cx + w / 2, top], [cx + w / 2, top - RAM_UP], [cx - w / 2, top - RAM_UP]];
 }
 
@@ -633,9 +638,17 @@ function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
   }
   // ヤゲンの上に付くのは中間板だけ（V.dxf の上型で確認：幅78.3・高さ122.7 の1部品）。
   // 以前はホルダ.dxf のホルダも重ねて描いていたが、中間板と同じ場所の二重描きだったので外した。
+  const up = punchType !== 'straight' && UPPER_RAM[diePolys.upper];
+  if (up) {
+    // ヤゲン＋ホルダ（ホルダ.dxf の実測の形）＋細い柱
+    const tool = PUNCH_LIB[punchType].pts.map(([x, y]) => [punchFlip ? -x : x, y + tipY]);
+    const punchPolys = [tool, placeHolder(punchType, punchFlip, tipY)];
+    const ram = ramOnHolder(punchType, punchFlip, tipY, up.w);
+    return { punchPolys, holder: null, ram, polys: [...diePolys, ...punchPolys, ram],
+             names: [...diePolys.map((p) => (p.isFloor ? '床' : 'ダイ・台')), 'ヤゲン', 'ホルダ', '柱（機械上部）'] };
+  }
   const punchPolys = buildPunch(punchType, punchFlip, tipY, chukanSel);
-  const up = UPPER_RAM[diePolys.upper];
-  const ram = up && punchPolys.length > 1 ? ramOnChukan(punchPolys[1], up.w) : placeRam(punchType, punchFlip, tipY);
+  const ram = placeRam(punchType, punchFlip, tipY);
   return {
     punchPolys, holder: null, ram,
     polys: [...diePolys, ...punchPolys, ram],

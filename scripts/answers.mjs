@@ -8,7 +8,7 @@ const lines = readFileSync(new URL('../bending-simulator.jsx', import.meta.url),
 const end = lines.findIndex((l) => l.startsWith('function FinishedPreview'));
 const E = new Function(
   lines.slice(0, end).filter((l) => !l.startsWith('import ')).join('\n') +
-  '\nreturn { smallVCheck, nobiAtAngle, lookupNobi, resolveDie, searchSequences };',
+  '\nreturn { smallVCheck, nobiAtAngle, lookupNobi, resolveDie, searchSequences, toolsFor };',
 )();
 
 const sv = (t, V) => E.smallVCheck('鉄', t, V) || {};
@@ -28,6 +28,14 @@ const tried6 = () => {
   return E.searchSequences(part, info.vHalf, info.polys, '904061', false, 'std', 1, 164).tried <= 1536;
 };
 
+// 上型の柱（ヤゲンの上の機械の部分）の幅と、柱が始まる高さ（刃先から上へ mm）。ヤゲン 904061・中間板 std
+const ramOf = (sel, machine) => {
+  const info = E.resolveDie(sel, 20, 30, true, machine);
+  const r = E.toolsFor('904061', false, 0, 'std', info.polys).ram;
+  const xs = r.map((q) => q[0]);
+  return `幅${Math.round(Math.max(...xs) - Math.min(...xs))}・刃先から${Math.round(-Math.max(...r.map((q) => q[1])))}`;
+};
+
 // [言われた日・言われたこと, 実際の値, 正しい値]
 const ANSWERS = [
   ['2026-10-16 PL9 V40 は L500 まで', () => sv(9, 40).maxL, 500],
@@ -40,6 +48,8 @@ const ANSWERS = [
   ['2026-10-30 伸び一覧表：縞 t2.3 V25 内角172.1° は片伸び 0', () => nobi('縞', 25, 2.3, 172.1), 0],
   ['2026-11-05 床も当たり判定に入れる（HD3504NT 03500 の床 1048）', () => floorOf('lib:03500:0', 'hd3504nt'), 1048],
   ['2026-11-05 床も当たり判定に入れる（HG2203 の床 1062）', () => floorOf('ins:974061:stack', 'hg2203'), 1062],
+  ['2026-11-19 HG2203 の上型：ホルダー（中間板）の上は細い柱（写真から概算 幅60。実測したら直す）', () => ramOf('ins:974061:stack', 'hg2203'), '幅60・刃先から248'],
+  ['2026-11-19 HD3504NT の上型は今までどおり（幅115・ヤゲンの頭から）', () => ramOf('lib:03600:0', 'hd3504nt'), '幅115・刃先から152'],
   ['2026-11-18 6か所曲げの入力で重くならない（段取りを探す回数 1536 回まで）', tried6, true],
 ];
 

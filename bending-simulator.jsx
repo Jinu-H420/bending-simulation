@@ -458,7 +458,13 @@ function baseNote(mp, sel, machine, stack) {
 
 // flip=true はダイを左右ひっくり返して置いた状態。2溝ダイのように左右非対称な型では、
 // 使う溝が台に対して逆側に来るので、台は動かさずダイだけを反す（ダイV20.dxf で確認）。
+// 返す polys に「どの機械か」の印（polys.upper）を付ける。上型（ヤゲンの上の柱）の形が機械ごとに違うため、toolsFor がこれを見る
 function resolveDie(sel, vW, dieHalf, withBase = true, machine = null, flip = false) {
+  const r = resolveDie0(sel, vW, dieHalf, withBase, machine, flip);
+  if (r && r.polys && machine) r.polys.upper = String(machine).toLowerCase();
+  return r;
+}
+function resolveDie0(sel, vW, dieHalf, withBase = true, machine = null, flip = false) {
   if (sel === 'flat') {
     const vh = vW / 2;
     const W = Math.max(dieHalf, vh + 2);
@@ -598,6 +604,17 @@ function placeRam(punchType, punchFlip, tipY) {
   const H = punchTopOf(punchType);
   return ramAt(tipY - (H + 2), punchFlip);   // ヤゲン頂部より 2mm 上（タング差込口の天面）
 }
+// 機械ごとの上型の柱（2026-11-19 ユーザー「ヤゲンを取り付けるホルダーのところが、シミュレーションと違い過ぎる」＋機械の画面の写真）。
+// HG2203 の画面では、ヤゲンの上にホルダー（中間板）があり、その上は中間板より細い。幅115mmの柱がヤゲンの頭から続く形ではない。
+//   w＝柱の幅。写真の比率（柱 60px ÷ ホルダー 85px × 中間板 78.3mm ≒ 55mm）に余裕を見て 60mm。**概算**（実測したらここを直す）
+//   柱は中間板の天面から上、中間板の中心に合わせて置く。中間板より下は中間板とヤゲンだけ
+// ここに無い機械（HD3504NT など）は今までどおり、ヤゲンの頭の 2mm 上から幅115mm の柱。
+const UPPER_RAM = { hg2203: { w: 60, est: true } };
+function ramOnChukan(chukanPoly, w) {
+  const xs = chukanPoly.map((q) => q[0]), top = Math.min(...chukanPoly.map((q) => q[1]));
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  return [[cx - w / 2, top], [cx + w / 2, top], [cx + w / 2, top - RAM_UP], [cx - w / 2, top - RAM_UP]];
+}
 
 // 干渉判定に渡す工具ひとそろい。ヤゲンだけ見ていると、背の高い形状で
 // ホルダに当たるのを見逃す（経緯まとめ 第13章・棚卸し E7〜E9）。
@@ -617,7 +634,8 @@ function toolsFor(punchType, punchFlip, tipY, chukanSel, diePolys) {
   // ヤゲンの上に付くのは中間板だけ（V.dxf の上型で確認：幅78.3・高さ122.7 の1部品）。
   // 以前はホルダ.dxf のホルダも重ねて描いていたが、中間板と同じ場所の二重描きだったので外した。
   const punchPolys = buildPunch(punchType, punchFlip, tipY, chukanSel);
-  const ram = placeRam(punchType, punchFlip, tipY);
+  const up = UPPER_RAM[diePolys.upper];
+  const ram = up && punchPolys.length > 1 ? ramOnChukan(punchPolys[1], up.w) : placeRam(punchType, punchFlip, tipY);
   return {
     punchPolys, holder: null, ram,
     polys: [...diePolys, ...punchPolys, ram],
@@ -1834,7 +1852,9 @@ const BendingSimulator = () => {
     if (floorY == null) return dieInfo.polys;
     const fl = [[-8000, floorY], [8000, floorY], [8000, floorY + 40], [-8000, floorY + 40]];
     fl.isFloor = true;
-    return [...dieInfo.polys, fl];
+    const withFloor = [...dieInfo.polys, fl];
+    withFloor.upper = dieInfo.polys.upper;
+    return withFloor;
   }, [dieInfo, floorY]);
   const vHalf = dieInfo.vHalf;
   // 最小フランジ（外寸）。折り曲げ表の値は実績なので、V肩に届くかの幾何より厳しいことが多い。
